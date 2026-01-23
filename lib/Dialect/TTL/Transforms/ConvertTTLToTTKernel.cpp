@@ -66,18 +66,31 @@ public:
                               t.getElementType());
     });
     // Tensor -> TensorAccessor for TTKernel when TTNN layout is present.
-    addConversion([](RankedTensorType t) -> Type {
+    addConversion([this](RankedTensorType t) -> Type {
       if (t.getEncoding() &&
           mlir::isa<tt::ttnn::TTNNLayoutAttr>(t.getEncoding())) {
         return ttk::TensorAccessorType::get(t.getContext());
       }
+      // Otherwise, preserve tensor shape/encoding but convert element type.
+      // This is required for cases like tensor<?x!ttl.transfer_handle<read>>
+      // becoming tensor<?xi32> once transfer handles are type-converted.
+      auto convertedElemTy = this->convertType(t.getElementType());
+      if (!convertedElemTy) {
+        return t;
+      }
+      if (convertedElemTy == t.getElementType()) {
+        return t;
+      }
+      return mlir::cast<RankedTensorType>(t.clone(convertedElemTy));
+    });
+    // Identity fallback must be last, but also handle conversion of transfer
+    // handles to TRID SSA values (i32).
+    addConversion([](Type t) -> Type {
+      if (llvm::isa<TransferHandleType>(t)) {
+        return IntegerType::get(t.getContext(), 32);
+      }
       return t;
     });
-    // Preserve transfer handle types so ttl.wait can inspect transfer
-    // direction. TRID-aware lowering will be added later.
-    addConversion([](TransferHandleType t) -> Type { return t; });
-    // Identity fallback must be last.
-    addConversion([](Type t) { return t; });
 
     auto castMaterialization = [](OpBuilder &builder, Type resultType,
                                   ValueRange inputs, Location loc) -> Value {
@@ -463,8 +476,8 @@ static CopyOperandKind classifyOperand(Value v) {
   return CopyOperandKind::Unknown;
 }
 
-static Value makeZeroI32(Location loc, ConversionPatternRewriter &rewriter) {
-  return rewriter.create<arith::ConstantIntOp>(loc, 0, 32);
+static Value makeZeroI8(Location loc, ConversionPatternRewriter &rewriter) {
+  return rewriter.create<arith::ConstantIntOp>(loc, 0, 8);
 }
 
 static std::optional<TransferKind> getTransferKindFromHandleType(Type t) {
@@ -641,10 +654,18 @@ static Value linearizeTileIndex(OpBuilder &builder, Location loc, Value row,
   return builder.create<arith::AddIOp>(loc, rowOffset, col);
 }
 
+class TridAllocator {
+public:
+  uint32_t allocateTrid() { return nextTrid++ & 0xF; }
+
+private:
+  uint32_t nextTrid = 0;
+};
+
 /// Lower tensor_slice->CB copy: read tiles from tensor into CB.
 /// Loops over CB shape, reading tiles starting at slice offset.
-static LogicalResult lowerSliceToCB(CopyOp op, TensorSliceOp sliceOp,
-                                    Value dstCB,
+static LogicalResult lowerSliceToCB(CopyOp op, TensorSliceOp sliceOp, Value dstCB,
+                                    Value tridVal,
                                     ConversionPatternRewriter &rewriter,
                                     const TypeConverter &typeConverter) {
   auto loc = op.getLoc();
@@ -703,6 +724,10 @@ static LogicalResult lowerSliceToCB(CopyOp op, TensorSliceOp sliceOp,
       rewriter.create<arith::ConstantIndexOp>(loc, pageSizeBytes);
   auto i32Ty = rewriter.getI32Type();
 
+  // Tag subsequent NOC reads with this copy's TRID.
+  Value nocVal = makeZeroI8(loc, rewriter);
+  rewriter.create<ttk::NocAsyncReadSetTridOp>(loc, tridVal, nocVal);
+
   emitTileLoop(
       rewriter, loc, cbRows, cbCols,
       [&, tensorTilesX, cbCols](OpBuilder &b, Location bodyLoc, Value loopRow,
@@ -733,7 +758,7 @@ static LogicalResult lowerSliceToCB(CopyOp op, TensorSliceOp sliceOp,
                                           *srcAccessor, cbAddr);
       });
 
-  rewriter.replaceOp(op, makeZeroI32(loc, rewriter));
+  rewriter.replaceOp(op, tridVal);
   return success();
 }
 
@@ -741,6 +766,7 @@ static LogicalResult lowerSliceToCB(CopyOp op, TensorSliceOp sliceOp,
 /// Loops over CB shape, writing tiles starting at slice offset.
 static LogicalResult lowerCBToSlice(CopyOp op, Value srcCB,
                                     TensorSliceOp sliceOp,
+                                    Value tridVal,
                                     ConversionPatternRewriter &rewriter,
                                     const TypeConverter &typeConverter) {
   auto loc = op.getLoc();
@@ -799,6 +825,10 @@ static LogicalResult lowerCBToSlice(CopyOp op, Value srcCB,
       rewriter.create<arith::ConstantIndexOp>(loc, pageSizeBytes);
   auto i32Ty = rewriter.getI32Type();
 
+  // Tag subsequent NOC writes with this copy's TRID.
+  Value nocVal = makeZeroI8(loc, rewriter);
+  rewriter.create<ttk::NocAsyncWriteSetTridOp>(loc, tridVal, nocVal);
+
   emitTileLoop(
       rewriter, loc, cbRows, cbCols,
       [&, tensorTilesX, cbCols](OpBuilder &b, Location bodyLoc, Value loopRow,
@@ -829,7 +859,7 @@ static LogicalResult lowerCBToSlice(CopyOp op, Value srcCB,
                                            *dstAccessor, cbAddr);
       });
 
-  rewriter.replaceOp(op, makeZeroI32(loc, rewriter));
+  rewriter.replaceOp(op, tridVal);
   return success();
 }
 
@@ -851,7 +881,9 @@ struct TensorSliceLowering : OpConversionPattern<TensorSliceOp> {
 };
 
 struct CopyLowering : OpConversionPattern<CopyOp> {
-  using OpConversionPattern::OpConversionPattern;
+  CopyLowering(const TypeConverter &typeConverter, MLIRContext *ctx,
+               TridAllocator *tridAllocator)
+      : OpConversionPattern(typeConverter, ctx), tridAllocator(tridAllocator) {}
 
   LogicalResult
   matchAndRewrite(CopyOp op, OpAdaptor adaptor,
@@ -879,6 +911,13 @@ struct CopyLowering : OpConversionPattern<CopyOp> {
       });
     }
 
+    if (!tridAllocator) {
+      return rewriter.notifyMatchFailure(op, "missing TRID allocator");
+    }
+
+    uint32_t trid = tridAllocator->allocateTrid();
+    Value tridVal = rewriter.create<arith::ConstantIntOp>(op.getLoc(), trid, 32);
+
     // TensorSlice -> CB: read tiles from tensor into circular buffer.
     if (srcIsSlice && dstIsCB) {
       auto sliceOp = src.getDefiningOp<TensorSliceOp>();
@@ -886,7 +925,7 @@ struct CopyLowering : OpConversionPattern<CopyOp> {
         return rewriter.notifyMatchFailure(
             op, "tensor_slice source must come from ttl.tensor_slice op");
       }
-      return lowerSliceToCB(op, sliceOp, adaptor.getDst(), rewriter,
+      return lowerSliceToCB(op, sliceOp, adaptor.getDst(), tridVal, rewriter,
                             *typeConverter);
     }
 
@@ -896,9 +935,12 @@ struct CopyLowering : OpConversionPattern<CopyOp> {
       return rewriter.notifyMatchFailure(
           op, "tensor_slice destination must come from ttl.tensor_slice op");
     }
-    return lowerCBToSlice(op, adaptor.getSrc(), sliceOp, rewriter,
+    return lowerCBToSlice(op, adaptor.getSrc(), sliceOp, tridVal, rewriter,
                           *typeConverter);
   }
+
+private:
+  TridAllocator *tridAllocator = nullptr;
 };
 
 struct WaitLowering : OpConversionPattern<WaitOp> {
@@ -907,21 +949,27 @@ struct WaitLowering : OpConversionPattern<WaitOp> {
   LogicalResult
   matchAndRewrite(WaitOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // TODO(ttl): Lower ttl.wait to TRID-specific barriers keyed by the transfer
-    // handle (read vs write barrier based on transfer direction). Issue: #87.
+    // Emit TRID-specific barriers keyed by the transfer handle.
     //
-    // MVP behavior: require a direction-typed handle and emit the
-    // corresponding global barrier. Untyped handles are rejected by the
-    // verifier, but we also fail the rewrite defensively.
-    auto kind = getTransferKindFromHandleType(adaptor.getXf().getType());
+    // NOTE: After type conversion, the handle value is an i32 TRID. Transfer
+    // direction is recovered from the original operand type.
+    auto kind = getTransferKindFromHandleType(op.getXf().getType());
     if (!kind) {
       return rewriter.notifyMatchFailure(
           op, "requires direction-typed !ttl.transfer_handle<read|write>");
     }
+    Value tridVal = adaptor.getXf(); // i32 (after type conversion)
+    if (!tridVal.getType().isInteger(32)) {
+      return rewriter.notifyMatchFailure(
+          op, "transfer handle must be type-converted to i32 before ttl.wait");
+    }
+    Value nocVal = makeZeroI8(op.getLoc(), rewriter);
     if (*kind == TransferKind::read) {
-      rewriter.create<ttk::NocAsyncReadBarrierOp>(op.getLoc());
+      rewriter.create<ttk::NocAsyncReadBarrierWithTridOp>(op.getLoc(), tridVal,
+                                                          nocVal);
     } else if (*kind == TransferKind::write) {
-      rewriter.create<ttk::NocAsyncWriteBarrierOp>(op.getLoc());
+      rewriter.create<ttk::NocAsyncWriteBarrierWithTridOp>(op.getLoc(), tridVal,
+                                                           nocVal);
     } else {
       // Future-proofing: TransferKind is currently {read, write}, but fail
       // explicitly if it ever expands without updating the lowering.
@@ -1059,10 +1107,14 @@ lowerTTLOpsToTTKernel(ModuleOp mod, MLIRContext &ctx,
   });
 
   RewritePatternSet patterns(&ctx);
-  patterns.add<BindCBLowering, TensorSliceLowering, CopyLowering, WaitLowering,
-               CBReserveLowering, CBPushLowering, CBWaitLowering, CBPopLowering,
-               StoreLowering, CoreXLowering, CoreYLowering>(typeConverter,
-                                                            &ctx);
+  TridAllocator tridAllocator;
+  patterns.add<BindCBLowering>(typeConverter, &ctx);
+  patterns.add<TensorSliceLowering>(typeConverter, &ctx);
+  patterns.add<CopyLowering>(typeConverter, &ctx, &tridAllocator);
+  patterns.add<WaitLowering>(typeConverter, &ctx);
+  patterns.add<CBReserveLowering, CBPushLowering, CBWaitLowering, CBPopLowering>(
+      typeConverter, &ctx);
+  patterns.add<StoreLowering, CoreXLowering, CoreYLowering>(typeConverter, &ctx);
   populateFunctionOpInterfaceTypeConversionPattern(
       func::FuncOp::getOperationName(), patterns, typeConverter);
 
