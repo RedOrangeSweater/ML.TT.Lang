@@ -6,9 +6,9 @@
 - **Аудитория**: разработчики Python frontend и runtime-интеграции (`ttnn`), а также авторы DSL kernels.
 - **Что считается "runtime" в рамках этого документа**: Python-слой подготовки/запуска и его контракт с `ttnn`/устройством; не низкоуровневый runtime tt-metal.
 - **Связанные документы**:
-  - `docs/01_Architecture/01_HighLevelDesign.md` (границы ответственности)
-  - `docs/01_Architecture/02_LLD_CompilerPipeline.md` (MLIR pipeline)
-  - `docs/01_Architecture/04_LLD_Simulator.md` (симуляция)
+  - `docs/ideas/01_Architecture/01_HighLevelDesign.md` (границы ответственности)
+  - `docs/ideas/01_Architecture/02_LLD_CompilerPipeline.md` (MLIR pipeline)
+  - `docs/ideas/01_Architecture/04_LLD_Simulator.md` (симуляция)
   - Языковая спецификация: `docs/sphinx/specs/TTLangSpecification.md`
 
 ## 1. Назначение

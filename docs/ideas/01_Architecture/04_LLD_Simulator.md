@@ -6,8 +6,8 @@
 - **Аудитория**: разработчики симулятора/моделей планирования и авторы kernels, которым нужен воспроизводимый прогон без железа.
 - **Цель**: определить, что именно считается корректностью в симуляторе и где проходит граница "функциональная модель" vs "временная модель".
 - **Связанные документы**:
-  - `docs/01_Architecture/03_LLD_RuntimeAndPythonAPI.md` (контракт исполнения)
-  - `docs/01_Architecture/05_LLD_Testing.md` (тесты симулятора)
+  - `docs/ideas/01_Architecture/03_LLD_RuntimeAndPythonAPI.md` (контракт исполнения)
+  - `docs/ideas/01_Architecture/05_LLD_Testing.md` (тесты симулятора)
 
 ## 1. Назначение
 
@@ -85,8 +85,8 @@
 
 См. документы:
 
-- `docs/solutions/10_hardware_latency_profiling_and_embedding.md`
-- `docs/solutions/11_pull_based_adaptive_scheduling.md`
+- `docs/ideas/solutions/10_hardware_latency_profiling_and_embedding.md`
+- `docs/ideas/solutions/11_pull_based_adaptive_scheduling.md`
 
 Идея: симулятор становится “песочницей”, куда можно подмешать:
 

@@ -12,12 +12,12 @@
   - подробные руководства по сборке/тестам (это в `docs/BUILD_SYSTEM.md` и `test/TESTING.md`),
   - описание TT-metal как продукта (tt-lang лишь интегрируется с ним через toolchain и runtime).
 - **Связанные документы**:
-  - `docs/01_Architecture/02_LLD_CompilerPipeline.md`
-  - `docs/01_Architecture/03_LLD_RuntimeAndPythonAPI.md`
-  - `docs/01_Architecture/04_LLD_Simulator.md`
-  - `docs/01_Architecture/05_LLD_Testing.md`
-  - `docs/01_Architecture/06_LLD_BuildSystem.md`
-  - `docs/01_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md` (proposal)
+  - `docs/ideas/01_Architecture/02_LLD_CompilerPipeline.md`
+  - `docs/ideas/01_Architecture/03_LLD_RuntimeAndPythonAPI.md`
+  - `docs/ideas/01_Architecture/04_LLD_Simulator.md`
+  - `docs/ideas/01_Architecture/05_LLD_Testing.md`
+  - `docs/ideas/01_Architecture/06_LLD_BuildSystem.md`
+  - `docs/ideas/01_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md` (proposal)
   - Языковая спецификация: `docs/sphinx/specs/TTLangSpecification.md`
 
 ## 1. Цель и область

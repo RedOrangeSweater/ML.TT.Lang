@@ -6,8 +6,8 @@
 - **Аудитория**: разработчики диалектов/пасс-пайплайнов, а также инженеры, которые хотят строгую семантическую валидацию LLK протоколов.
 - **Зачем**: отделить "семантику и контракты" от "формы C++/файлов", чтобы получить системную (CFG-aware) валидацию и позднюю эмиссию.
 - **Связанные документы**:
-  - `docs/01_Architecture/01_HighLevelDesign.md`
-  - `docs/01_Architecture/02_LLD_CompilerPipeline.md`
+  - `docs/ideas/01_Architecture/01_HighLevelDesign.md`
+  - `docs/ideas/01_Architecture/02_LLD_CompilerPipeline.md`
 
 ## 1. Назначение
 
@@ -26,8 +26,8 @@
 
 Текущий пайплайн в tt-lang фиксируется в:
 
-- `docs/01_Architecture/01_HighLevelDesign.md`
-- `docs/01_Architecture/02_LLD_CompilerPipeline.md`
+- `docs/ideas/01_Architecture/01_HighLevelDesign.md`
+- `docs/ideas/01_Architecture/02_LLD_CompilerPipeline.md`
 
 Логическая цепочка:
 
