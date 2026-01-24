@@ -136,9 +136,11 @@ sequenceDiagram
   Py->>Py: "build_TTL_IR"
   Py->>Optimizer: "run_pipeline(TTL_to_TTKernel)"
   Optimizer->>Toolchain: "MLIR_passes_and_dialects"
+  Toolchain-->>Optimizer: "dialects_registered"
   Optimizer-->>Py: "TTKernel_or_EmitC_IR"
   Py->>Translator: "translate_to_cpp()"
   Translator->>Toolchain: "EmitC_translation_support"
+  Toolchain-->>Translator: "translation_ready"
   Translator-->>User: "C++_artifacts"
 ```
 
