@@ -56,8 +56,8 @@ Pull‑планирование — обобщение:
 flowchart TD
   WorkerIdle["Worker_idle"] --> CreateRequest["Create_request"]
   CreateRequest --> SelectTask["Select_task_or_dependency"]
-  SelectTask -->| "task_ready" | ClaimTask["Claim_task"]
-  SelectTask -->| "needs_input" | DemandDeps["Demand_dependencies"]
+  SelectTask -->|"task_ready"| ClaimTask["Claim_task"]
+  SelectTask -->|"needs_input"| DemandDeps["Demand_dependencies"]
   DemandDeps --> SelectTask
   ClaimTask --> Execute["Execute_on_resource"]
   Execute --> UpdateState["Publish_outputs"]
@@ -174,6 +174,67 @@ flowchart TD
 ### Уровень C: “runtime‑адаптация”
 
 Самый амбициозный вариант: runtime собирает телеметрию и адаптивно перестраивает политику pull (или параметры rate limiting/hysteresis) на лету.
+
+## Симулятор и аппроксимация задержек (из измерений в policy)
+
+Идея pull‑based планирования особенно сильна, если у ресурса есть хоть какая‑то “стоимостная” модель:
+
+- сколько будет стоить подтянуть данные (latency/контеншн),
+- сколько будет стоить миграция состояния на другое ядро,
+- где ожидается “пробка” по NOC/compute/CB,
+- когда лучше сделать backpressure, а когда — агрессивный prefetch.
+
+### Зачем нужен симулятор после hardware‑замеров
+
+Полевые измерения (см. `docs/solutions/hardware_latency_profiling_and_embedding.md`) дают:
+
+- распределения latency (p50/p90/p99),
+- зависимость latency/throughput от нагрузки (in-flight, фоновые потоки),
+- зоны “режимов” (например: «NOC доминирует», «compute доминирует», «tail latency доминирует»).
+
+Дальше хочется иметь симулятор (или быструю модель), который:
+
+- принимает те же параметры нагрузки/размеров,
+- возвращает аппроксимацию задержек/вероятностей хвостов,
+- позволяет оффлайн прогнать тысячи политик (prefetch depth, throttling, backpressure),
+- и подобрать правила, которые потом встраиваются в pull‑policy.
+
+### Варианты аппроксимации (от простого к сложному)
+
+- **Piecewise/lookup модель**:
+  - таблички по ключевым осям (размер transfer, in-flight, read/write ratio, cb_pages),
+  - интерполяция между соседями,
+  - плюс “штрафы” за контеншн при превышении порогов.
+- **Регрессионные деревья / GBDT**:
+  - обучить `latency_hat = f(features)` и `tail_hat = g(features)` на логах,
+  - плюс отдельные модели для read/write/compute.
+  - удобно тем, что деревья дают интерпретируемые пороги (“если in_flight > 4, tail растёт резко”).
+- **Эмбеддинги режимов**:
+  - кластеризовать прогоны (UMAP/другие) и иметь “mode_id”,
+  - policy может переключаться по mode_id (например, “режим пробок → агрессивный backpressure”).
+
+### Как это подключается к pull‑планированию
+
+1) **`cost_hint` для выбора задачи**
+   Работник выбирает не просто “первую готовую”, а минимизирует прогнозируемую стоимость:
+   - \(score = -latency\\_hat - w\\cdot tail\\_hat + bonus\\_for\\_unblocking\).
+
+2) **Throttling (анти‑пробка)**
+   Если модель говорит, что NOC уже в зоне контеншна, worker снижает генерацию demand/prefetch.
+
+3) **Backpressure**
+   Если ожидается, что `CB_out` скоро переполнится (writer отстаёт), compute-worker снижает pull новых задач.
+
+4) **Миграция/перераспределение**
+   Решение “переехать на другой compute” делается только если:
+   - \(migration\\_cost < expected\\_stall\\_saved\) по модели.
+
+### Практичный путь внедрения
+
+- Шаг 1: начать с простой lookup модели + пороги.
+- Шаг 2: собрать датасет измерений.
+- Шаг 3: обучить деревья/GBDT и сравнить с lookup.
+- Шаг 4: использовать модель как guidance (policy‑hint), сохраняя детерминизм решений в компиляторе.
 
 ## Риски и ограничения (важно явно)
 
