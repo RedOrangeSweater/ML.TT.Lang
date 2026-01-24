@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 import ast
+import contextlib
 import functools
 import inspect
 import random
@@ -571,6 +572,22 @@ def _verify_compiled_module(
         raise RuntimeError(formatted) from None
 
 
+@contextlib.contextmanager
+def _verbose_compilation(
+    *,
+    verbose: bool,
+    module_ast: ast.AST,
+    compiler: TTLGenericCompiler,
+) -> Iterator[None]:
+    if verbose:
+        print(ast.dump(module_ast, indent=4) + "\n")
+    try:
+        yield
+    finally:
+        if verbose:
+            print(compiler.module)
+
+
 class KernelDecoratorOptions(BaseModel):
     """Validated options for the @kernel / @pykernel_gen decorator.
 
@@ -659,17 +676,14 @@ def _compile(
                 *args,
                 compiler_options=compiler_options,
             )
-            if verbose:
-                print(ast.dump(module_ast, indent=4) + "\n")
-            try:
+            with _verbose_compilation(
+                verbose=verbose, module_ast=module_ast, compiler=compiler
+            ):
                 compiler.visit(module_ast)
                 _verify_compiled_module(
                     compiler=compiler, source_lines=source_lines, source_file=source_file
                 )
                 return compiler
-            finally:
-                if verbose:
-                    print(compiler.module)
 
         _wrapper._decorator_name = kernel_type + "_thread"
         _wrapper._source_file = source_file
