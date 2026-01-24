@@ -233,4 +233,3 @@ flowchart LR
   - beam search всё равно последователен по шагам
   - нужна полная thread-safety (без shared мутаций)
   - детерминизм требует жёсткого tie-break
-

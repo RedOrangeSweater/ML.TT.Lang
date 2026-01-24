@@ -21,7 +21,12 @@ from dataclasses import dataclass
 
 import salabim as sim  # pyright: ignore[reportMissingImports]
 
-from tools.scheduling_sim.models import BusyResource, LatencyConfig, LevelBuffer, SimResult
+from tools.scheduling_sim.models import (
+    BusyResource,
+    LatencyConfig,
+    LevelBuffer,
+    SimResult,
+)
 
 
 @dataclass(frozen=True)
@@ -126,6 +131,7 @@ def run_pingpong_two_slots(cfg: SimConfig) -> SimResult:
                 noc_read.note_release()
                 self.release(noc_read)
                 slot.ready.set(True)
+
         return Prefetch()
 
     class Driver(sim.Component):
@@ -149,7 +155,9 @@ def run_pingpong_two_slots(cfg: SimConfig) -> SimResult:
 
                 # Start prefetch for the next tile into the freed slot (asap)
                 if next_tile < tiles_total:
-                    prefetch(s)  # reuse same slot after compute; models "fill in parallel"
+                    prefetch(
+                        s
+                    )  # reuse same slot after compute; models "fill in parallel"
                     next_tile += 1
 
                 # Compute
@@ -331,4 +339,3 @@ def run_rcw_pipeline(cfg: SimConfig) -> SimResult:
         cb_in_max_level=cb_in.max_level,
         cb_out_max_level=cb_out.max_level,
     )
-

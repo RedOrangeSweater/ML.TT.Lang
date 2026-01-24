@@ -329,4 +329,3 @@ flowchart LR
 - beam width `K = 8..16`,
 - per-state candidate cap `M = 8..16` (guidance/эвристика для top-M из ready),
 - coarse latency таблицы, затем FDO.
-

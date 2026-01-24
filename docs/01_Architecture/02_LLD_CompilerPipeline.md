@@ -89,4 +89,3 @@ flowchart LR
   - в `lib/Dialect/TTL/Pipelines/TTLPipelines.cpp`.
 - Добавить тест:
   - `test/ttlang/Conversion/*` или `test/ttlang/Translate/*`.
-

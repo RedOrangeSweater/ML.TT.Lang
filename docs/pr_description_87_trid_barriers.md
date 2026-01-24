@@ -116,4 +116,3 @@ llvm-lit -sv test/ttlang/Conversion/TTLToTTKernel
 - [x] Self-reviewed (style, logic)
 - [x] Added/updated tests
 - [x] PR is small and focused on one task (#87)
-

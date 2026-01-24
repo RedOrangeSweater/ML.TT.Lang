@@ -102,4 +102,3 @@ class LevelBuffer:
 
     def wait_can_pop(self) -> sim.State:
         return self._can_pop
-

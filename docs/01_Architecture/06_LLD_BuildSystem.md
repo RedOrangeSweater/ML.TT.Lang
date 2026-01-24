@@ -39,4 +39,3 @@ tt‑lang использует CMake сборку, которая **переис
 - “не найден toolchain” → проверить `TTMLIR_TOOLCHAIN_DIR` / `TTMLIR_BUILD_DIR`.
 - “несовместимые символы/линковка” → проверить, что toolchain и tt‑mlir совпадают по версии и собраны с нужными биндингами.
 - “python/venv mismatch” → убедиться, что активирован правильный env из toolchain.
-
