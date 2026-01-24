@@ -12,6 +12,7 @@ import contextlib
 import functools
 import inspect
 import random
+from typing import Literal
 
 try:
     import ttnn
@@ -60,6 +61,9 @@ from .settings import settings
 
 # Thread registry for automatic collection of @compute and @datamovement threads
 _thread_registry: list[Callable[..., object]] = []
+
+# Typed thread kind for kernel compilation decorators.
+KernelType = Literal["compute", "datamovement"]
 
 
 def _register_thread(thread_fn: Callable[..., object]) -> None:
@@ -634,7 +638,7 @@ class KernelDecoratorOptions(BaseModel):
 
 
 def _compile(
-    kernel_type: str,
+    kernel_type: KernelType,
     verbose: bool = False,
 ) -> Callable[..., object]:
     """
