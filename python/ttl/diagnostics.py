@@ -10,9 +10,10 @@ source code snippets with ASCII arrows pointing to the error location.
 
 from __future__ import annotations
 
-import os
 import re
 from typing import List, Optional, Tuple
+
+from .settings import settings
 
 
 def find_variable_assignment(
@@ -38,7 +39,7 @@ def find_variable_assignment(
 
 def _verbose_errors_enabled() -> bool:
     """Check if verbose MLIR error output is enabled."""
-    return os.environ.get("TTLANG_VERBOSE_ERRORS", "0") == "1"
+    return settings.verbose_errors
 
 
 class SourceDiagnostic:

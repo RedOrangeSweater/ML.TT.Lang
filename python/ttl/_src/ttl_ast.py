@@ -2,12 +2,22 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+from __future__ import annotations
+
 import ast
 import inspect
 from dataclasses import dataclass
-from typing import List, Set
 
 from pykernel._src.kernel_ast import TTCompilerBase
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import *
 
@@ -97,45 +107,151 @@ def _build_tensor_type(ctx, tensor, grid, tiled, memory_space):
 class CompilerContext:
     """Immutable compilation context for TTL kernels."""
 
-    grid: List[int]
+    grid: list[int]
     memory_space: str
     tiled: bool
 
+
+class TTLCompilerOptions(BaseModel):
+    """Validated options/config for `TTLGenericCompiler`.
+
+    This replaces ad-hoc `kwargs.get(...)` plumbing in compiler initialization.
+    """
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True, arbitrary_types_allowed=True)
+
+    grid: list[int] = Field(default_factory=lambda: [1, 1])
+    memory_space: str = "L1"
+    tiled: bool = True
+
+    debug_locations: bool = False
+    source_file: str = Field(default="<unknown>", alias="_source_file")
+    source_lines: list[str] = Field(default_factory=list, alias="_source_lines")
+    line_offset: int = Field(default=0, alias="_line_offset")
+    fn_globals: dict[str, object] = Field(default_factory=dict, alias="_globals")
+
+    # Extra metadata keys used by the base compiler.
+    verbose: bool | None = Field(default=None, alias="_verbose")
+    source_code: list[str] | None = Field(default=None, alias="_source_code")
+
+    @model_validator(mode="after")
+    def _derive_base_compiler_metadata(self) -> "TTLCompilerOptions":
+        if self.source_code is None and self.verbose:
+            self.source_code = list(self.source_lines)
+        return self
+
+    @field_validator("grid", mode="before")
+    @classmethod
+    def _validate_grid(cls, v: object) -> list[int]:
+        if v is None:
+            return [1, 1]
+        if not isinstance(v, (list, tuple)):
+            raise TypeError(f"grid must be a list/tuple of length 2, got {type(v).__name__}")
+        if len(v) != 2:
+            raise ValueError(f"grid must be length 2 (cols, rows), got {len(v)}")
+        cols, rows = int(v[0]), int(v[1])
+        if cols <= 0 or rows <= 0:
+            raise ValueError(f"grid dimensions must be positive, got {(cols, rows)}")
+        return [cols, rows]
+
+    @field_validator("memory_space")
+    @classmethod
+    def _validate_memory_space(cls, v: str) -> str:
+        if v not in ("L1", "DRAM"):
+            raise ValueError(f"Only L1 or DRAM memory space supported, got {v!r}")
+        return v
+
+    def to_context(self) -> CompilerContext:
+        """Build a `CompilerContext` from the validated options."""
+        return CompilerContext(
+            **self.model_dump(include={"grid", "memory_space", "tiled"}, mode="python")
+        )
 
 class TTLGenericCompiler(TTCompilerBase):
     """Compiler that generates TTL dialect ops from Python AST."""
 
     _syntax = {}
 
-    def __init__(self, name, kernel_type=None, captures={}, *args, **kwargs):
-        super().__init__(name, kernel_type, *args, **kwargs)
-        self.loc = Location.name(self.name)
-        self.captures = captures
-        self.streams: Set[str] = set()
-        self.supported_nodes.append(ast.AsyncFunctionDef)
-        self.supported_nodes.append(ast.With)
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
-        self.context = CompilerContext(
-            grid=kwargs.get("grid", [1, 1]),
-            memory_space=kwargs.get("memory_space", "L1"),
-            tiled=kwargs.get("tiled", True),
+    compiler_options: TTLCompilerOptions
+    captures: dict[str, object] = Field(default_factory=dict)
+    streams: set[str] = Field(default_factory=set)
+    loc: object | None = None
+    context: CompilerContext | None = None
+
+    # Non-serialized per-invocation state.
+    _cb_info: list[dict[str, object]] = PrivateAttr(default_factory=list)
+    _fn_map: dict[str, object] = PrivateAttr(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _merge_compiler_options_into_extra(cls, data: object) -> object:
+        """
+        Preserve historical behavior where `TTLCompilerOptions` fields (including
+        underscore-aliased metadata like `_source_file`) were forwarded as extra
+        fields into `TTCompilerBase`.
+        """
+        if not isinstance(data, dict):
+            return data
+        opts = data.get("compiler_options")
+        if isinstance(opts, TTLCompilerOptions):
+            # Options provide defaults; explicit fields passed to this model win.
+            return {**opts.model_dump(by_alias=True, exclude_none=True), **data}
+        return data
+
+    @field_validator("captures", mode="before")
+    @classmethod
+    def _coerce_captures(cls, v: object) -> dict[str, object]:
+        if v is None:
+            return {}
+        if not isinstance(v, dict):
+            raise TypeError(f"captures must be a dict[str, object], got {type(v).__name__}")
+        return v
+
+    @field_validator("supported_nodes")
+    @classmethod
+    def _extend_supported_nodes(cls, v: list[type[ast.AST]]) -> list[type[ast.AST]]:
+        # Extend the base supported nodes list (do not mutate in-place).
+        nodes = list(v)
+        for node_type in (ast.AsyncFunctionDef, ast.With):
+            if node_type not in nodes:
+                nodes.append(node_type)
+        return nodes
+
+    @field_validator("loc", mode="after")
+    @classmethod
+    def _derive_loc(cls, v: object, info: ValidationInfo) -> object:
+        if v is not None:
+            return v
+        return Location.name(info.data["name"])
+
+    @field_validator("context", mode="after")
+    @classmethod
+    def _derive_context(cls, v: object, info: ValidationInfo) -> CompilerContext:
+        if isinstance(v, CompilerContext):
+            return v
+        return info.data["compiler_options"].to_context()
+
+    def __init__(
+        self,
+        name: str,
+        kernel_type: str | None = None,
+        captures: dict[str, object] | None = None,
+        *args: object,
+        compiler_options: TTLCompilerOptions,
+    ):
+        super().__init__(
+            name=name,
+            kernel_type=kernel_type,
+            args=args,
+            captures=captures,
+            compiler_options=compiler_options,
         )
 
-        # Debug location support
-        self.debug_locations = kwargs.get("debug_locations", False)
-        self.source_file = kwargs.get("_source_file", "<unknown>")
-        self.source_lines = kwargs.get("_source_lines", [])
-        self.line_offset = kwargs.get("_line_offset", 0)
-
-        # Function globals for resolving module-level constants
-        self.fn_globals = kwargs.get("_globals", {})
-
-        # Track CB info for binding inside function body
-        self._cb_info: List[dict] = []  # [{name, shape, element_type, cb_index}, ...]
-
-        self._fn_map = {}
-        for name, val in TTLGenericCompiler._syntax.items():
-            self._fn_map[name] = val
+    def model_post_init(self, __context: object) -> None:
+        # Mirror legacy behavior: per-instance copy of the syntax mapping.
+        self._fn_map = dict(self._syntax)
 
     def visit_Assign(self, node):
         """Handle tuple unpacking for TTL functions like core(dims=2)."""
@@ -160,17 +276,26 @@ class TTLGenericCompiler(TTCompilerBase):
 
     def _loc_for_node(self, node):
         """Return file location for node if debug_locations enabled, else name location."""
-        if self.debug_locations and hasattr(node, "lineno"):
-            return _make_file_loc(self.ctx, self.source_file, node, self.line_offset)
+        if self.compiler_options.debug_locations and hasattr(node, "lineno"):
+            return _make_file_loc(
+                self.ctx,
+                self.compiler_options.source_file,
+                node,
+                self.compiler_options.line_offset,
+            )
         return self.loc
 
     def _raise_error(self, node, message: str):
         """Raise a TTLangCompileError with source location from AST node."""
-        line = node.lineno + self.line_offset if hasattr(node, "lineno") else None
+        line = (
+            node.lineno + self.compiler_options.line_offset
+            if hasattr(node, "lineno")
+            else None
+        )
         col = node.col_offset + 1 if hasattr(node, "col_offset") else None
         raise TTLangCompileError(
             message,
-            source_file=self.source_file,
+            source_file=self.compiler_options.source_file,
             line=line,
             col=col,
         )
@@ -203,8 +328,8 @@ class TTLGenericCompiler(TTCompilerBase):
 
         # Check if it's a module-level constant
         var_name = node.id
-        if var_name in self.fn_globals:
-            val = self.fn_globals[var_name]
+        if var_name in self.compiler_options.fn_globals:
+            val = self.compiler_options.fn_globals[var_name]
             if isinstance(val, int):
                 return arith.ConstantOp(
                     IntegerType.get_signless(64, self.ctx), val

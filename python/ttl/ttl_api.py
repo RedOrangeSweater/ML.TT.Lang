@@ -6,12 +6,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import ast
 import functools
 import inspect
-import os
 import random
-from typing import Callable, Dict, List, Optional, Union
 
 try:
     import ttnn
@@ -19,7 +18,7 @@ except (ModuleNotFoundError, ImportError):
     ttnn = None
 
 import ttl._mlir_libs._ttlang  # Register tt-lang passes
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pykernel._src.utils import _cleanup_source_code
 from ttmlir.dialects import ttkernel
 from ttmlir.ir import *
@@ -36,7 +35,7 @@ from ._src.tensor_registry import (
     register_tensor_name,
     register_tensor_source,
 )
-from ._src.ttl_ast import TTLGenericCompiler
+from ._src.ttl_ast import TTLCompilerOptions, TTLGenericCompiler
 from .circular_buffer import CircularBuffer, get_cb_count
 from .constants import SUPPORTED_MEMORY_SPACES
 from .diagnostics import (
@@ -56,12 +55,13 @@ from .kernel_runner import (
 )
 from .operators import CopyTransferHandler, TensorBlock, copy
 from .ttl_utils import get_thread_type_string
+from .settings import settings
 
 # Thread registry for automatic collection of @compute and @datamovement threads
-_thread_registry: List[Callable] = []
+_thread_registry: list[Callable[..., object]] = []
 
 
-def _register_thread(thread_fn: Callable) -> None:
+def _register_thread(thread_fn: Callable[..., object]) -> None:
     """Register a thread function during decoration."""
     _thread_registry.append(thread_fn)
 
@@ -71,7 +71,7 @@ def _clear_thread_registry() -> None:
     _thread_registry.clear()
 
 
-def _get_registered_threads() -> List[Callable]:
+def _get_registered_threads() -> list[Callable[..., object]]:
     """Get all registered threads and clear the registry."""
     threads = list(_thread_registry)
     _thread_registry.clear()
@@ -97,7 +97,7 @@ def _make_cache_key(args: tuple) -> tuple:
 
 def _should_execute() -> bool:
     """Check if kernel execution should proceed (not compile-only mode)."""
-    return os.environ.get("TTLANG_COMPILE_ONLY", "0") != "1"
+    return not settings.compile_only
 
 
 def _detect_memory_space_from_tensor(tensor, default: str) -> str:
@@ -417,8 +417,8 @@ def _compile_ttnn_kernel(
 
 
 def _collect_captures(
-    f: Callable,
-) -> Dict[str, Union[int, CircularBuffer]]:
+    f: Callable[..., object],
+) -> dict[str, int | CircularBuffer | object]:
     """
     Collect and convert captured variables from function closure.
 
@@ -534,80 +534,92 @@ class _ThreadCompilerKwargs(BaseModel):
         return v
 
 
-class _ThreadCompilerInvocation(BaseModel):
-    """
-    Fully-derived compilation inputs for a @compute/@datamovement thread.
+def _build_thread_compiler_options(
+    *,
+    fn: Callable[..., object],
+    user_kwargs: _ThreadCompilerKwargs,
+    source_file: str,
+    source_lines: list[str],
+    verbose: bool,
+) -> TTLCompilerOptions:
+    user_options = user_kwargs.model_dump(exclude_none=True)
+    line_offset = _get_source_line_offset(fn)
+    # Use model_validate to avoid pyright/pydantic-plugin alias-name confusion.
+    return TTLCompilerOptions.model_validate(
+        user_options
+        | {
+            "debug_locations": True,
+            "source_file": source_file,
+            "source_lines": source_lines,
+            "line_offset": line_offset,
+            "fn_globals": fn.__globals__,
+            "verbose": verbose or None,
+        }
+    )
 
-    Centralizes:
-    - user kwargs validation/normalization
-    - injected compiler metadata kwargs
-    - source extraction and AST parsing
+
+def _verify_compiled_module(
+    *,
+    compiler: TTLGenericCompiler,
+    source_lines: list[str],
+    source_file: str,
+) -> None:
+    try:
+        compiler.module.operation.verify()
+    except Exception as e:
+        formatted = format_mlir_error(str(e), source_lines, source_file)
+        raise RuntimeError(formatted) from None
+
+
+class KernelDecoratorOptions(BaseModel):
+    """Validated options for the @kernel / @pykernel_gen decorator.
+
+    This model centralizes validation that was previously ad-hoc in pykernel_gen().
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    fn: Callable[..., object]
-    verbose: bool
-    source_file: str
-    user_kwargs: dict[str, object] = Field(default_factory=dict)
+    grid: tuple[int, int] | list[int] | Callable[..., tuple[int, int] | list[int]]
+    indexing_maps: list[Callable[..., object]] = Field(default_factory=list)
+    iterator_types: list[str] = Field(default_factory=list)
+    num_outs: int = 1
+    memory_space: str = "L1"
+    tiled: bool = True
 
-    source_code: str = ""
-    source_lines: list[str] = Field(default_factory=list)
-    module_ast: ast.Module | None = None
-    compiler_kwargs: dict[str, object] = Field(default_factory=dict)
+    @field_validator("memory_space")
+    @classmethod
+    def _validate_memory_space(cls, v: str) -> str:
+        if v not in SUPPORTED_MEMORY_SPACES:
+            allowed = ", ".join(sorted(SUPPORTED_MEMORY_SPACES))
+            raise ValueError(f"memory_space must be one of {{{allowed}}}, got {v!r}")
+        return v
+
+    @field_validator("num_outs")
+    @classmethod
+    def _validate_num_outs(cls, v: int) -> int:
+        if v != 1:
+            raise ValueError(f"num_outs must be 1, got {v}")
+        return v
 
     @model_validator(mode="after")
-    def _build(self) -> "_ThreadCompilerInvocation":
-        self.source_code = _cleanup_source_code(self.fn)
-        self.source_lines = self.source_code.splitlines()
+    def _check_indexing_maps_and_iterator_types(self) -> "KernelDecoratorOptions":
+        if self.iterator_types and not self.indexing_maps:
+            raise ValueError("indexing_maps must be set when iterator_types is set")
 
-        line_offset = _get_source_line_offset(self.fn)
-
-        # Validate/normalize user kwargs first, then inject internal compiler metadata.
-        user_kwargs = _ThreadCompilerKwargs.model_validate(self.user_kwargs).model_dump(
-            exclude_none=True
-        )
-
-        compiler_kwargs_model = _ThreadCompilerCompilerKwargs.model_validate(
-            {
-                **user_kwargs,
-                "source_file": self.source_file,
-                "source_lines": self.source_lines,
-                "line_offset": line_offset,
-                "debug_locations": True,
-                "source_code": self.source_lines if self.verbose else None,
-                "verbose": True if self.verbose else None,
-            }
-        )
-        self.compiler_kwargs = compiler_kwargs_model.model_dump(
-            by_alias=True, exclude_none=True
-        )
-        self.module_ast = ast.parse(self.source_code)
+        if self.indexing_maps and self.iterator_types:
+            for indexing_map in self.indexing_maps:
+                num_dims = len(list(inspect.signature(indexing_map).parameters))
+                if num_dims != len(self.iterator_types):
+                    raise ValueError(
+                        f"indexing_map has {num_dims} dimensions but iterator_types has {len(self.iterator_types)}"
+                    )
         return self
 
 
-class _ThreadCompilerCompilerKwargs(BaseModel):
-    """Compiler kwargs for `TTLGenericCompiler`, using aliases for internal keys."""
-
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
-
-    # Public / semantic names (dumped with internal aliases)
-    source_file: str = Field(alias="_source_file")
-    source_lines: list[str] = Field(alias="_source_lines")
-    line_offset: int = Field(alias="_line_offset")
-
-    # Optional debug helpers for verbatim source comments and printing.
-    source_code: list[str] | None = Field(default=None, alias="_source_code")
-    verbose: bool | None = Field(default=None, alias="_verbose")
-
-    # Compiler feature toggle (not underscore-prefixed)
-    debug_locations: bool = True
-
-
 def _compile(
-    kernel_type: Optional[str] = None,
+    kernel_type: str,
     verbose: bool = False,
-) -> Callable:
+) -> Callable[..., object]:
     """
     Internal decorator for compiling kernel threads.
 
@@ -627,46 +639,37 @@ def _compile(
             source_file = "<unknown>"
 
         @functools.wraps(f)
-        def _wrapper(*args, **kwargs):
-            try:
-                inv = _ThreadCompilerInvocation.model_validate(
-                    {
-                        "fn": f,
-                        "verbose": verbose,
-                        "source_file": source_file,
-                        "user_kwargs": kwargs,
-                    }
-                )
-            except ValidationError as e:
-                # Surface a friendlier error than a raw Pydantic traceback.
-                raise TypeError(str(e)) from None
+        def _wrapper(*args, **user_kwargs):
+            validated_user_kwargs = _ThreadCompilerKwargs.model_validate(user_kwargs)
+            source_code = _cleanup_source_code(f)
+            source_lines = str(source_code).splitlines()
+            compiler_options = _build_thread_compiler_options(
+                fn=f,
+                user_kwargs=validated_user_kwargs,
+                source_file=source_file,
+                source_lines=source_lines,
+                verbose=verbose,
+            )
+            module_ast = ast.parse(str(source_code))
 
-            b = TTLGenericCompiler(
+            compiler = TTLGenericCompiler(
                 f.__name__,
                 kernel_type,
                 _collect_captures(f),
                 *args,
-                _globals=f.__globals__,
-                **inv.compiler_kwargs,
+                compiler_options=compiler_options,
             )
-
             if verbose:
-                assert inv.module_ast is not None
-                print(ast.dump(inv.module_ast, indent=4) + "\n")
-
-            assert inv.module_ast is not None
-            b.visit(inv.module_ast)
-
-            if verbose:
-                print(b.module)
-
+                print(ast.dump(module_ast, indent=4) + "\n")
             try:
-                b.module.operation.verify()
-            except Exception as e:
-                formatted = format_mlir_error(str(e), inv.source_lines, source_file)
-                raise RuntimeError(formatted) from None
-
-            return b
+                compiler.visit(module_ast)
+                _verify_compiled_module(
+                    compiler=compiler, source_lines=source_lines, source_file=source_file
+                )
+                return compiler
+            finally:
+                if verbose:
+                    print(compiler.module)
 
         _wrapper._decorator_name = kernel_type + "_thread"
         _wrapper._source_file = source_file
@@ -746,17 +749,17 @@ class Program:
 
 
 def _compile_kernel(
-    f: Callable,
-    args: tuple,
-    kwargs: dict,
-    grid: Union[tuple, List[int]],
-    indexing_maps: List[Callable],
-    iterator_types: List[str],
+    f: Callable[..., object],
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
+    grid: tuple[int, int] | list[int],
+    indexing_maps: list[Callable[..., object]],
+    iterator_types: list[str],
     num_outs: int,
     memory_space: str,
     tiled: bool,
     program_hash: int,
-) -> Optional[CompiledTTNNKernel]:
+) -> CompiledTTNNKernel | None:
     """
     Compile kernel function to MLIR and return CompiledTTNNKernel.
 
@@ -843,10 +846,6 @@ def _compile_kernel(
         kwargs=injected_program_kwargs,
     )
 
-    # Always generate source locations for error messages
-    # TTLANG_DEBUG_LOCATIONS only controls whether locations are printed in MLIR output
-    print_debug_locations = os.environ.get("TTLANG_DEBUG_LOCATIONS", "0") == "1"
-
     ctx = Context()
     loc = Location.unknown(ctx)
     with ctx, loc:
@@ -899,15 +898,14 @@ def _compile_kernel(
                 ct.func_entry.operation.detach_from_parent()
                 module.body.append(ct.func_entry)
 
-        initial_mlir_path = os.environ.get("TTLANG_INITIAL_MLIR")
-        if initial_mlir_path:
-            with open(initial_mlir_path, "w") as fd:
+        if settings.initial_mlir_path is not None:
+            with open(settings.initial_mlir_path, "w") as fd:
                 module.operation.print(
                     file=fd,
-                    enable_debug_info=print_debug_locations,
+                    enable_debug_info=settings.debug_locations,
                     print_generic_op_form=False,
                 )
-            print(f"SAVED INITIAL TO {initial_mlir_path}")
+            print(f"SAVED INITIAL TO {settings.initial_mlir_path}")
 
         verify = True
 
@@ -941,7 +939,7 @@ def _compile_kernel(
             # Pretty stack traces are optional, silently continue if unavailable
             pass
 
-        if os.environ.get("TTLANG_VERBOSE_PASSES"):
+        if settings.verbose_passes:
             print("Running custom pipeline:", pm)
             ctx.enable_multithreading(False)
             pm.enable_ir_printing(
@@ -967,15 +965,14 @@ def _compile_kernel(
             formatted = format_mlir_error(error_msg, source_lines, source_file)
             raise RuntimeError(formatted) from None
 
-        final_mlir_path = os.environ.get("TTLANG_FINAL_MLIR")
-        if final_mlir_path:
-            with open(final_mlir_path, "w") as fd:
+        if settings.final_mlir_path is not None:
+            with open(settings.final_mlir_path, "w") as fd:
                 module.operation.print(
                     file=fd,
-                    enable_debug_info=print_debug_locations,
+                    enable_debug_info=settings.debug_locations,
                     print_generic_op_form=False,
                 )
-            print(f"SAVED FINAL TO {final_mlir_path}")
+            print(f"SAVED FINAL TO {settings.final_mlir_path}")
 
         # Compile to CompiledTTNNKernel for ttnn.generic_op
         compiled_kernel = _compile_ttnn_kernel(
@@ -991,13 +988,13 @@ def _compile_kernel(
 
 
 def pykernel_gen(
-    grid: Optional[Union[tuple, Callable]] = None,
-    indexing_maps: Optional[List[Callable]] = None,
-    iterator_types: Optional[List[str]] = None,
+    grid: tuple[int, int] | list[int] | Callable[..., tuple[int, int] | list[int]] | None = None,
+    indexing_maps: list[Callable[..., object]] | None = None,
+    iterator_types: list[str] | None = None,
     num_outs: int = 1,
     memory_space: str = "L1",
     tiled: bool = True,
-) -> Callable:
+) -> Callable[..., object]:
     """
     Decorator for generating TTL kernels from Python functions.
 
@@ -1017,45 +1014,28 @@ def pykernel_gen(
         Decorated function that compiles and executes the kernel
 
     Raises:
-        AssertionError: If required parameters are missing or invalid
+        ValueError: If required parameters are missing or invalid
     """
     if grid is None:
         raise ValueError("grid parameter is required")
-    if num_outs != 1:
-        raise ValueError(f"num_outs must be 1, got {num_outs}")
-    if memory_space not in SUPPORTED_MEMORY_SPACES:
-        raise ValueError(
-            f"Invalid memory_space: {memory_space!r}. "
-            f"Must be one of: {', '.join(sorted(SUPPORTED_MEMORY_SPACES))}"
-        )
-    if not isinstance(tiled, bool):
-        raise TypeError(f"tiled must be a boolean, got {type(tiled).__name__}")
-    if iterator_types is not None and indexing_maps is None:
-        raise ValueError("indexing_maps must be set when iterator_types is set")
 
-    if indexing_maps is None:
-        indexing_maps = []
+    opts = KernelDecoratorOptions(
+        grid=grid,
+        indexing_maps=indexing_maps or [],
+        iterator_types=iterator_types or [],
+        num_outs=num_outs,
+        memory_space=memory_space,
+        tiled=tiled,
+    )
 
-    if indexing_maps:
-        for indexing_map in indexing_maps:
-            num_dims = list(tuple(inspect.signature(indexing_map).parameters))
-            if iterator_types is not None:
-                if num_dims != len(iterator_types):
-                    raise ValueError(
-                        f"Number of dimensions ({num_dims}) must match iterator_types length ({len(iterator_types)})"
-                    )
-
-    if iterator_types is None:
-        iterator_types = []
-
-    def _decorator(f):
+    def _decorator(f: Callable[..., object]) -> Callable[..., object]:
         # Per-kernel state: random ID and cache
         kernel_id = random.getrandbits(64)
-        cache: Dict[tuple, CompiledTTNNKernel] = {}
+        cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
 
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
-            resolved_grid = _resolve_grid(grid, args, kwargs)
+            resolved_grid = _resolve_grid(opts.grid, args, kwargs)
 
             # Build cache key from tensor properties
             cache_key = _make_cache_key(args)
@@ -1073,11 +1053,11 @@ def pykernel_gen(
                     args,
                     kwargs,
                     resolved_grid,
-                    indexing_maps,
-                    iterator_types,
-                    num_outs,
-                    memory_space,
-                    tiled,
+                    opts.indexing_maps,
+                    opts.iterator_types,
+                    opts.num_outs,
+                    opts.memory_space,
+                    opts.tiled,
                     program_hash,
                 )
 

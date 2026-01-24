@@ -6,8 +6,8 @@
 # and cleaned up to remove unused code (TTKernelCompiler) and fix i32->i64.
 
 import ast
-import inspect
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from ttmlir.dialects import arith, emitc, func, memref, scf
 from ttmlir.ir import *
 
@@ -16,102 +16,168 @@ from .kernel_types import ClassRegistry
 from .utils import _cast, _get_type_str
 
 
-class TTCompilerBase(PyKernelAstBase):
-    def __init__(self, name, kernel_type=None, *args, **kwargs):
-        assert kernel_type in [
-            None,
-            "datamovement",
-            "noc",
-            "compute",
-        ], "Invalid kernel type"
-        self.supported_nodes = [
-            # Variables
-            ast.Name,
-            ast.Load,
-            ast.Store,
-            # control-flow
-            ast.If,
-            ast.For,
-            # Literals
-            ast.Constant,
-            # Expressions
-            ast.Attribute,
-            ast.Expr,
-            ast.IfExp,
-            ast.Call,
-            ast.UnaryOp,
-            ast.UAdd,
-            ast.USub,
-            ast.Not,
-            ast.Invert,
-            ast.BinOp,
-            ast.Add,
-            ast.Sub,
-            ast.Mult,
-            ast.Div,
-            ast.FloorDiv,
-            ast.Mod,
-            ast.Pow,
-            ast.LShift,
-            ast.RShift,
-            ast.BitOr,
-            ast.BitXor,
-            ast.BitAnd,
-            ast.BoolOp,
-            ast.And,
-            ast.Or,
-            ast.Compare,
-            ast.Eq,
-            ast.NotEq,
-            ast.Lt,
-            ast.LtE,
-            ast.Gt,
-            ast.GtE,
-            # Subscripting
-            ast.Subscript,
-            ast.Attribute,
-            ast.List,
-            ast.Tuple,
-            # Statements
-            ast.Pass,
-            ast.Assign,
-            ast.AugAssign,
-            ast.AnnAssign,
-            # Function-and-class-definitions
-            ast.Module,
-            ast.FunctionDef,
-            ast.arguments,
-            ast.arg,
-        ]
+def _get_default_mlir_context() -> object:
+    try:
+        from ttmlir.dialects._ods_common import get_default_loc_context
 
-        self.name = name
-        try:
-            from ttmlir.dialects._ods_common import get_default_loc_context
+        default_context = get_default_loc_context()
+    except ValueError:
+        default_context = None
+    return default_context if default_context is not None else Context()
 
-            default_context = get_default_loc_context()
-        except ValueError:
-            default_context = None
-        self.ctx = default_context if default_context is not None else Context()
-        self.cursor = Location.unknown(self.ctx)
-        self.module = Module.create(self.cursor)
-        self.insert_point = self.module.body
-        self.func_entry = None
-        self.symbol_tables = []
-        self.module_symbol_table = None
-        self.kernel_type = kernel_type
 
-        self.args = args
-        self.ct_args = {}
-        self.rt_args = None
+def _default_supported_nodes() -> list[type[ast.AST]]:
+    return [
+        # Variables
+        ast.Name,
+        ast.Load,
+        ast.Store,
+        # control-flow
+        ast.If,
+        ast.For,
+        # Literals
+        ast.Constant,
+        # Expressions
+        ast.Attribute,
+        ast.Expr,
+        ast.IfExp,
+        ast.Call,
+        ast.UnaryOp,
+        ast.UAdd,
+        ast.USub,
+        ast.Not,
+        ast.Invert,
+        ast.BinOp,
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.FloorDiv,
+        ast.Mod,
+        ast.Pow,
+        ast.LShift,
+        ast.RShift,
+        ast.BitOr,
+        ast.BitXor,
+        ast.BitAnd,
+        ast.BoolOp,
+        ast.And,
+        ast.Or,
+        ast.Compare,
+        ast.Eq,
+        ast.NotEq,
+        ast.Lt,
+        ast.LtE,
+        ast.Gt,
+        ast.GtE,
+        # Subscripting
+        ast.Subscript,
+        ast.Attribute,
+        ast.List,
+        ast.Tuple,
+        # Statements
+        ast.Pass,
+        ast.Assign,
+        ast.AugAssign,
+        ast.AnnAssign,
+        # Function-and-class-definitions
+        ast.Module,
+        ast.FunctionDef,
+        ast.arguments,
+        ast.arg,
+    ]
 
-        for arg in args:
+
+class TTCompilerBase(BaseModel, PyKernelAstBase):
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    name: str
+    kernel_type: str | None = None
+    args: tuple[object, ...] = ()
+    supported_nodes: list[type[ast.AST]] = Field(default_factory=_default_supported_nodes)
+
+    # Metadata injected by callers (kept for compatibility with existing call sites).
+    verbose: bool = Field(default=False, alias="_verbose")
+    source_code: list[str] = Field(default_factory=list, alias="_source_code")
+
+    # Derived state (kept as normal attrs in post-init).
+    ct_args: dict[str, object] = Field(default_factory=dict)
+    rt_args: object | None = None
+
+    # MLIR compiler state (derived).
+    ctx: object = Field(default_factory=_get_default_mlir_context)
+    cursor: object | None = None
+    module: object | None = None
+    insert_point: object | None = None
+    func_entry: object | None = None
+    symbol_tables: list[dict[str, object]] = Field(default_factory=list)
+    module_symbol_table: object | None = None
+
+    @field_validator("kernel_type")
+    @classmethod
+    def _validate_kernel_type(cls, v: str | None) -> str | None:
+        if v not in (None, "datamovement", "noc", "compute"):
+            raise ValueError(f"Invalid kernel type: {v!r}")
+        return v
+
+    @field_validator("verbose", mode="before")
+    @classmethod
+    def _coerce_verbose(cls, v: object) -> bool:
+        if v is None:
+            return False
+        return bool(v)
+
+    @field_validator("source_code", mode="before")
+    @classmethod
+    def _coerce_source_code(cls, v: object) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return v.splitlines()
+        if isinstance(v, tuple):
+            return [str(x) for x in v]
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        return [str(v)]
+
+    @field_validator("ct_args", mode="before")
+    @classmethod
+    def _derive_ct_args(cls, v: object, info) -> dict[str, object]:
+        if isinstance(v, dict) and v:
+            return v
+        result: dict[str, object] = {}
+        for arg in info.data.get("args", ()):
             if hasattr(arg, "value") and hasattr(arg, "key"):
-                # This is a CompileTimeValue
-                self.ct_args[arg.key] = arg.value
+                result[str(getattr(arg, "key"))] = getattr(arg, "value")
+        return result
 
-        # Get rid of appended metadata sent into compiler
-        self.verbose = kwargs.get("_verbose", False)
-        self.source_code = kwargs.get("_source_code", "")
+    @field_validator("cursor", mode="before")
+    @classmethod
+    def _derive_cursor(cls, v: object, info) -> object:
+        if v is not None:
+            return v
+        return Location.unknown(info.data["ctx"])
+
+    @field_validator("module", mode="before")
+    @classmethod
+    def _derive_module(cls, v: object, info) -> object:
+        if v is not None:
+            return v
+        return Module.create(info.data["cursor"])
+
+    @field_validator("insert_point", mode="before")
+    @classmethod
+    def _derive_insert_point(cls, v: object, info) -> object:
+        if v is not None:
+            return v
+        return info.data["module"].body
+
+    def __init__(self, name: str, kernel_type: str | None = None, *args: object, **kwargs: object):
+        super().__init__(name=name, kernel_type=kernel_type, args=args, **kwargs)
+
+    def model_post_init(self, __context: object) -> None:
+        # All base compiler state is derived via Pydantic fields/validators.
+        return
 
     # Control Flow
     def visit_If(self, node):

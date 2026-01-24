@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +38,48 @@ class TTLangSettings(BaseSettings):
 
     # Enable more verbose MLIR error formatting.
     verbose_errors: bool = False
+
+    @field_validator(
+        "compile_only",
+        "debug_locations",
+        "verbose_errors",
+        mode="before",
+    )
+    @classmethod
+    def _parse_bool_one_is_true(cls, v: object) -> bool:
+        # Preserve existing semantics where these toggles were enabled only by "1".
+        if v is None:
+            return False
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v == "1"
+        return bool(v)
+
+    @field_validator("verbose_passes", mode="before")
+    @classmethod
+    def _parse_verbose_passes(cls, v: object) -> bool:
+        # Preserve existing semantics where presence (non-empty) enabled this toggle.
+        if v is None:
+            return False
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v != ""
+        return bool(v)
+
+    @field_validator("initial_mlir_path", "final_mlir_path", mode="before")
+    @classmethod
+    def _parse_path_or_none(cls, v: object) -> Path | None:
+        if v is None:
+            return None
+        if isinstance(v, Path):
+            return v
+        if isinstance(v, str):
+            if v == "":
+                return None
+            return Path(v)
+        return Path(str(v))
 
 
 settings = TTLangSettings()
