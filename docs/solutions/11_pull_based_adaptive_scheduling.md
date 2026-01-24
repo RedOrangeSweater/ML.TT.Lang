@@ -186,7 +186,7 @@ flowchart TD
 
 ### Зачем нужен симулятор после hardware‑замеров
 
-Полевые измерения (см. `docs/solutions/hardware_latency_profiling_and_embedding.md`) дают:
+Полевые измерения (см. `docs/solutions/10_hardware_latency_profiling_and_embedding.md`) дают:
 
 - распределения latency (p50/p90/p99),
 - зависимость latency/throughput от нагрузки (in-flight, фоновые потоки),

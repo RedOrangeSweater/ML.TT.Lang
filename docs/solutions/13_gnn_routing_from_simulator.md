@@ -36,7 +36,7 @@
 
 Это совпадает по духу с документом:
 
-- `tt-lang/docs/solutions/full_fidelity_sim_rl_env.md`
+- `tt-lang/docs/solutions/04_full_fidelity_sim_rl_env.md`
 
 ### 2.2 Gymnasium API (контракт)
 
@@ -250,8 +250,8 @@ Policy напрямую выбирает действия и ведет симу
 
 Связанные идеи:
 
-- `tt-lang/docs/solutions/beam_search.md`
-- `tt-lang/docs/solutions/pull_based_adaptive_scheduling.md`
+- `tt-lang/docs/solutions/01_beam_search.md`
+- `tt-lang/docs/solutions/11_pull_based_adaptive_scheduling.md`
 
 ## 7. Метрики качества и эксперименты
 
@@ -332,13 +332,13 @@ flowchart TD
 
 ## Ссылки на существующие документы в репозитории
 
-- `tt-lang/docs/solutions/dataflow_routing_pipeline.md`
+- `tt-lang/docs/solutions/09_dataflow_routing_pipeline.md`
   - Дает базовую “оптику” задачи: есть DAG вычислений/данных и есть граф ресурсов, а оптимизация похожа на логистику/маршрутизацию.
   - Этот документ добавляет к этой оптике конкретный ML-рецепт: как получить policy/heuristic из симулятора.
-- `tt-lang/docs/solutions/pull_based_adaptive_scheduling.md`
+- `tt-lang/docs/solutions/11_pull_based_adaptive_scheduling.md`
   - Описывает распределенный “pull” протокол (“свободная касса”) и стабилизаторы (дедуп, TTL, hysteresis).
   - В терминах этого документа GNN+RL может выступать как “локальный мозг” выбора задач/маршрутов, при этом анти-спам правила остаются hard constraints.
-- `tt-lang/docs/solutions/full_fidelity_sim_rl_env.md`
+- `tt-lang/docs/solutions/04_full_fidelity_sim_rl_env.md`
   - Описывает максимальную детализацию симуляции и формализацию как RL-задачи (state/action/reward).
   - Этот документ специализирует эту идею на графовом представлении (GNN) и на варианте “модель как эвристика” для детерминированного поиска.
 - `prompts-search/docs/ttmetal_dropout_llk_trace.md`

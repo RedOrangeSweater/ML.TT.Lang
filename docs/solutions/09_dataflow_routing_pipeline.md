@@ -1,8 +1,8 @@
 # Протаскивание данных через пайплайн как задача маршрутизации по графу ресурсов
 
-## Зачем этот документ (и чем он отличается от `reader_compute_writer_pipeline.md`)
+## Зачем этот документ (и чем он отличается от `08_reader_compute_writer_pipeline.md`)
 
-В `docs/solutions/reader_compute_writer_pipeline.md` уже описана “классика” **Reader/Compute/Writer** и почему конвейеризация через страницы **CB** помогает перекрывать **NOC/DMA** и compute.
+В `docs/solutions/08_reader_compute_writer_pipeline.md` уже описана “классика” **Reader/Compute/Writer** и почему конвейеризация через страницы **CB** помогает перекрывать **NOC/DMA** и compute.
 
 Этот документ дополняет тему другой полезной “оптикой”:
 

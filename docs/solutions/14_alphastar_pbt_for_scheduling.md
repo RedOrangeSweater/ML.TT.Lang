@@ -40,7 +40,7 @@ AlphaStar интересен не только “само-игрой”, а т�
 - контекстную “карту” текущего режима пробок/простоя,
 - компактный вектор состояния для policy/value голов.
 
-Примечание: вместо Transformer можно использовать GNN (см. `tt-lang/docs/solutions/gnn_routing_from_simulator.md`).
+Примечание: вместо Transformer можно использовать GNN (см. `tt-lang/docs/solutions/13_gnn_routing_from_simulator.md`).
 Transformer удобно использовать, если хочется работать именно с множеством сущностей (set encoder) и/или иметь pointer-подобные выборы “какой entity выбрать”.
 
 ## 3. Policy и Value: зачем две сети (и почему обе нужны)
@@ -321,13 +321,13 @@ if agent in bottom:
 
 ## Перекрестные ссылки в репозитории
 
-- `tt-lang/docs/solutions/gnn_routing_from_simulator.md`
+- `tt-lang/docs/solutions/13_gnn_routing_from_simulator.md`
   - “Куда это прикручивается”: формализация симулятора как Gymnasium env и графовое представление + обучение policy/value.
   - Этот документ добавляет внешний слой оптимизации: PBT как способ автоматически тюнить гиперпараметры и стабилизаторы.
-- `tt-lang/docs/solutions/full_fidelity_sim_rl_env.md`
+- `tt-lang/docs/solutions/04_full_fidelity_sim_rl_env.md`
   - “Насколько детально симулировать”: какие ресурсы и задержки стоит моделировать, чтобы reward был осмысленным.
   - PBT особенно полезен на высокой fidelity, потому что ручной тюнинг reward weights и budgets обычно становится неустойчивым.
-- `tt-lang/docs/solutions/adaptive_online_scheduling.md`
+- `tt-lang/docs/solutions/02_adaptive_online_scheduling.md`
   - “Как внедрять без магии”: value/policy как guidance для детерминированного поиска и как встроить PGO/FDO цикл.
   - PBT можно рассматривать как более мощный autotuning слой поверх того же цикла (с контролем репродуцируемости).
 

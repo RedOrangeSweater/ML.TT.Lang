@@ -204,9 +204,9 @@ flowchart TD
 
 ## 10. Связь с документами в этом репозитории
 
-- `tt-lang/docs/solutions/gnn_routing_from_simulator.md` — базовый рецепт “симулятор -> Gymnasium -> GNN policy/value”.
-- `tt-lang/docs/solutions/full_fidelity_sim_rl_env.md` — что значит “полная симуляция” и какие состояния/ресурсы включать.
-- `tt-lang/docs/solutions/dataflow_routing_pipeline.md` — взгляд на проблему как на маршрутизацию по графу ресурсов.
+- `tt-lang/docs/solutions/13_gnn_routing_from_simulator.md` — базовый рецепт “симулятор -> Gymnasium -> GNN policy/value”.
+- `tt-lang/docs/solutions/04_full_fidelity_sim_rl_env.md` — что значит “полная симуляция” и какие состояния/ресурсы включать.
+- `tt-lang/docs/solutions/09_dataflow_routing_pipeline.md` — взгляд на проблему как на маршрутизацию по графу ресурсов.
 
 ## Источники (в тексте)
 
