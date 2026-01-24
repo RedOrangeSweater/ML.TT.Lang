@@ -19,6 +19,7 @@ except (ModuleNotFoundError, ImportError):
     ttnn = None
 
 import ttl._mlir_libs._ttlang  # Register tt-lang passes
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from pykernel._src.utils import _cleanup_source_code
 from ttmlir.dialects import ttkernel
 from ttmlir.ir import *
@@ -472,6 +473,137 @@ def _collect_cb_configs(threads):
     return [cb_configs_dict.get(i) for i in range(max_idx + 1)]
 
 
+class _ThreadCompilerKwargs(BaseModel):
+    """
+    User-supplied keyword arguments accepted by the @compute/@datamovement thread wrapper.
+
+    This model validates and normalizes user kwargs and explicitly forbids "internal"
+    compiler metadata keys, so the wrapper can safely inject them without collisions.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    grid: list[int] | tuple[int, int] | None = None
+    memory_space: str | None = None
+    tiled: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _forbid_internal_kwargs(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+
+        reserved = {
+            "debug_locations",
+            "_globals",
+            "_line_offset",
+            "_source_code",
+            "_source_file",
+            "_source_lines",
+            "_verbose",
+        }
+        bad = [k for k in data.keys() if isinstance(k, str) and (k in reserved or k.startswith("_"))]
+        if bad:
+            bad_sorted = ", ".join(sorted(set(bad)))
+            raise ValueError(
+                f"Reserved/internal kwargs are not allowed: {bad_sorted}. "
+                "Pass only public compile options (e.g. grid, memory_space, tiled)."
+            )
+        return data
+
+    @field_validator("grid")
+    @classmethod
+    def _validate_grid(cls, v: list[int] | tuple[int, int] | None) -> list[int] | None:
+        if v is None:
+            return None
+        if len(v) != 2:
+            raise ValueError(f"grid must be length 2 (cols, rows), got {len(v)}")
+        cols, rows = int(v[0]), int(v[1])
+        if cols <= 0 or rows <= 0:
+            raise ValueError(f"grid dimensions must be positive, got {(cols, rows)}")
+        return [cols, rows]
+
+    @field_validator("memory_space")
+    @classmethod
+    def _validate_memory_space(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if v not in SUPPORTED_MEMORY_SPACES:
+            allowed = ", ".join(sorted(SUPPORTED_MEMORY_SPACES))
+            raise ValueError(f"memory_space must be one of {{{allowed}}}, got {v!r}")
+        return v
+
+
+class _ThreadCompilerInvocation(BaseModel):
+    """
+    Fully-derived compilation inputs for a @compute/@datamovement thread.
+
+    Centralizes:
+    - user kwargs validation/normalization
+    - injected compiler metadata kwargs
+    - source extraction and AST parsing
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    fn: Callable[..., object]
+    verbose: bool
+    source_file: str
+    user_kwargs: dict[str, object] = Field(default_factory=dict)
+
+    source_code: str = ""
+    source_lines: list[str] = Field(default_factory=list)
+    module_ast: ast.Module | None = None
+    compiler_kwargs: dict[str, object] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _build(self) -> "_ThreadCompilerInvocation":
+        self.source_code = _cleanup_source_code(self.fn)
+        self.source_lines = self.source_code.splitlines()
+
+        line_offset = _get_source_line_offset(self.fn)
+
+        # Validate/normalize user kwargs first, then inject internal compiler metadata.
+        user_kwargs = _ThreadCompilerKwargs.model_validate(self.user_kwargs).model_dump(
+            exclude_none=True
+        )
+
+        compiler_kwargs_model = _ThreadCompilerCompilerKwargs.model_validate(
+            {
+                **user_kwargs,
+                "source_file": self.source_file,
+                "source_lines": self.source_lines,
+                "line_offset": line_offset,
+                "debug_locations": True,
+                "source_code": self.source_lines if self.verbose else None,
+                "verbose": True if self.verbose else None,
+            }
+        )
+        self.compiler_kwargs = compiler_kwargs_model.model_dump(
+            by_alias=True, exclude_none=True
+        )
+        self.module_ast = ast.parse(self.source_code)
+        return self
+
+
+class _ThreadCompilerCompilerKwargs(BaseModel):
+    """Compiler kwargs for `TTLGenericCompiler`, using aliases for internal keys."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    # Public / semantic names (dumped with internal aliases)
+    source_file: str = Field(alias="_source_file")
+    source_lines: list[str] = Field(alias="_source_lines")
+    line_offset: int = Field(alias="_line_offset")
+
+    # Optional debug helpers for verbatim source comments and printing.
+    source_code: list[str] | None = Field(default=None, alias="_source_code")
+    verbose: bool | None = Field(default=None, alias="_verbose")
+
+    # Compiler feature toggle (not underscore-prefixed)
+    debug_locations: bool = True
+
+
 def _compile(
     kernel_type: Optional[str] = None,
     verbose: bool = False,
@@ -496,21 +628,18 @@ def _compile(
 
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
-            source_code = _cleanup_source_code(f)
-            source_lines = source_code.splitlines()
-
-            if verbose:
-                kwargs["_source_code"] = source_lines
-                kwargs["_verbose"] = True
-
-            # Pass source info for debug locations (always enabled for error messages)
-            kwargs["_source_file"] = source_file
-            kwargs["_source_lines"] = source_lines
-            kwargs["_line_offset"] = _get_source_line_offset(f)
-            kwargs["debug_locations"] = True
-
-            m = ast.parse(source_code)
-            line_offset = kwargs.get("_line_offset", 0)
+            try:
+                inv = _ThreadCompilerInvocation.model_validate(
+                    {
+                        "fn": f,
+                        "verbose": verbose,
+                        "source_file": source_file,
+                        "user_kwargs": kwargs,
+                    }
+                )
+            except ValidationError as e:
+                # Surface a friendlier error than a raw Pydantic traceback.
+                raise TypeError(str(e)) from None
 
             b = TTLGenericCompiler(
                 f.__name__,
@@ -518,13 +647,15 @@ def _compile(
                 _collect_captures(f),
                 *args,
                 _globals=f.__globals__,
-                **kwargs,
+                **inv.compiler_kwargs,
             )
 
             if verbose:
-                print(ast.dump(m, indent=4) + "\n")
+                assert inv.module_ast is not None
+                print(ast.dump(inv.module_ast, indent=4) + "\n")
 
-            b.visit(m)
+            assert inv.module_ast is not None
+            b.visit(inv.module_ast)
 
             if verbose:
                 print(b.module)
@@ -532,7 +663,7 @@ def _compile(
             try:
                 b.module.operation.verify()
             except Exception as e:
-                formatted = format_mlir_error(str(e), source_lines, source_file)
+                formatted = format_mlir_error(str(e), inv.source_lines, source_file)
                 raise RuntimeError(formatted) from None
 
             return b

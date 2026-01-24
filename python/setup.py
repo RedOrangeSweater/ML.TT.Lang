@@ -115,6 +115,7 @@ setup(
     version=version,
     install_requires=[
         "pydantic<3",
+        "pydantic-settings<3",
     ],
     # Include ttlang and pykernel as top-level packages
     packages=["ttl", "ttl._src", "pykernel", "pykernel._src", "sim", "utils"],
