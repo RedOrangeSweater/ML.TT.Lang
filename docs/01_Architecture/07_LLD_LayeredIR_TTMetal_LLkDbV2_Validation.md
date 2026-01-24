@@ -1,5 +1,14 @@
 # TT-Lang Architecture — Low Level Design: Layered IR для валидации TT-metal/LLK (LLK DB v2) и поздней эмиссии кода
 
+## 0. Метаданные
+
+- **Статус**: Proposal (design doc; не отражает текущую реализацию 1:1).
+- **Аудитория**: разработчики диалектов/пасс-пайплайнов, а также инженеры, которые хотят строгую семантическую валидацию LLK протоколов.
+- **Зачем**: отделить "семантику и контракты" от "формы C++/файлов", чтобы получить системную (CFG-aware) валидацию и позднюю эмиссию.
+- **Связанные документы**:
+  - `docs/01_Architecture/01_HighLevelDesign.md`
+  - `docs/01_Architecture/02_LLD_CompilerPipeline.md`
+
 ## 1. Назначение
 
 Этот документ предлагает layered-структуру MLIR представлений и pass'ов, которая позволяет:
@@ -17,8 +26,8 @@
 
 Текущий пайплайн в tt-lang фиксируется в:
 
-- `/home/kilka/Projects/ML/TT-NN/tt-lang/docs/01_Architecture/01_HighLevelDesign.md`
-- `/home/kilka/Projects/ML/TT-NN/tt-lang/docs/01_Architecture/02_LLD_CompilerPipeline.md`
+- `docs/01_Architecture/01_HighLevelDesign.md`
+- `docs/01_Architecture/02_LLD_CompilerPipeline.md`
 
 Логическая цепочка:
 
@@ -30,18 +39,34 @@ flowchart LR
   EmitC --> Cpp["C++_Artifacts"]
 ```
 
-### 2.2 LLK DB v2 как источник истины для контрактов
+### 2.2 Как это соотносится с tt-lang сегодня (fit today)
+
+Что уже есть (как "опорные факты" текущей реализации):
+
+- TTL pipeline и порядок ключевых passes, включая DST assignment/sync, lowering к loops, и lowering к TTKernel (`lib/Dialect/TTL/Pipelines/TTLPipelines.cpp`).
+- Python frontend, который строит MLIR module из thread-функций и запускает pass pipeline через `PassManager` (`python/ttl/ttl_api.py`).
+- Инструменты `ttlang-opt` и `ttlang-translate` как драйверы passes и translations (`tools/ttlang-opt/*`, `tools/ttlang-translate/*`).
+
+Чего в текущей архитектуре нет (и что предлагает этот proposal):
+
+- Явного слоя/диалекта, который кодирует **контракты LLK ресурсов** как часть IR и позволяет делать CFG-aware валидацию протоколов.
+- Разделения "семантика" vs "форма C++/файловое дерево" на отдельные валидируемые слои (L4/L5 в терминах этого документа).
+- Стандартизированного "source-audit" пути, который извлекает семантический call graph из существующего C++ (Clang AST) и валидирует его тем же verifier'ом.
+
+### 2.3 LLK DB v2 как источник истины для контрактов
 
 В tt-metal уже есть канонический экспорт LLK DB v2:
 
-- `/home/kilka/Projects/ML/TT-NN/tt-metal/tt-metal.main/docs/llk_db_v2/build/llk_db_v2.json`
+- `tt-metal: docs/llk_db_v2/build/llk_db_v2.json`
 
 В `prompts-search` есть vendored LLK DB v2 (Nickel + YAML exports + примеры/recipe):
 
-- `/home/kilka/Projects/ML/STriangle/prompts-search/docs/ttmetal/llk_db_v2/README.md`
-- `/home/kilka/Projects/ML/STriangle/prompts-search/docs/ttmetal/llk_db_v2/build/llk_db_v2.json`
-- `/home/kilka/Projects/ML/STriangle/prompts-search/docs/ttmetal/llk_db_v2/nickel/`
-- `/home/kilka/Projects/ML/STriangle/prompts-search/docs/ttmetal/llk_db_v2/generated/`
+- `prompts-search: docs/ttmetal/llk_db_v2/README.md`
+- `prompts-search: docs/ttmetal/llk_db_v2/build/llk_db_v2.json`
+- `prompts-search: docs/ttmetal/llk_db_v2/nickel/`
+- `prompts-search: docs/ttmetal/llk_db_v2/generated/`
+
+Примечание: ссылки `tt-metal:` и `prompts-search:` указывают на **другие репозитории** и даны как ориентир для инженера (они не являются путями внутри дерева tt-lang).
 
 Важно: LLK DB v2 описывает ресурсы/состояния/инварианты типизированно и может служить
 единым "словарем" требований/эффектов:
@@ -50,11 +75,11 @@ flowchart LR
 - контракты: `pre/effects/post`
 - глобальные инварианты (например, “dropout требует seeded PRNG”)
 
-### 2.3 Dropout как эталонный тест-кейс семантической валидации
+### 2.4 Dropout как эталонный тест-кейс семантической валидации
 
 В `prompts-search` есть "сквозной" dropout trace с привязкой к LLK DB:
 
-- `/home/kilka/Projects/ML/STriangle/prompts-search/docs/ttmetal_dropout_llk_trace.md`
+- `prompts-search: docs/ttmetal_dropout_llk_trace.md`
 
 Этот документ полезен как инженерный "oracle": он показывает реальный порядок вызовов и
 согласованность requires/produces для CB/DST/NOC/SFPU.
@@ -153,7 +178,7 @@ Pass `llk-verify-resource-states`:
 
 Источник терминологии/идеи интерфейса и CFG-aware проверки:
 
-- `/home/kilka/Projects/ML/STriangle/prompts-search/docs/ttmetal/llk_db_v2/TTLang_resource_states.md`
+- `prompts-search: docs/ttmetal/llk_db_v2/TTLang_resource_states.md`
 
 ### 4.4 L3: Kernel Graph Dialect (`ttkernel.graph`)
 
@@ -184,7 +209,7 @@ WriterThread:
 
 Эта структура верифицируется контракторами L2 и хорошо совпадает с "oracle trace" dropout:
 
-- `/home/kilka/Projects/ML/STriangle/prompts-search/docs/ttmetal_dropout_llk_trace.md`
+- `prompts-search: docs/ttmetal_dropout_llk_trace.md`
 
 ### 4.5 L4: C++ API Shape Dialect (`ttcpp.api`)
 
@@ -339,7 +364,7 @@ sequenceDiagram
 
 Для "oracle" сверки полезно использовать существующую dropout трассу:
 
-- `/home/kilka/Projects/ML/STriangle/prompts-search/docs/ttmetal_dropout_llk_trace.md`
+- `prompts-search: docs/ttmetal_dropout_llk_trace.md`
 
 ## 9. Открытые вопросы и non-goals
 
