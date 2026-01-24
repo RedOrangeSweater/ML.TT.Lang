@@ -12,12 +12,12 @@
   - подробные руководства по сборке/тестам (это в `docs/BUILD_SYSTEM.md` и `test/TESTING.md`),
   - описание TT-metal как продукта (tt-lang лишь интегрируется с ним через toolchain и runtime).
 - **Связанные документы**:
-  - `docs/ideas/01_Architecture/02_LLD_CompilerPipeline.md`
-  - `docs/ideas/01_Architecture/03_LLD_RuntimeAndPythonAPI.md`
-  - `docs/ideas/01_Architecture/04_LLD_Simulator.md`
-  - `docs/ideas/01_Architecture/05_LLD_Testing.md`
-  - `docs/ideas/01_Architecture/06_LLD_BuildSystem.md`
-  - `docs/ideas/01_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md` (proposal)
+  - `docs/01_Architecture/02_LLD_CompilerPipeline.md`
+  - `docs/01_Architecture/03_LLD_RuntimeAndPythonAPI.md`
+  - `docs/01_Architecture/04_LLD_Simulator.md`
+  - `docs/01_Architecture/05_LLD_Testing.md`
+  - `docs/01_Architecture/06_LLD_BuildSystem.md`
+  - `docs/01_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md` (proposal)
   - Языковая спецификация: `docs/sphinx/specs/TTLangSpecification.md`
 
 ## 1. Цель и область
@@ -167,14 +167,11 @@ erDiagram
 - `ttl.compute()`: объявление compute thread; автоматически регистрируется для компиляции kernel.
 - `ttl.datamovement()`: объявление data movement thread; автоматически регистрируется для компиляции kernel.
 
-**Среда (env) для наблюдаемости и отладки**: `python/ttl/settings.py` (префикс `TTLANG_`).
+**Наблюдаемость и отладка (на `origin/main`)**:
 
-- `TTLANG_COMPILE_ONLY=1`: компилировать, но не выполнять.
-- `TTLANG_DEBUG_LOCATIONS=1`: печатать locations в MLIR output.
-- `TTLANG_INITIAL_MLIR_PATH=/path`: сохранить начальный IR.
-- `TTLANG_FINAL_MLIR_PATH=/path`: сохранить финальный IR.
-- `TTLANG_VERBOSE_PASSES=1` (или не пусто): печать IR через pass manager.
-- `TTLANG_VERBOSE_ERRORS=1`: более подробный формат MLIR ошибок.
+- Python-side verbose вывод: параметр `verbose` у декораторов `ttl.compute(verbose=...)` / `ttl.datamovement(verbose=...)` (см. `python/ttl/ttl_api.py`).
+- MLIR трассировка примеров и ожиданий по структуре IR: `docs/LOWERING_MULTITILE.md`.
+- CLI: `ttlang-opt` и `ttlang-translate` позволяют воспроизводимо прогнать pipeline и увидеть diagnostics на входном MLIR.
 
 | API | Назначение | Входы | Выходы | Ошибки |
 |---|---|---|---|---|
@@ -275,7 +272,7 @@ sequenceDiagram
 
 - **Строго стабильное** (ожидается обратная совместимость):
   - базовый импорт/namespace `ttl.*` и наличие базовых декораторов (`ttl.kernel`, `ttl.compute`, `ttl.datamovement`);
-  - переменные окружения `TTLANG_*`, описанные в `python/ttl/settings.py` (возможны добавления, но удаление/смена семантики должно быть отдельным решением).
+  - базовый формат diagnostics и позиционирование ошибок по исходникам (`python/ttl/diagnostics.py`).
 - **Условно стабильное** (может меняться при изменениях компилятора):
   - конкретные pipeline'ы и набор passes (имена в CLI сохраняются, содержимое может эволюционировать);
   - структура генерируемых C++ артефактов (пока нет обещания byte-идентичности без отдельной политики).

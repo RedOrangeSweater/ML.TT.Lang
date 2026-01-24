@@ -6,9 +6,9 @@
 - **Аудитория**: разработчики Python frontend и runtime-интеграции (`ttnn`), а также авторы DSL kernels.
 - **Что считается "runtime" в рамках этого документа**: Python-слой подготовки/запуска и его контракт с `ttnn`/устройством; не низкоуровневый runtime tt-metal.
 - **Связанные документы**:
-  - `docs/ideas/01_Architecture/01_HighLevelDesign.md` (границы ответственности)
-  - `docs/ideas/01_Architecture/02_LLD_CompilerPipeline.md` (MLIR pipeline)
-  - `docs/ideas/01_Architecture/04_LLD_Simulator.md` (симуляция)
+  - `docs/01_Architecture/01_HighLevelDesign.md` (границы ответственности)
+  - `docs/01_Architecture/02_LLD_CompilerPipeline.md` (MLIR pipeline)
+  - `docs/01_Architecture/04_LLD_Simulator.md` (симуляция)
   - Языковая спецификация: `docs/sphinx/specs/TTLangSpecification.md`
 
 ## 1. Назначение
@@ -32,7 +32,6 @@
 | `python/ttl/__init__.py` | Экспортирует публичный DSL API на уровень пакета, чтобы работало `import ttl; ttl.kernel`. |
 | `python/ttl/ttl.py` | "Единый namespace" `ttl.*`: декораторы, CB helpers, операторы, math namespace. |
 | `python/ttl/ttl_api.py` | Основная реализация декораторов (`pykernel_gen`, `compute`, `datamovement`), сбор thread-функций, компиляция в MLIR, запуск pass pipeline, кэш компиляции. |
-| `python/ttl/settings.py` | Typed конфигурация из переменных окружения `TTLANG_*` (compile-only, dumps, verbose). |
 | `python/ttl/diagnostics.py` | Форматирование ошибок с привязкой к исходникам (Rust/Swift-style). |
 | `python/ttl/circular_buffer.py` | Модель CircularBuffer в DSL, назначение индексов CB, сбор конфигураций. |
 | `python/ttl/kernel_runner.py` | Конверсия артефактов компиляции в `ttnn.generic_op` descriptors и запуск на устройстве. |
@@ -118,16 +117,10 @@ sequenceDiagram
 
 - `docs/LOWERING_MULTITILE.md` — пример “Python -> MLIR -> C++” трассировки
 
-### 4.1 Переменные окружения `TTLANG_*` (наблюдаемость)
+### 4.1 Наблюдаемость на `origin/main` (что реально доступно)
 
-См. `python/ttl/settings.py`. Архитектурный контракт: эти переключатели должны оставаться доступными, так как они формируют минимальный "debug surface" системы.
-
-- `TTLANG_COMPILE_ONLY=1`: компилировать, но не выполнять.
-- `TTLANG_DEBUG_LOCATIONS=1`: печатать locations в MLIR output.
-- `TTLANG_INITIAL_MLIR_PATH=/path`: сохранить начальный IR перед pipeline.
-- `TTLANG_FINAL_MLIR_PATH=/path`: сохранить финальный IR после pipeline.
-- `TTLANG_VERBOSE_PASSES=1` (или любое непустое значение): печать IR до/после passes.
-- `TTLANG_VERBOSE_ERRORS=1`: расширенный формат ошибок MLIR (если доступен location).
+- `verbose` в `ttl.compute(verbose=...)` / `ttl.datamovement(verbose=...)` печатает AST/MLIR в ходе компиляции thread-функций (см. `python/ttl/ttl_api.py`).
+- Для “сквозной” отладки структуры lowering удобнее использовать `docs/LOWERING_MULTITILE.md` и воспроизводить pipeline через `ttlang-opt`.
 
 ## 5. Контракт с `ttnn` (граница ответственности runtime)
 
