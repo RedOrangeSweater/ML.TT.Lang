@@ -3,92 +3,74 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Simple add test with data writeback verification.
+Simple add test that exercises the full copy/wait path under simulation.
 
-Tests the complete data path: host → L1 → compute → L1 → host
+This example:
+- copies A and B tiles into L1 circular buffers (async copy + wait)
+- computes C = A + B
+- copies the result tile back to output (async copy + wait)
 """
 
-import torch
-from ttl.ttl_api import *
+import ttl
+import ttnn
+from sim.testing import assert_pcc
 
 
-@pykernel_gen(grid=(1, 1), block_factors=[(1, 1), (1, 1), (1, 1)])
-def simple_add(lhs, rhs, out):
-    lhs_accessor = TensorAccessor(lhs)
-    rhs_accessor = TensorAccessor(rhs)
+@ttl.kernel(grid=(1, 1))
+def simple_add(a_in: ttnn.Tensor, b_in: ttnn.Tensor, out: ttnn.Tensor) -> None:
+    assert a_in.shape == b_in.shape == out.shape
 
-    @compute()
-    def add_compute(
-        lhs_cb: CircularBuffer,
-        rhs_cb: CircularBuffer,
-        out_cb: CircularBuffer,
-    ):
-        lhs_shard = lhs_cb.pop()
-        rhs_shard = rhs_cb.pop()
-        out_shard = out_cb.reserve()
-        result = lhs_shard + rhs_shard
-        out_shard.store(result)
+    # One 32x32 tile (single-tile CBs).
+    a_cb = ttl.make_circular_buffer_like(a_in, shape=(1, 1), buffer_factor=1)
+    b_cb = ttl.make_circular_buffer_like(b_in, shape=(1, 1), buffer_factor=1)
+    out_cb = ttl.make_circular_buffer_like(out, shape=(1, 1), buffer_factor=1)
+
+    @ttl.compute()
+    def compute_func():
+        a_block = a_cb.wait()
+        b_block = b_cb.wait()
+        out_block = out_cb.reserve()
+
+        out_block.store(a_block + b_block)
+
+        out_cb.push()
+        a_cb.pop()
+        b_cb.pop()
+
+    @ttl.datamovement()
+    def dm_in():
+        a_block = a_cb.reserve()
+        tx = ttl.copy(a_in[0, 0], a_block)
+        tx.wait()
+        a_cb.push()
+
+        b_block = b_cb.reserve()
+        tx = ttl.copy(b_in[0, 0], b_block)
+        tx.wait()
+        b_cb.push()
+
+    @ttl.datamovement()
+    def dm_out():
+        out_block = out_cb.wait()
+        tx = ttl.copy(out_block, out[0, 0])
+        tx.wait()
         out_cb.pop()
 
-    @datamovement()
-    def dm_lhs(
-        lhs_cb: CircularBuffer,
-        rhs_cb: CircularBuffer,
-        out_cb: CircularBuffer,
-    ):
-        lhs_shard = lhs_cb.reserve()
-        tx = dma(lhs_accessor[0, 0], lhs_shard)
-        tx.wait()
 
-    @datamovement()
-    def dm_rhs(
-        lhs_cb: CircularBuffer,
-        rhs_cb: CircularBuffer,
-        out_cb: CircularBuffer,
-    ):
-        rhs_shard = rhs_cb.reserve()
-        tx = dma(rhs_accessor[0, 0], rhs_shard)
-        tx.wait()
+def main() -> None:
+    device = ttnn.open_device(device_id=0)
+    try:
+        a_in = ttnn.full((32, 32), 2.0, dtype=ttnn.float32, device=device)
+        b_in = ttnn.full((32, 32), 3.0, dtype=ttnn.float32, device=device)
+        out = ttnn.empty((32, 32), dtype=ttnn.float32, device=device)
+
+        simple_add(a_in, b_in, out)
+
+        golden = a_in + b_in
+        assert_pcc(golden, out)
+    finally:
+        ttnn.close_device(device)
 
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("Simple Add Test - Data Writeback Verification")
-    print("=" * 60)
-
-    # Use simple non-zero values for easy debugging: 2 + 3 = 5
-    lhs = torch.full((32, 32), 2.0)
-    rhs = torch.full((32, 32), 3.0)
-    out = torch.full((32, 32), -999.0)
-
-    print("\n=== BEFORE KERNEL ===")
-    print(f"lhs[0:3, 0:3] =\n{lhs[0:3, 0:3]}")
-    print(f"rhs[0:3, 0:3] =\n{rhs[0:3, 0:3]}")
-    print(f"out[0:3, 0:3] =\n{out[0:3, 0:3]}")
-    expected = lhs + rhs
-    print(f"expected[0:3, 0:3] =\n{expected[0:3, 0:3]}")
-
-    simple_add(lhs, rhs, out)
-
-    print("\n=== AFTER KERNEL ===")
-    print(f"out[0:3, 0:3] =\n{out[0:3, 0:3]}")
-    print(f"expected[0:3, 0:3] =\n{expected[0:3, 0:3]}")
-
-    print(f"\nStats:")
-    print(
-        f"  out min/max/mean: {out.min().item():.4f} / {out.max().item():.4f} / {out.mean().item():.4f}"
-    )
-    print(
-        f"  expected min/max/mean: {expected.min().item():.4f} / {expected.max().item():.4f} / {expected.mean().item():.4f}"
-    )
-
-    # Verify results (will only work on hardware)
-    if not torch.allclose(out, expected, rtol=1e-2, atol=1e-2):
-        if out.min().item() == -999.0:
-            print("\n⚠️  Output unchanged - expected on macOS (compilation only)")
-        else:
-            print(
-                f"\n❌ MISMATCH! Max error: {(out - expected).abs().max().item():.6f}"
-            )
-    else:
-        print("\n✅ Output matches expected!")
+    main()

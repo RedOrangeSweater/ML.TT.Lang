@@ -7,3 +7,5 @@ pyright
 sphinx
 sphinx-rtd-theme
 sphinxcontrib-mermaid
+salabim
+greenlet
