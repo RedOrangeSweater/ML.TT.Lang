@@ -22,19 +22,20 @@ from __future__ import annotations
 
 import contextlib
 import inspect
-import os
 import time
 from dataclasses import dataclass
-from typing import Callable, Iterator
+from collections.abc import Callable, Iterator
 
 try:
     import ttnn  # type: ignore[import-untyped]
 except (ModuleNotFoundError, ImportError):  # pragma: no cover
     ttnn = None
 
+from .settings import get_settings
+
 
 def tracy_enabled() -> bool:
-    return os.environ.get("TTLANG_TRACY", "0") == "1" and ttnn is not None
+    return get_settings().tracy and ttnn is not None
 
 
 @dataclass
