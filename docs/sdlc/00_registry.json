@@ -1,0 +1,30 @@
+{
+  "registryId": "tt-lang.sdlc-processes",
+  "version": "0.1.0",
+  "processes": [
+    {
+      "sdlcId": "sdlc.main",
+      "slug": "main",
+      "path": "docs/sdlc/00_Main/",
+      "goal": "Основной SDLC tt-lang: статус, идеи, архитектура, спек; связь с 01_tt_metal и 02_llk (кросс-репо доки).",
+      "goalShort": "Основной SDLC tt-lang (00_Main).",
+      "domainTags": ["main", "status", "ba", "architecture", "specs", "qa"]
+    },
+    {
+      "sdlcId": "sdlc.tt_metal",
+      "slug": "tt_metal",
+      "path": "docs/sdlc/01_tt_metal/",
+      "goal": "Доки и статус по репозиторию tt-metal; связь с tt-lang и LLK.",
+      "goalShort": "SDLC tt-metal.",
+      "domainTags": ["tt-metal", "status", "ba", "architecture", "specs", "qa"]
+    },
+    {
+      "sdlcId": "sdlc.llk",
+      "slug": "llk",
+      "path": "docs/sdlc/02_llk/",
+      "goal": "Доки по низкоуровневым ядрам LLK (tt_llk внутри tt-metal); связь с tt-lang и tt-metal.",
+      "goalShort": "SDLC tt_llk (LLK).",
+      "domainTags": ["llk", "tt_llk", "kernels", "status", "specs"]
+    }
+  ]
+}
