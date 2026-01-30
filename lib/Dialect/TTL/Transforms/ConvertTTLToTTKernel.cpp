@@ -572,6 +572,9 @@ static Value linearizeTileIndex(OpBuilder &builder, Location loc, Value row,
   return builder.create<arith::AddIOp>(loc, rowOffset, col);
 }
 
+/// Allocates TRIDs for DMA barriers. TRIDs wrap at 16 (4-bit). If more than
+/// 16 TRIDs are outstanding, reuse can occur before the earlier copy completes;
+/// consider overflow detection or a more robust allocation scheme (TODO).
 class TridAllocator {
 public:
   uint32_t allocateTrid() { return nextTrid++ & 0xF; }
