@@ -9,6 +9,7 @@
   - `docs/sdlc/00_Main/02_Architecture/01_HighLevelDesign.md`
   - `docs/sdlc/00_Main/02_Architecture/02_LLD_CompilerPipeline.md`
   - `docs/sdlc/00_Main/00_Ideas/10_layered_ir_validation.md` (локальный SDLC-трекинг инициативы)
+  - LLK SDLC: [02_llk/02_Architecture](../../02_llk/02_Architecture/), pipeline: [01_tt_metal/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md](../../01_tt_metal/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md)
 
 ## 1. Назначение
 

@@ -69,3 +69,5 @@
 - Common SDLC Core §3.0.1 (Doc→MLIR/GraphDB traceability).
 - Negative SDLC PreGraphDB: мэппинг GraphDB→MLIR (референс в cursorrules/docs).
 - Правило Doc–MLIR footnotes (REU): сноски после логических кусков, трек диалектов и трансформаций.
+
+**Related**: tt-lang architecture: [00_Main/02_Architecture](../../00_Main/02_Architecture/). LLK: [02_llk/02_Architecture](../../02_llk/02_Architecture/).

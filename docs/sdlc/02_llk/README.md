@@ -12,4 +12,6 @@
 
 Связанные процессы: [00_Main](../00_Main/) (tt-lang), [01_tt_metal](../01_tt_metal/) (tt-metal).
 
+**Связанные доки**: tt-lang lowering/specs: [00_Main/03_Specs](../00_Main/03_Specs/) (LOWERING_MULTITILE, DST_Allocation). Pipeline Doc–MLIR–GraphDB: [01_tt_metal/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md](../01_tt_metal/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md).
+
 Каноническое расположение SDLC tt_llk — **здесь** (tt-lang). В репо tt_llk только стаб: `docs/sdlc/README.md` указывает сюда.

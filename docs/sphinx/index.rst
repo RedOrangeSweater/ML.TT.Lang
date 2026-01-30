@@ -18,3 +18,7 @@ TTL Documentation
    build
    guidelines
    contributor-guide
+
+Process documentation
+--------------------
+SDLC and process documentation (status, ideas, architecture, specs) live under `docs/sdlc/ <../sdlc/README.md>`_.
