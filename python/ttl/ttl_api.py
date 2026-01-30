@@ -9,8 +9,10 @@ from __future__ import annotations
 import ast
 import functools
 import inspect
+import json
 import os
 import random
+import time
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
@@ -203,6 +205,33 @@ def _run_profiling_pipeline(
         print(f"[Auto-profile] Failed to parse profile CSV: {e}")
 
 
+def _ttlang_profile_enabled() -> bool:
+    """Enable lightweight stage timing when TTLANG_PROFILE_COMPILE=1."""
+    return os.environ.get("TTLANG_PROFILE_COMPILE", "0") == "1"
+
+
+def _ttlang_profile_out_path() -> str | None:
+    """Optional output file for JSONL records (TTLANG_PROFILE_COMPILE_OUT)."""
+    out = os.environ.get("TTLANG_PROFILE_COMPILE_OUT", "").strip()
+    return out or None
+
+
+def _ttlang_profile_emit(event: dict[str, object]) -> None:
+    """Emit a single profiling record (JSONL or stdout)."""
+    if not _ttlang_profile_enabled():
+        return
+    payload = dict(event)
+    payload.setdefault("tag", "TTLANG_PROFILE")
+    payload.setdefault("ts", time.time())
+    line = json.dumps(payload, sort_keys=True)
+    out_path = _ttlang_profile_out_path()
+    if out_path is not None:
+        with open(out_path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    else:
+        print("TTLANG_PROFILE " + line)
+
+
 def _detect_memory_space_from_tensor(tensor, default: str) -> str:
     """Detect memory space (L1/DRAM) from a ttnn tensor's buffer type."""
     mem_config = tensor.memory_config()
@@ -385,6 +414,9 @@ class CompiledTTNNKernel:
 
     def __call__(self, *args):
         """Execute the kernel with the given tensors."""
+        profile_enabled = _ttlang_profile_enabled()
+        call_t0 = time.perf_counter()
+
         if len(args) != self.num_tensors:
             raise ValueError(f"Expected {self.num_tensors} tensors, got {len(args)}")
 
@@ -400,6 +432,7 @@ class CompiledTTNNKernel:
             )
 
         # Build kernel specs from stored kernel info.
+        t0 = time.perf_counter()
         kernel_specs = []
         for kernel_idx, (kernel_path, thread_type) in enumerate(self.kernel_paths):
             tensor_indices = self.kernel_tensor_indices[kernel_idx]
@@ -411,15 +444,44 @@ class CompiledTTNNKernel:
                 config=config,
             )
             kernel_specs.append(spec)
+        build_kernel_specs_s = time.perf_counter() - t0
 
         # Use shared kernel execution logic.
-        return run_kernel_on_device(
+        t0 = time.perf_counter()
+        result = run_kernel_on_device(
             kernel_specs=kernel_specs,
             tensors=list(args),
             cb_configs=self.cb_configs,
             core_ranges=self.core_ranges,
             program_hash=self.program_hash,
         )
+        run_kernel_on_device_s = time.perf_counter() - t0
+
+        if profile_enabled:
+            try:
+                arch = str(device.arch())
+            except Exception:
+                arch = "unknown"
+            cache_hit = getattr(self, "_ttlang_cache_hit", None)
+            cache_key_id = getattr(self, "_ttlang_cache_key_id", None)
+            _ttlang_profile_emit(
+                {
+                    "kind": "execute",
+                    "kernel_grid": (kernel_grid.x, kernel_grid.y),
+                    "device_grid": (device_grid.x, device_grid.y),
+                    "arch": arch,
+                    "program_hash": self.program_hash,
+                    "cache_hit": cache_hit,
+                    "cache_key_id": cache_key_id,
+                    "stages_s": {
+                        "build_kernel_specs_s": build_kernel_specs_s,
+                        "run_kernel_on_device_s": run_kernel_on_device_s,
+                        "execute_total_s": time.perf_counter() - call_t0,
+                    },
+                }
+            )
+
+        return result
 
 
 def _write_kernel_to_tmp(name: str, source: str) -> str:
@@ -849,6 +911,19 @@ def _compile_kernel(
     Returns:
         CompiledTTNNKernel ready for execution
     """
+    profile_enabled = _ttlang_profile_enabled()
+    compile_t0 = time.perf_counter()
+
+    compile_profile: dict[str, object] = {
+        "kind": "compile",
+        "kernel_name": getattr(f, "__name__", "<unknown>"),
+        "grid": grid,
+        "memory_space": memory_space,
+        "tiled": tiled,
+        "program_hash": program_hash,
+    }
+    stage_times_s: dict[str, float] = {}
+
     f_params = inspect.signature(f).parameters
 
     # Get kernel source location for error reporting
@@ -893,9 +968,11 @@ def _compile_kernel(
     _reset_cb_counter()
     _set_current_grid(grid)
 
+    t0 = time.perf_counter()
     _clear_thread_registry()
     f(*args, **kwargs)
     threads = _get_registered_threads()
+    stage_times_s["python_kernel_build_s"] = time.perf_counter() - t0
 
     if not threads:
         raise ValueError(
@@ -903,7 +980,9 @@ def _compile_kernel(
             "@ttl.datamovement() function inside your kernel."
         )
 
+    t0 = time.perf_counter()
     cb_configs = _collect_cb_configs(threads)
+    stage_times_s["collect_cb_configs_s"] = time.perf_counter() - t0
 
     injected_program_kwargs = {
         "grid": grid,
@@ -934,6 +1013,7 @@ def _compile_kernel(
         # Track per-kernel line offsets for correct display
         kernel_line_offsets = {}
 
+        t0 = time.perf_counter()
         for compile_thread in program.threads:
             try:
                 ct = compile_thread(*program.args, **program.kwargs)
@@ -971,6 +1051,9 @@ def _compile_kernel(
             if hasattr(ct, "line_offset"):
                 kernel_line_offsets[ct.name] = ct.line_offset
 
+        stage_times_s["thread_compile_s"] = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
         module = Module.create(loc)
 
         # Insert standalone thread functions directly into module
@@ -978,9 +1061,11 @@ def _compile_kernel(
             for ct in compiled_threads:
                 ct.func_entry.operation.detach_from_parent()
                 module.body.append(ct.func_entry)
+        stage_times_s["module_assembly_s"] = time.perf_counter() - t0
 
         initial_mlir_path = os.environ.get("TTLANG_INITIAL_MLIR")
         if initial_mlir_path:
+            t_dump0 = time.perf_counter()
             with open(initial_mlir_path, "w") as fd:
                 module.operation.print(
                     file=fd,
@@ -988,6 +1073,7 @@ def _compile_kernel(
                     print_generic_op_form=False,
                 )
             print(f"SAVED INITIAL TO {initial_mlir_path}")
+            stage_times_s["dump_initial_mlir_s"] = time.perf_counter() - t_dump0
 
         verify = True
 
@@ -1074,7 +1160,9 @@ def _compile_kernel(
 
         # Run the pass manager with error handling for source-aware diagnostics
         try:
+            t0 = time.perf_counter()
             pm.run(module.operation)
+            stage_times_s["mlir_pipeline_s"] = time.perf_counter() - t0
         except Exception as e:
             error_msg = str(e)
             # Try to format error with source context
@@ -1090,6 +1178,7 @@ def _compile_kernel(
 
         final_mlir_path = os.environ.get("TTLANG_FINAL_MLIR")
         if final_mlir_path:
+            t_dump1 = time.perf_counter()
             with open(final_mlir_path, "w") as fd:
                 module.operation.print(
                     file=fd,
@@ -1097,6 +1186,7 @@ def _compile_kernel(
                     print_generic_op_form=False,
                 )
             print(f"SAVED FINAL TO {final_mlir_path}")
+            stage_times_s["dump_final_mlir_s"] = time.perf_counter() - t_dump1
 
         # Extract source lines for auto-profiling (use first thread's source)
         profile_source_lines = None
@@ -1105,6 +1195,7 @@ def _compile_kernel(
             profile_source_lines = all_source_lines[first_thread]
 
         # Compile to CompiledTTNNKernel for ttnn.generic_op
+        t0 = time.perf_counter()
         compiled_kernel = _compile_ttnn_kernel(
             module,
             args,
@@ -1119,6 +1210,18 @@ def _compile_kernel(
             all_source_lines=all_source_lines,
             kernel_line_offsets=kernel_line_offsets,
         )
+        stage_times_s["ttnn_kernel_packaging_s"] = time.perf_counter() - t0
+
+        stage_times_s["compile_total_s"] = time.perf_counter() - compile_t0
+        compile_profile["stages_s"] = stage_times_s
+        if profile_enabled:
+            _ttlang_profile_emit(compile_profile)
+            # Attach for run-stage correlation (cache hits).
+            try:
+                setattr(compiled_kernel, "_ttlang_compile_profile", compile_profile)
+            except Exception:
+                pass
+
         return compiled_kernel
 
 
@@ -1202,9 +1305,18 @@ def pykernel_gen(
                 fp32_dest_acc_en=fp32_override,
                 dst_full_sync_en=dst_sync_override,
             )
+            profile_enabled = _ttlang_profile_enabled()
+            cache_hit = cache_key in cache
+            cache_key_id = None
+            if profile_enabled:
+                import hashlib
+
+                cache_key_id = hashlib.sha256(repr(cache_key).encode("utf-8")).hexdigest()[
+                    :16
+                ]
 
             # Check cache for previously compiled kernel
-            if cache_key in cache:
+            if cache_hit:
                 compiled_kernel = cache[cache_key]
             else:
                 # Compute program_hash for tt-metal cache
@@ -1231,6 +1343,14 @@ def pykernel_gen(
 
             # Execute (unless compile-only mode)
             if compiled_kernel is not None and _should_execute():
+                if profile_enabled:
+                    # Attach metadata so the execute-path can include cache context.
+                    try:
+                        setattr(compiled_kernel, "_ttlang_cache_hit", cache_hit)
+                        if cache_key_id is not None:
+                            setattr(compiled_kernel, "_ttlang_cache_key_id", cache_key_id)
+                    except Exception:
+                        pass
                 result = compiled_kernel(*args)
 
                 # Run auto-profiling after execution
