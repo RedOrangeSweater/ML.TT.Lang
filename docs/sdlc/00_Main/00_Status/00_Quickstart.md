@@ -256,5 +256,5 @@ def add_kernel(lhs, rhs, out):
 ## 8) Что читать дальше (3 пункта)
 
 - `docs/LOWERING_MULTITILE.md` — “одна трасса, которая объясняет половину системы”.
-- `docs/01_Architecture/01_HighLevelDesign.md` — границы ответственности компонентов.
+- `docs/sdlc/00_Main/02_Architecture/01_HighLevelDesign.md` — границы ответственности компонентов.
 - `test/TESTING.md` — как тесты проверяют IR на двух стадиях (initial/final).

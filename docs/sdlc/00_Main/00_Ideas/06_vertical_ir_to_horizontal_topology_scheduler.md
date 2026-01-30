@@ -42,7 +42,7 @@ audience: разработчики
 
 ### 2.1 Layered IR как место для “вертикальных” контрактов
 
-Документ `docs/01_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md` предлагает слои IR, где:
+Документ `docs/sdlc/00_Main/02_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md` предлагает слои IR, где:
 
 - семантика и контракты ресурсов (CB/DST/NOC/SFPU/CFG) выражаются явно,
 - проверка протоколов выполняется CFG-aware (dataflow по графу управления),
@@ -56,7 +56,7 @@ audience: разработчики
 
 ### 2.2 Симулятор как дешёвый стенд для экспериментов с политиками
 
-Текущий симулятор (`docs/01_Architecture/04_LLD_Simulator.md`) является функциональным:
+Текущий симулятор (`docs/sdlc/00_Main/02_Architecture/04_LLD_Simulator.md`) является функциональным:
 
 - моделирует протоколы CB/pipes/semaphores,
 - детектирует deadlock,

@@ -86,4 +86,4 @@ flowchart TD
 ### 5.1 Где искать источник истины
 
 - Полная механика (приоритеты обнаружения tt-mlir, генерация `build/env/activate`, переменные): `docs/BUILD_SYSTEM.md`.
-- Архитектурная мотивация (почему это важно): этот документ + HLD `docs/01_Architecture/01_HighLevelDesign.md`.
+- Архитектурная мотивация (почему это важно): этот документ + HLD `docs/sdlc/00_Main/02_Architecture/01_HighLevelDesign.md`.

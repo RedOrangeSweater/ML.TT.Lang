@@ -7,8 +7,8 @@
 - **Фокус**: архитектура и назначение тестов (что доказываем), а не пошаговые команды (они в `test/TESTING.md`).
 - **Связанные документы**:
   - `test/TESTING.md` (механика запуска)
-  - `docs/01_Architecture/02_LLD_CompilerPipeline.md` (где ломается lowering/translate)
-  - `docs/01_Architecture/04_LLD_Simulator.md` (симуляция)
+  - `docs/sdlc/00_Main/02_Architecture/02_LLD_CompilerPipeline.md` (где ломается lowering/translate)
+  - `docs/sdlc/00_Main/02_Architecture/04_LLD_Simulator.md` (симуляция)
 
 ## 1. Назначение
 

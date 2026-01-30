@@ -74,9 +74,9 @@ TT-Metalium фиксирует правила, определяющие, ско�
 
 Эти документы полезны для понимания “как ведет себя на практике” и вставленной синхронизации, но **не** являются hardware spec:
 
-- `docs/ideas/03_tensix_sfpu_fpu_pipelining_dst.md` (pipeline overlap, `tile_regs_*`, hazard points)
-- `docs/development/DST_Allocation.md` (DST pressure, `dst_idx` semantics)
-- `docs/01_Architecture/02_LLD_CompilerPipeline.md` (точный порядок MLIR pipeline для TTL -> TTKernel -> EmitC)
+- `docs/sdlc/00_Main/00_Ideas/03_tensix_sfpu_fpu_pipelining_dst.md` (pipeline overlap, `tile_regs_*`, hazard points)
+- `docs/sdlc/00_Main/03_Specs/DST_Allocation.md` (DST pressure, `dst_idx` semantics)
+- `docs/sdlc/00_Main/02_Architecture/02_LLD_CompilerPipeline.md` (точный порядок MLIR pipeline для TTL -> TTKernel -> EmitC)
 
 Также важно: текущий TTNN interop код в `python/ttl/ttl_api.py` фиксирует:
 

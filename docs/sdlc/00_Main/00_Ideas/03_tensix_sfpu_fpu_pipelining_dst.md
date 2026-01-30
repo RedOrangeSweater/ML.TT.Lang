@@ -48,7 +48,7 @@
     - `tile_regs_commit`/`tile_regs_wait` являются “границами фаз”, в которых происходит согласование math↔pack и (концептуально) переключение/разрешение использования секции.
     - многие “глобальные” ожидания (packer semaphores, `STALLWAIT` вокруг CFG) становятся критичнее именно при double-buffering, потому что pack и compute реально работают конкурентно над разными секциями и нужно строго выдерживать точки, где секции безопасно переиспользовать.
   - **Full-sync (без double-buffering)**: противоположный режим (часто описывают как `dst_full_sync_en=true`) даёт доступ к полной physical DST емкости “как к одному пулу”, но обычно снижает возможность перекрытия compute/pack (больше синхронизации, меньше pipeline overlap). Этот компромисс полезно понимать как tradeoff “больше регистров одновременно” vs “лучше overlap”.
-  - **FP32 и другие форматы**: если включается 32-bit storage/accumulation для destination (`fp32_dest_acc_en`/аналогичные knobs), то количество *physical* DST tiles может эффективно уменьшаться (тайл “дороже” по битам). Тогда и effective capacity при double-buffering падает еще сильнее. Авторитетные таблицы по этому поведению и по knobs находятся в TT-Metalium; в tt-lang на это есть ссылка в `docs/ideas/04_reconfiguration_latency_and_tensix_facts.md`.
+  - **FP32 и другие форматы**: если включается 32-bit storage/accumulation для destination (`fp32_dest_acc_en`/аналогичные knobs), то количество *physical* DST tiles может эффективно уменьшаться (тайл “дороже” по битам). Тогда и effective capacity при double-buffering падает еще сильнее. Авторитетные таблицы по этому поведению и по knobs находятся в TT-Metalium; в tt-lang на это есть ссылка в `docs/sdlc/00_Main/00_Ideas/04_reconfiguration_latency_and_tensix_facts.md`.
 - **`tile_regs_acquire/commit/wait/release`**: явные операции/вызовы протокола работы с DST и синхронизации math↔pack.
 - **`STALLWAIT` / `WAIT_SFPU`**: низкоуровневые барьеры/ожидания, которые защищают от конфликтов конвейера/CFG/DST/семафоров.
 
@@ -106,7 +106,7 @@ flowchart LR
 - внутри цикла: `ttl.tile_regs_commit` → `ttl.tile_regs_wait` → `ttl.store` (pack)
 - `ttl.tile_regs_release`
 
-См. `docs/LOWERING_MULTITILE.md` (раздел “Stage 4: ttl-insert-tile-regs-sync”).
+См. `docs/sdlc/00_Main/03_Specs/LOWERING_MULTITILE.md` (раздел “Stage 4: ttl-insert-tile-regs-sync”).
 
 ### Почему `commit` и `wait` разделены
 
@@ -192,7 +192,7 @@ TTI_STALLWAIT(p_stall::STALL_SFPU, p_stall::MATH);
 
 Для tt-lang можно проверить, что компилятор вставляет SFPU/DST lifecycle и что частота ожиданий определяется формой IR:
 
-- В `docs/LOWERING_MULTITILE.md` явно показано, что pass `ttl-insert-tile-regs-sync` вставляет `ttl.init_sfpu`, `ttl.tile_regs_acquire/release` и `ttl.tile_regs_commit/wait`.
+- В `docs/sdlc/00_Main/03_Specs/LOWERING_MULTITILE.md` явно показано, что pass `ttl-insert-tile-regs-sync` вставляет `ttl.init_sfpu`, `ttl.tile_regs_acquire/release` и `ttl.tile_regs_commit/wait`.
 - В lit-тестах lowering присутствуют проверки `ttl.init_sfpu(...)` (см. `test/ttlang/Dialect/TTL/Transforms/*`).
 
 Если `ttl.tile_regs_commit/wait` стоит внутри tight loop на каждый тайл, это **сознательная точка синхронизации** в текущем lowering (и она ограничивает перекрытие).
@@ -209,7 +209,7 @@ TTI_STALLWAIT(p_stall::STALL_SFPU, p_stall::MATH);
   - минимизировать CFG reconfiguration в горячем цикле (см. рекомендацию выше);
   - организовывать compute так, чтобы `commit/wait` приходились на “пачку” тайлов, а не на каждый микрошаг.
 
-- **Есть высокоуровневый компромисс DST full-sync vs double-buffering**, который влияет на доступную емкость DST и на стиль перекрытия compute/pack. Это не “выключение SFPU”, а выбор режима синхронизации/буферизации DST; авторитетный источник и таблица — TT-Metalium (см. `docs/ideas/04_reconfiguration_latency_and_tensix_facts.md`).
+- **Есть высокоуровневый компромисс DST full-sync vs double-buffering**, который влияет на доступную емкость DST и на стиль перекрытия compute/pack. Это не “выключение SFPU”, а выбор режима синхронизации/буферизации DST; авторитетный источник и таблица — TT-Metalium (см. `docs/sdlc/00_Main/00_Ideas/04_reconfiguration_latency_and_tensix_facts.md`).
 
 ### Что насчет “define, который лочит SFPU”
 
@@ -242,7 +242,7 @@ TTI_STALLWAIT(p_stall::STALL_SFPU, p_stall::MATH);
 - один раз `wait`,
 - упаковать N тайлов.
 
-Это ровно то, что tt-lang иллюстрирует в `docs/LOWERING_MULTITILE.md` и в примерах `docs/development/DST_Allocation.md` (там показан fully-unrolled случай, где пачка `pack_tile` идет после одного `commit/wait`).
+Это ровно то, что tt-lang иллюстрирует в `docs/sdlc/00_Main/03_Specs/LOWERING_MULTITILE.md` и в примерах `docs/sdlc/00_Main/03_Specs/DST_Allocation.md` (там показан fully-unrolled случай, где пачка `pack_tile` идет после одного `commit/wait`).
 
 ### 2) DST ILP через `dst_idx` + unroll
 
@@ -255,7 +255,7 @@ TTI_STALLWAIT(p_stall::STALL_SFPU, p_stall::MATH);
 
 Ограничение: **емкость DST** зависит от режима и datatype.
 
-В `docs/LOWERING_MULTITILE.md` есть практическая шпаргалка:
+В `docs/sdlc/00_Main/03_Specs/LOWERING_MULTITILE.md` есть практическая шпаргалка:
 
 - физически DST может быть 16 “tiles”, но при double-buffering эффективная емкость часто 8;
 - для fp32 в некоторых режимах емкость меньше (пример в доке: “8 physical / 4 effective” при double-buffering).
@@ -326,8 +326,8 @@ for each tile:
 ## Куда смотреть дальше (опорные документы/код)
 
 - `docs/00_ForKids.md`: базовые термины MLIR/пайплайна (SSA/dialect/pass/lowering).
-- `docs/LOWERING_MULTITILE.md`: трассировка lowering до `ttkernel.*`, включая вставку `tile_regs_commit/wait`.
-- `docs/development/DST_Allocation.md`: как назначается `dst_idx`, почему появляются копии, и как unroll использует DST емкость.
+- `docs/sdlc/00_Main/03_Specs/LOWERING_MULTITILE.md`: трассировка lowering до `ttkernel.*`, включая вставку `tile_regs_commit/wait`.
+- `docs/sdlc/00_Main/03_Specs/DST_Allocation.md`: как назначается `dst_idx`, почему появляются копии, и как unroll использует DST емкость.
 - `lib/Dialect/TTL/Transforms/TTLInsertTileRegsSync.cpp`: реальная логика вставки `init_sfpu` и `tile_regs_*`.
 - LLK (tt-metal) для “почему есть wait”:
   - Wormhole: `tt_metal/third_party/tt_llk/tt_llk_wormhole_b0/llk_lib/llk_math_common.h`, `.../common/inc/cmath_common.h`

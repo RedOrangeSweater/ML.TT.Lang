@@ -104,13 +104,13 @@ Mapping описывает:
 Логическое место для прототипирования:
 
 - экспериментальная “timing/topology” надстройка над симулятором:
-  - функциональная корректность уже описана в `docs/01_Architecture/04_LLD_Simulator.md`,
+  - функциональная корректность уже описана в `docs/sdlc/00_Main/02_Architecture/04_LLD_Simulator.md`,
   - timing/topology модель должна быть отдельным слоем, чтобы не ломать инварианты функционального симулятора.
 
 Связанный дизайн-ориентир:
 
 - layered IR подход для ресурсных контрактов и поздней эмиссии:
-  - `docs/01_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md`
+  - `docs/sdlc/00_Main/02_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md`
 
 ## 7. Связь с текущей моделью “grid + 3 kernels”
 

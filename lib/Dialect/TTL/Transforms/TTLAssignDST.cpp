@@ -8,7 +8,7 @@
 //
 // This pass performs DST (destination) register assignment for ttl.compute
 // operations using interval-based linear scan allocation with unary operation
-// merging. The algorithm is based on docs/development/DST_Allocation.md:
+// merging. The algorithm is based on docs/sdlc/00_Main/03_Specs/DST_Allocation.md:
 //
 // Phase 1: Copy Insertion
 //   - For values with multiple consumers where any consumer is unary

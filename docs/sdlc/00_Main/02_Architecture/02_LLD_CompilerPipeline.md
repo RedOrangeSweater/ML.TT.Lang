@@ -6,8 +6,8 @@
 - **Аудитория**: разработчики passes/pipelines, maintainers `ttlang-opt`/`ttlang-translate`.
 - **Зачем читать**: понять, где задается pipeline, какие границы стадий, и где добавлять новые преобразования/тесты.
 - **Связанные документы**:
-  - `docs/01_Architecture/01_HighLevelDesign.md` (ответственности и инварианты)
-  - `docs/01_Architecture/05_LLD_Testing.md` (архитектура тестов)
+  - `docs/sdlc/00_Main/02_Architecture/01_HighLevelDesign.md` (ответственности и инварианты)
+  - `docs/sdlc/00_Main/02_Architecture/05_LLD_Testing.md` (архитектура тестов)
   - `docs/BUILD_SYSTEM.md` (сборка и toolchain)
 
 ## 1. Назначение

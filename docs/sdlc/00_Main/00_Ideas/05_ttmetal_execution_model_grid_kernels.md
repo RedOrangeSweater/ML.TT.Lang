@@ -27,8 +27,8 @@ flowchart LR
 
 Практическая точка входа и граница ответственности описаны в:
 
-- `docs/01_Architecture/03_LLD_RuntimeAndPythonAPI.md`
-- `docs/01_Architecture/02_LLD_CompilerPipeline.md`
+- `docs/sdlc/00_Main/02_Architecture/03_LLD_RuntimeAndPythonAPI.md`
+- `docs/sdlc/00_Main/02_Architecture/02_LLD_CompilerPipeline.md`
 
 ## 2. Kernels, “threads” и текущее ограничение interop: ровно 3 kernels
 
@@ -60,7 +60,7 @@ flowchart LR
 Аппаратные детали (в рамках того, что нужно для ментальной модели) полезно фиксировать на уровне “какие бинарники где исполняются”.
 TT-Metalium указывает, что compute kernel компилируется в **три отдельных бинарника**, каждый исполняется на соответствующем RISC-V ядре (T0–T2) внутри Tensix core и требует явной синхронизации между компонентами.
 
-Источник: `docs/ideas/04_reconfiguration_latency_and_tensix_facts.md` (со ссылкой на TT-Metalium).
+Источник: `docs/sdlc/00_Main/00_Ideas/04_reconfiguration_latency_and_tensix_facts.md` (со ссылкой на TT-Metalium).
 
 Важно:
 
@@ -71,7 +71,7 @@ TT-Metalium указывает, что compute kernel компилируется
 
 Интуиция “каждый вызванный op приводит к компиляции kernel’а” неверна как минимум в двух смыслах:
 
-1) **Есть кэш компиляции внутри wrapper’а**: `docs/01_Architecture/03_LLD_RuntimeAndPythonAPI.md` описывает, что wrapper делает cache key по свойствам аргументов и переиспользует уже скомпилированный результат при cache hit.
+1) **Есть кэш компиляции внутри wrapper’а**: `docs/sdlc/00_Main/02_Architecture/03_LLD_RuntimeAndPythonAPI.md` описывает, что wrapper делает cache key по свойствам аргументов и переиспользует уже скомпилированный результат при cache hit.
 
 2) **Есть различие между host-side и device-side стадиями**:
    - host-side: построение MLIR, запуск pass pipeline, генерация C++ kernel sources, взаимодействие с JIT/кэшами;
@@ -79,8 +79,8 @@ TT-Metalium указывает, что compute kernel компилируется
 
 Практические метрики и “reconfiguration latency” обсуждаются в:
 
-- `docs/ideas/04_reconfiguration_latency_and_tensix_facts.md`
-- `docs/development/PROFILING.md`
+- `docs/sdlc/00_Main/00_Ideas/04_reconfiguration_latency_and_tensix_facts.md`
+- `docs/sdlc/00_Main/03_Specs/PROFILING.md`
 
 ## 6. Как правильно отвечать на вопрос “что исполняется параллельно”
 
@@ -88,7 +88,7 @@ TT-Metalium указывает, что compute kernel компилируется
 
 - **Across cores (grid-level)**: одинаковая программа выполняется на множестве cores в `CoreRangeSet`.
 - **Within one core (RISC контексты + pipeline)**: внутри одного Tensix core “параллелизм” не означает два независимых compute instruction streams. Обычно это один логический instruction stream на compute-стороне, но с перекрытием стадий конвейера (unpack → math/SFPU → pack) и пайнлайнингом по тайлам через DST slots, при этом корректность держится на протоколах CB/DST и точках синхронизации (`tile_regs_*`, семафоры, `STALLWAIT`/`WAIT_SFPU` в LLK).
-- **Instruction-level/hazard-level**: часть задержек выглядит как “лок” (например `WAIT_SFPU`), но на практике это hazard/protocol points (см. `docs/ideas/03_tensix_sfpu_fpu_pipelining_dst.md`).
+- **Instruction-level/hazard-level**: часть задержек выглядит как “лок” (например `WAIT_SFPU`), но на практике это hazard/protocol points (см. `docs/sdlc/00_Main/00_Ideas/03_tensix_sfpu_fpu_pipelining_dst.md`).
 
 ## 7. Открытый вопрос (future work): “любой алгоритм -> произвольное разбиение kernels”
 

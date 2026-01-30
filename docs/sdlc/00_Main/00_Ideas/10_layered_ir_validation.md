@@ -11,7 +11,7 @@
 
 - **Статус**: документ готов как proposal; дальнейшие правки/уточнения возможны.
 - **Архитектурный документ (SoT для этой инициативы)**:
-  - `docs/01_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md`
+  - `docs/sdlc/00_Main/02_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md`
 - **Намерение**: на базе этого дизайна в будущем добавить диалекты/OpInterfaces/passes для верификации контрактов LLK DB v2 и для поздней эмиссии C++.
 
 ## Границы

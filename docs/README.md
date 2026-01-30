@@ -1,5 +1,7 @@
 # Documentation
 
+- **SDLC** (status, ideas, architecture, specs, QA): [docs/sdlc/README.md](sdlc/README.md). Main process: [docs/sdlc/00_Main/](sdlc/00_Main/).
+
 ## Prerequisites
 - Docs are disabled by default. Enable with `-DTTLANG_ENABLE_DOCS=ON` when configuring CMake.
 - On enable, CMake will `pip install` Sphinx, myst-parser, and sphinx-rtd-theme into the active Python.

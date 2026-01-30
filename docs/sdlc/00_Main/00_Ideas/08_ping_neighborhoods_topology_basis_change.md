@@ -21,9 +21,9 @@
 Затем "вернуться обратно" в физическое представление, сохранив корректность (инварианты по ресурсам, зависимостям и коммуникациям).
 
 Связанные заметки:
-- `docs/ideas/05_ttmetal_execution_model_grid_kernels.md` (текущий interop: grid + 3 kernels).
-- `docs/ideas/06_vertical_ir_to_horizontal_topology_scheduler.md` (вертикальный граф вычислений vs горизонтальная топология ресурсов).
-- `docs/ideas/07_virtual_cluster_over_physical_hw.md` (VirtualCluster: топология как параметризуемая модель).
+- `docs/sdlc/00_Main/00_Ideas/05_ttmetal_execution_model_grid_kernels.md` (текущий interop: grid + 3 kernels).
+- `docs/sdlc/00_Main/00_Ideas/06_vertical_ir_to_horizontal_topology_scheduler.md` (вертикальный граф вычислений vs горизонтальная топология ресурсов).
+- `docs/sdlc/00_Main/00_Ideas/07_virtual_cluster_over_physical_hw.md` (VirtualCluster: топология как параметризуемая модель).
 
 ## 2. Уточнение про "Пуанкаре => все как сфера" (важно как рамка)
 
