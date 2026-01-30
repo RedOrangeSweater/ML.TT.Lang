@@ -24,7 +24,10 @@ def TTLConvertTTLToTTKernel
 
   let options = [
     Option<"useTridBarriers", "use-trid-barriers", "bool", "false",
-           "Use TRID-aware DMA waits (barrier_with_trid) instead of global barriers.">,
+           "Use TRID-aware DMA waits (barrier_with_trid) instead of global barriers. "
+           "TRID must be unique per outstanding copy; ordering of TRID values is not "
+           "semantically significant. Generated TRIDs may be nondeterministic when "
+           "patterns are applied in parallel.">,
   ];
 
   let dependentDialects = [
