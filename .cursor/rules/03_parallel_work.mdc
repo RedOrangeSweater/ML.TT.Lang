@@ -1,0 +1,12 @@
+---
+description: "Core: parallel work / multi-agent safety"
+alwaysApply: true
+---
+
+## Multi-agent / parallel work safety
+
+- Assume multiple agents may modify the repo in parallel.
+- Keep changes minimal and focused; avoid unrelated refactors.
+- Avoid noisy churn (mass formatting/reserialization/lockfile churn) unless explicitly required.
+- If unrelated changes are present, split them by task/concern and commit separately.
+

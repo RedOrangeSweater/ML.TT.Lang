@@ -1,0 +1,22 @@
+PREFIX sdlc: <https://example.org/sdlc/>
+PREFIX ex:   <https://example.org/sdlc/intro_chain/>
+
+# Query to build MLIR from KG: return intent subgraph and effect (no phrase search).
+CONSTRUCT {
+  ?intent sdlc:usesConcept ?concept .
+  ?effect sdlc:inputType ?inputType .
+  ?effect sdlc:outputType ?outputType .
+  ?x ?rel ?y .
+}
+WHERE {
+  {
+    ?intent a sdlc:Intent ; sdlc:usesConcept ?concept .
+  } UNION {
+    ?effect a sdlc:Effect ;
+            sdlc:inputType ?inputType ;
+            sdlc:outputType ?outputType .
+  } UNION {
+    ?x ?rel ?y .
+    FILTER(?rel IN (sdlc:bidirectionalWith, sdlc:transformsTo, sdlc:feeds))
+  }
+}

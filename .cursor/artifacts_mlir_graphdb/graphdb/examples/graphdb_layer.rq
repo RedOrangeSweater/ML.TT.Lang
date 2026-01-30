@@ -1,0 +1,8 @@
+PREFIX sdlc: <https://example.org/sdlc/>
+PREFIX ex:   <https://example.org/sdlc/representation_layers/>
+
+CONSTRUCT { ?intent sdlc:usesConcept ?concept . ?effect sdlc:inputType ?inputType . ?effect sdlc:outputType ?outputType . }
+WHERE {
+  { ?intent a sdlc:Intent ; sdlc:usesConcept ?concept . FILTER(?intent = ex:graphdb_intent) }
+  UNION { ?effect a sdlc:Effect ; sdlc:inputType ?inputType ; sdlc:outputType ?outputType . FILTER(?effect = ex:effect_graphdb) }
+}

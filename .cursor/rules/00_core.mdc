@@ -1,0 +1,15 @@
+---
+description: "Core: purpose/SoT entrypoint + language rules"
+alwaysApply: true
+---
+
+## Project purpose & Source of Truth (SoT)
+
+- Keep the project purpose and the SoT entrypoint **explicit** (a short “start here” path).
+- Prefer linking to one canonical navigation document (README/status/issue/discussion) instead of duplicating content.
+
+## Language rules
+
+- Docs under `ideas/` and numbered SDLC folders (e.g. `docs/01_Architecture/`, `docs/03_BA/`, ...) are in Russian.
+- Code comments are in English.
+

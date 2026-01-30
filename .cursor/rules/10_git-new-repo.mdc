@@ -1,0 +1,14 @@
+---
+description: Git workflow for new repositories
+alwaysApply: true
+---
+
+# New repository Git workflow
+
+When initializing a new repository:
+
+- Create a clean **Initial commit** first (after `.gitignore` is in place).
+- Only after the initial commit, add the remote (e.g. `origin`) and set tracking.
+- Never push unless the user explicitly asks.
+
+Rationale: the initial commit establishes a stable baseline before wiring remotes and avoids accidental pushes of incomplete/dirty states.

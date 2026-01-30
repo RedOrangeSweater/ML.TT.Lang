@@ -1,0 +1,30 @@
+---
+description: "Core: atomic git workflow (stage/commit), commit-after-checks, no auto-push"
+alwaysApply: true
+---
+
+## Atomic git workflow
+
+- Before committing:
+  - review `git status` and diffs
+  - stage only files relevant to **one** logical change
+- If asked to “commit everything”, split into **atomic commits** by task/concern.
+- Never commit secrets (`.env`, keys, passwords) or dev-only backdoors.
+
+## Commit-after-checks
+
+- After each logically complete step (DoD met):
+  - run project checks if configured (tests/linters/hooks). If no checks exist, proceed.
+  - if checks fail, do **not** commit/push; fix and rerun checks
+  - then create an atomic commit (single concern, minimal scope)
+
+## Push policy
+
+## External repo propagation (portfolio workflow)
+
+When updating Cursor artifacts in external repos on disk (e.g. propagating `.cursor/rules` / `.cursor/commands` from a portfolio repo):
+
+- Do **not** block on a dirty working tree: you may still apply and commit **only** the Cursor artifact changes.
+- Stage and commit **only** the relevant paths (e.g. `.cursor/rules/**`, `.cursor/commands/**`) so you don't mix concerns.
+- If there is a risk of overwriting upstream-local rule changes, snapshot the current Cursor artifacts first (append-only, dated).
+

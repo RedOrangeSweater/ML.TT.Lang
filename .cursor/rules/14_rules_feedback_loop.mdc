@@ -1,0 +1,29 @@
+---
+description: If user corrects the assistant, update rules/templates to prevent repetition
+alwaysApply: true
+---
+
+# Feedback loop: user corrections must become rules
+
+If the user corrects the assistant (format, conventions, workflow, repeated mistake), treat it as a **signal** that the current rules/commands/templates are insufficient.
+
+## Requirements
+
+- **Capture the correction** as a rule update in this repo whenever it is reusable:
+  - Prefer updating an existing rule if it fits.
+  - Otherwise add a small, single-responsibility rule (a “fixer”).
+- **Apply the fix broadly** when it is clearly common:
+  - `docs/common/project_rules/*` (shared core)
+  - `docs/projects/*/.cursor/rules/*` (templates)
+  - `.cursor/rules/*` (this repo’s rules)
+  - `.cursor/commands/*` (command UX expectations)
+  - `.cursor/skills/*` (repeatable workflows)
+  - `docs/` (templates/entrypoints that prevent doc drift)
+- **Do not overfit**: keep project-specific details in the project overlay.
+
+## DoD (what “done” means)
+
+- There is a concrete rule or command update that would have prevented the same correction.
+- The change is minimal and scoped to the mistake category.
+- No policy regressions (e.g. do not introduce auto-push unless explicitly requested).
+

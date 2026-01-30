@@ -1,0 +1,27 @@
+---
+description: "Core: SDLC discipline and artifact syncing"
+alwaysApply: true
+---
+
+## SDLC discipline (required)
+
+- Every meaningful change must have a task context (Issue/Discussion/TASK doc).
+- Prefer small vertical steps: each step has a clear DoD and a quick smoke check.
+- If the change affects behavior, keep **code + tests + SDLC artifacts** consistent.
+
+## Docs-first vs GitHub-first (choose one per project)
+
+- If SoT is docs-first: keep a numbered SDLC navigation under `docs/` and keep READMEs up to date.
+- If SoT is GitHub-first: use Issues/Discussions as the executable work surface and keep repo docs as curated “entrypoints”, not duplicated status.
+
+## Negative SDLC (pre-GraphDB) when modeling domains
+
+If the task requires a GraphDB-formalized domain model intended for later MLIR translation, do not jump straight to GraphDB. Use negative steps first:
+
+- Step -3: intent + boundaries + draft glossary (entities/relations/attributes)
+- Step -2: invariants + minimal schema (types, allowed relations, cardinalities, naming rules)
+- Step -1: operational semantics (ops/transitions/queries + test scenarios)
+- Step 0: GraphDB representation
+
+Reference: `docs/01_Architecture/04_Negative_SDLC_PreGraphDB.md`.
+

@@ -1,0 +1,62 @@
+@prefix sdlc: <https://example.org/sdlc/> .
+@prefix ex:   <https://example.org/sdlc/representation_layers/> .
+
+# Section 2: representation layers — concepts and intents only, no phrases.
+ex:Doc      a sdlc:Concept .
+ex:MLIR     a sdlc:Concept .
+ex:GraphDB  a sdlc:Concept .
+ex:LLM      a sdlc:Concept .
+ex:Dialect  a sdlc:Concept .
+ex:Layer    a sdlc:Concept .
+
+# 2.1 Doc (Markdown / structure)
+ex:Markdown        a sdlc:Concept .
+ex:Structure       a sdlc:Concept .
+ex:Footnote        a sdlc:Concept .
+ex:Traceability    a sdlc:Concept .
+ex:doc_layer_intent a sdlc:Intent ;
+    sdlc:usesConcept ex:Doc, ex:MLIR, ex:Markdown, ex:Structure, ex:Footnote, ex:Traceability .
+ex:effect_doc_layer a sdlc:Effect ;
+    sdlc:inputType ex:Doc ; sdlc:outputType ex:MLIR .
+
+# 2.2 MLIR (document-as-structure)
+ex:DocumentStructure a sdlc:Concept .
+ex:Bidirectional     a sdlc:Concept .
+ex:mlir_doc_layer_intent a sdlc:Intent ;
+    sdlc:usesConcept ex:MLIR, ex:Doc, ex:DocumentStructure, ex:Dialect, ex:LLM, ex:Bidirectional .
+ex:effect_mlir_doc_layer a sdlc:Effect ;
+    sdlc:inputType ex:Doc ; sdlc:outputType ex:MLIR .
+
+# 2.3 MLIR passes
+ex:MLIRPass             a sdlc:Concept .
+ex:TransformationRegistry a sdlc:Concept .
+ex:Lowering              a sdlc:Concept .
+ex:Deterministic         a sdlc:Concept .
+ex:mlir_passes_intent a sdlc:Intent ;
+    sdlc:usesConcept ex:MLIR, ex:MLIRPass, ex:TransformationRegistry, ex:Dialect, ex:Lowering, ex:Deterministic .
+ex:effect_mlir_passes a sdlc:Effect ;
+    sdlc:inputType ex:MLIR ; sdlc:outputType ex:MLIR .
+
+# 2.4 GraphDB
+ex:Entity    a sdlc:Concept .
+ex:Relation  a sdlc:Concept .
+ex:Attribute a sdlc:Concept .
+ex:graphdb_intent a sdlc:Intent ;
+    sdlc:usesConcept ex:GraphDB, ex:Entity, ex:Relation, ex:Attribute, ex:Query, ex:MLIR, ex:Layer .
+ex:effect_graphdb a sdlc:Effect ;
+    sdlc:inputType ex:GraphDB ; sdlc:outputType ex:MLIR .
+
+# 2.5 Next MLIR layer
+ex:MLIRLayer a sdlc:Concept .
+ex:next_mlir_intent a sdlc:Intent ;
+    sdlc:usesConcept ex:Layer, ex:MLIR, ex:Dialect, ex:TransformationRegistry, ex:Query, ex:MLIRPass .
+ex:effect_next_mlir a sdlc:Effect ;
+    sdlc:inputType ex:MLIR ; sdlc:outputType ex:Layer .
+
+# 2.6 Final generation
+ex:GenerationStage a sdlc:Concept .
+ex:Text           a sdlc:Concept .
+ex:final_llm_intent a sdlc:Intent ;
+    sdlc:usesConcept ex:LLM, ex:MLIR, ex:Text, ex:GenerationStage, ex:Deterministic .
+ex:effect_final_llm a sdlc:Effect ;
+    sdlc:inputType ex:MLIR ; sdlc:outputType ex:Text .

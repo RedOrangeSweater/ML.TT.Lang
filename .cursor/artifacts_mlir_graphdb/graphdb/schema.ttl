@@ -1,0 +1,23 @@
+@prefix sdlc: <https://example.org/sdlc/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+
+# KG-first: only concepts, relations, effects, rules. No phrase/content literals.
+# Assertions (concepts, intents, effects): see examples/*.ttl
+
+sdlc:Concept       a owl:Class .
+sdlc:Relation      a owl:Class .
+sdlc:Effect        a owl:Class .
+sdlc:Intent        a owl:Class .
+sdlc:Layer         a owl:Class .
+sdlc:Dialect       a owl:Class .
+
+sdlc:usesConcept   a owl:ObjectProperty .
+sdlc:implies       a owl:ObjectProperty .
+sdlc:transformsTo  a owl:ObjectProperty .
+sdlc:hasEffect     a owl:ObjectProperty .
+sdlc:dependsOn     a owl:ObjectProperty .
+sdlc:bidirectionalWith a owl:ObjectProperty .
+sdlc:feeds         a owl:ObjectProperty .
+sdlc:inputType     a owl:ObjectProperty .
+sdlc:outputType    a owl:ObjectProperty .

@@ -1,0 +1,26 @@
+@prefix sdlc: <https://example.org/sdlc/> .
+@prefix ex:   <https://example.org/sdlc/intro_chain/> .
+
+# "Цепочка представлений" as KG facts only (no phrase literals).
+# Concepts
+ex:Doc                a sdlc:Concept .
+ex:MLIR               a sdlc:Concept .
+ex:GraphDB            a sdlc:Concept .
+ex:LLM                a sdlc:Concept .
+ex:TransformationPass a sdlc:Concept .
+ex:Query              a sdlc:Concept .
+ex:Layer              a sdlc:Concept .
+
+# Relations: Doc <-> MLIR; GraphDB Query -> Next MLIR Layer; Final MLIR -> LLM
+ex:Doc   sdlc:bidirectionalWith ex:MLIR .
+ex:Query sdlc:transformsTo       ex:Layer .
+ex:MLIR  sdlc:feeds              ex:LLM .
+
+# Intent for this paragraph
+ex:intro_chain_intent a sdlc:Intent ;
+    sdlc:usesConcept ex:Doc, ex:MLIR, ex:GraphDB, ex:LLM, ex:TransformationPass, ex:Query, ex:Layer .
+
+# Effect: from input representation to output text (abstract)
+ex:effect_chain a sdlc:Effect ;
+    sdlc:inputType  ex:MLIR ;
+    sdlc:outputType ex:LLM .

@@ -1,0 +1,57 @@
+---
+description: Keep VSCode/Cursor Run configs accurate; prefer Run configs over shell instructions
+alwaysApply: true
+---
+
+# Run configs are the primary UX
+
+Prefer **Run configs** (VSCode/Cursor) over asking the user to manually run shell commands.
+
+## Requirements
+
+- Always add/update `.vscode/launch.json` and `.vscode/tasks.json` when:
+  - a new app/service is introduced,
+  - scripts or ports change,
+  - startup sequence changes,
+  - a new common workflow appears (dev/typecheck/build).
+- Prefer **clear, stable, discoverable names** (project-specific prefixes are OK).
+- Provide a **compound** Run config for the default workflow (e.g. UI + backend).
+- Keep run configs **repo-tracked** (ensure `.gitignore` does not exclude `launch.json` / `tasks.json`).
+
+## Naming conventions (make them consistent)
+
+Use a stable, human-scannable naming pattern with separators:
+
+- **Prefix**: project/app prefix (e.g. `APP:`, `BE:`, `UI:`)
+- **Area**: short stable area (e.g. `Dev`, `Build`, `Spec→Docs`, `RevEng`)
+- **Action**: verb or workflow (e.g. `generate`, `verify`, `build`, `typecheck`, `Dev (UI)`)
+- **Details**: optional, in parentheses
+
+Examples:
+
+- `UI: Dev`
+- `BE: Dev (API)`
+- `APP: Build (prod)`
+- `APP: Spec→Docs (generate)`
+
+Rule: **do not mix separators** for the same concept (avoid “`APP: Spec: ...`” in one place and “`APP: Spec ...`” in another).
+
+## Consistency checks (mandatory after any change)
+
+Whenever you touch `.vscode/launch.json` or `.vscode/tasks.json`:
+
+- **JSON validity**: both files must parse as JSON (no trailing commas, no comments).
+- **Compound integrity** (`launch.json`):
+  - every name referenced in `compounds[].configurations[]` **must exist** in `configurations[].name`.
+  - when renaming a configuration, update all compounds that reference it (no stale names).
+- **Tasks vs docs**:
+  - if you add a new common workflow (generate/verify/dev), provide a discoverable task/run config for it.
+  - if docs say “run X”, ensure there is a matching Run config name (Run-config-first UX).
+
+Practical sanity check: after edits, run quick parsing + reference validation (don’t ship broken run configs).
+
+## Communication rule
+
+- When the user asks “how to run”, answer with **which Run config to pick** (and what it starts).
+- If a background service is needed, provide a Run config for it.
+

@@ -1,0 +1,11 @@
+@prefix sdlc: <https://example.org/sdlc/> .
+@prefix ex:   <https://example.org/sdlc/links_section/> .
+
+# Section 5 Links: concepts only, no phrases.
+ex:CommonSDLCCore   a sdlc:Concept .
+ex:NegativeSDLC    a sdlc:Concept .
+ex:Registry         a sdlc:Concept .
+ex:DocMLIRFootnotes a sdlc:Concept .
+
+ex:links_section_intent a sdlc:Intent ;
+    sdlc:usesConcept ex:CommonSDLCCore, ex:NegativeSDLC, ex:Registry, ex:DocMLIRFootnotes .

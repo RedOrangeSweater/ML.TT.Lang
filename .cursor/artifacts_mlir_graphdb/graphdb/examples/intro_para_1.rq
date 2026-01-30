@@ -1,0 +1,20 @@
+PREFIX sdlc: <https://example.org/sdlc/>
+PREFIX ex:   <https://example.org/sdlc/intro_section/>
+
+# Query for intro para 1: intent and effect subgraph (no phrase search).
+CONSTRUCT {
+  ?intent sdlc:usesConcept ?concept .
+  ?effect sdlc:inputType ?inputType .
+  ?effect sdlc:outputType ?outputType .
+}
+WHERE {
+  {
+    ?intent a sdlc:Intent ; sdlc:usesConcept ?concept .
+    FILTER(?intent = ex:intro_para_1_intent)
+  } UNION {
+    ?effect a sdlc:Effect ;
+            sdlc:inputType ?inputType ;
+            sdlc:outputType ?outputType .
+    FILTER(?effect = ex:effect_intro_para_1)
+  }
+}

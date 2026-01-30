@@ -1,0 +1,30 @@
+---
+description: Mermaid diagrams in docs must be parse-safe (quotes + <br/>)
+alwaysApply: true
+---
+
+# Mermaid in docs: parse-safe style
+
+When adding or editing Mermaid diagrams (especially `flowchart`), use a **parse-safe** style to avoid Mermaid parser errors across renderers (GitHub/Cursor/Markdown previews).
+
+## Rules
+
+- **Always quote node/subgraph labels**:
+  - Prefer `Node["text"]` (or `Node("text")`) over `Node[text]` when the label contains punctuation, parentheses, slashes, or non-ASCII symbols.
+  - Prefer `subgraph X["label"]` over `subgraph X[label]`.
+- **Never use `\n` inside labels**. Use HTML breaks instead:
+  - Use `<br/>` inside the quoted label text.
+- **Avoid unescaped special characters in unquoted labels**. If you need them, **quote the label**.
+
+## Examples
+
+```mermaid
+flowchart TD
+  subgraph Apps["apps/"]
+    UI["tooling-ui (Vite)"]
+    BE["tooling-backend (API)"]
+  end
+
+  Idea["Идея в inbox"] --> Park["Остаётся в inbox<br/>(можно вернуться позже)"]
+```
+

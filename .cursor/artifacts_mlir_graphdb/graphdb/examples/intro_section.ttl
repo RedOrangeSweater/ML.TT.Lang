@@ -1,0 +1,35 @@
+@prefix sdlc: <https://example.org/sdlc/> .
+@prefix ex:   <https://example.org/sdlc/intro_section/> .
+
+# Doc–MLIR–GraphDB pipeline (intro section): concepts and relations only, no phrases.
+ex:Pipeline          a sdlc:Concept .
+ex:Doc               a sdlc:Concept .
+ex:MLIR              a sdlc:Concept .
+ex:GraphDB           a sdlc:Concept .
+ex:LLM               a sdlc:Concept .
+ex:TransformationPass a sdlc:Concept .
+ex:Layer             a sdlc:Concept .
+
+ex:Doc   sdlc:bidirectionalWith ex:MLIR .
+ex:GraphDB sdlc:transformsTo    ex:Layer .
+ex:MLIR  sdlc:feeds             ex:LLM .
+
+ex:intro_section_intent a sdlc:Intent ;
+    sdlc:usesConcept ex:Pipeline, ex:Doc, ex:MLIR, ex:GraphDB, ex:LLM, ex:TransformationPass, ex:Layer .
+
+ex:effect_intro_section a sdlc:Effect ;
+    sdlc:inputType  ex:MLIR ;
+    sdlc:outputType ex:LLM .
+
+# First paragraph of Section 1: documentation, MLIR, GraphDB, registry, footnotes
+ex:Registry           a sdlc:Concept .
+ex:ConsistencyCheck   a sdlc:Concept .
+ex:Footnote           a sdlc:Concept .
+ex:Dialect            a sdlc:Concept .
+
+ex:intro_para_1_intent a sdlc:Intent ;
+    sdlc:usesConcept ex:Doc, ex:MLIR, ex:GraphDB, ex:LLM, ex:Registry, ex:ConsistencyCheck, ex:Footnote, ex:Dialect .
+
+ex:effect_intro_para_1 a sdlc:Effect ;
+    sdlc:inputType  ex:Doc ;
+    sdlc:outputType ex:MLIR .

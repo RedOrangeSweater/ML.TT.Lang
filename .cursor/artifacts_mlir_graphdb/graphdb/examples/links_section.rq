@@ -1,0 +1,9 @@
+PREFIX sdlc: <https://example.org/sdlc/>
+PREFIX ex:   <https://example.org/sdlc/links_section/>
+
+# Query for links section: intent subgraph (no phrase search).
+CONSTRUCT { ?intent sdlc:usesConcept ?concept . }
+WHERE {
+  ?intent a sdlc:Intent ; sdlc:usesConcept ?concept .
+  FILTER(?intent = ex:links_section_intent)
+}
