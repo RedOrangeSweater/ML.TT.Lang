@@ -69,17 +69,20 @@ struct DeduplicateConsecutiveTridBarriers
 
 } // namespace
 
-void populateTTKernelCleanupPatterns(RewritePatternSet &patterns) {
+void populateTTKernelCleanupPatterns(RewritePatternSet &patterns,
+                                     bool useTridBarriers) {
   patterns.add<DeduplicateConsecutiveBarriers<NocAsyncReadBarrierOp>>(
       patterns.getContext());
   patterns.add<DeduplicateConsecutiveBarriers<NocAsyncWriteBarrierOp>>(
       patterns.getContext());
-  patterns
-      .add<DeduplicateConsecutiveTridBarriers<NocAsyncReadBarrierWithTridOp>>(
-          patterns.getContext());
-  patterns
-      .add<DeduplicateConsecutiveTridBarriers<NocAsyncWriteBarrierWithTridOp>>(
-          patterns.getContext());
+  if (useTridBarriers) {
+    patterns
+        .add<DeduplicateConsecutiveTridBarriers<NocAsyncReadBarrierWithTridOp>>(
+            patterns.getContext());
+    patterns
+        .add<DeduplicateConsecutiveTridBarriers<NocAsyncWriteBarrierWithTridOp>>(
+            patterns.getContext());
+  }
 }
 
 } // namespace mlir::tt::ttkernel
