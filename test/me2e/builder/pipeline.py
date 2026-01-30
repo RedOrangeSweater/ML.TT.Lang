@@ -17,7 +17,11 @@ from ttmlir.passmanager import PassManager
 from .device_arch import get_mock_arch_from_device
 
 
-def compile_ttl_to_ttkernel(module: Module, device: Optional[Any] = None) -> Module:
+def compile_ttl_to_ttkernel(
+    module: Module,
+    device: Optional[Any] = None,
+    use_trid_barriers: bool = False,
+) -> Module:
     """
     Run the TTL-to-TTKernel pass pipeline on the module.
 
@@ -26,6 +30,8 @@ def compile_ttl_to_ttkernel(module: Module, device: Optional[Any] = None) -> Mod
     Args:
         module: TTL MLIR module to compile.
         device: Optional TTNN device for architecture detection.
+        use_trid_barriers: If True, use TRID-aware DMA barriers (pass option
+            use-trid-barriers=1). Default False matches pass default.
 
     Returns:
         Compiled module with TTKernel/EmitC ops.
@@ -33,6 +39,12 @@ def compile_ttl_to_ttkernel(module: Module, device: Optional[Any] = None) -> Mod
     # Always use mock architecture detected from device.
     mock_arch = get_mock_arch_from_device(device)
     device_pass = f"ttcore-register-device{{mock-system-desc-arch={mock_arch}}}"
+
+    ttkernel_pass = (
+        "convert-ttl-to-ttkernel{use-trid-barriers=1}"
+        if use_trid_barriers
+        else "convert-ttl-to-ttkernel"
+    )
 
     pipeline_str = (
         f"builtin.module("
@@ -44,7 +56,7 @@ def compile_ttl_to_ttkernel(module: Module, device: Optional[Any] = None) -> Mod
         f"ttl-lower-to-loops,"
         f"ttl-annotate-cb-associations),"
         # TTL to TTKernel conversion (module-level pass).
-        f"convert-ttl-to-ttkernel,"
+        f"{ttkernel_pass},"
         f"canonicalize,"
         f"cse,"
         # Lower to EmitC.
