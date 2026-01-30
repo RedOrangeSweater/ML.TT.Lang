@@ -647,6 +647,7 @@ static LogicalResult lowerSliceToCB(CopyOp op, TensorSliceOp sliceOp,
   auto i32Ty = rewriter.getI32Type();
 
   // Tag subsequent NOC reads with this copy's TRID.
+  // Currently fixed to NOC 0. TODO(ttl): Generalize NOC selection (issue #77).
   if (useTridBarriers) {
     Value nocVal = makeZeroI8(loc, rewriter);
     rewriter.create<ttk::NocAsyncReadSetTridOp>(loc, tridVal, nocVal);
@@ -750,6 +751,7 @@ static LogicalResult lowerCBToSlice(CopyOp op, Value srcCB,
   auto i32Ty = rewriter.getI32Type();
 
   // Tag subsequent NOC writes with this copy's TRID.
+  // Currently fixed to NOC 0. TODO(ttl): Generalize NOC selection (issue #77).
   if (useTridBarriers) {
     Value nocVal = makeZeroI8(loc, rewriter);
     rewriter.create<ttk::NocAsyncWriteSetTridOp>(loc, tridVal, nocVal);
@@ -903,6 +905,7 @@ struct WaitLowering : OpConversionPattern<WaitOp> {
             op,
             "transfer handle must be type-converted to i32 before ttl.wait");
       }
+      // Currently fixed to NOC 0. TODO(ttl): Generalize NOC selection (issue #77).
       Value nocVal = makeZeroI8(op.getLoc(), rewriter);
       if (*kind == TransferKind::read) {
         rewriter.create<ttk::NocAsyncReadBarrierWithTridOp>(op.getLoc(),
