@@ -1,0 +1,9 @@
+# Граф проектов (tt-metal)
+
+Точка входа для статуса и навигации по SDLC.
+
+- **SDLC tt-metal**: [README](../README.md) — status, ideas, BA, architecture, specs, QA, operations.
+- **Статус-дашборд**: [01_Kanban.md](01_Kanban.md).
+- **Пайплайн Doc–MLIR–GraphDB**: [00_Doc_MLIR_GraphDB_Pipeline.md](../02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md).
+
+Обновлять при изменении структуры репо или приоритетов.
