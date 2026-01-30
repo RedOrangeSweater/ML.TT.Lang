@@ -19,6 +19,8 @@
   - `docs/sdlc/00_Main/02_Architecture/06_LLD_BuildSystem.md`
   - `docs/sdlc/00_Main/02_Architecture/07_LLD_LayeredIR_TTMetal_LLkDbV2_Validation.md` (proposal)
   - Языковая спецификация: `docs/sphinx/specs/TTLangSpecification.md`
+  - Pipeline Doc–MLIR–GraphDB (tt-metal): [01_tt_metal/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md](../../01_tt_metal/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md)
+  - LLK (архитектура ядер): [02_llk/02_Architecture](../../02_llk/02_Architecture/)
 
 ## 1. Цель и область
 

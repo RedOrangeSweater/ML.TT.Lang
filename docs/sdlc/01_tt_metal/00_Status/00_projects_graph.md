@@ -6,4 +6,6 @@
 - **Статус-дашборд**: [01_Kanban.md](01_Kanban.md).
 - **Пайплайн Doc–MLIR–GraphDB**: [00_Doc_MLIR_GraphDB_Pipeline.md](../02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md).
 
+**Связанные блоки SDLC**: tt-lang main: [00_Main/](../../00_Main/). LLK: [02_llk/](../../02_llk/).
+
 Обновлять при изменении структуры репо или приоритетов.
