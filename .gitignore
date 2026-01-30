@@ -61,3 +61,7 @@ generated/pykernels/*
 **/temp/
 
 test/temp
+
+# Paths with .ignore suffix (e.g. docs/to_github.ignore/)
+**/*.ignore
+**/*.ignore/**
