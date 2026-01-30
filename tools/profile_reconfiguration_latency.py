@@ -13,6 +13,9 @@ It relies on opt-in timing in `python/ttl/ttl_api.py`:
 - TTLANG_PROFILE_COMPILE=1
 - TTLANG_PROFILE_COMPILE_OUT=/path/to/out.jsonl
 
+To emit host-side Tracy zones (stage boundaries):
+- TTLANG_TRACY=1
+
 Usage (from repo root):
 
   source build/env/activate
@@ -20,6 +23,7 @@ Usage (from repo root):
 
 Optional:
   --device-profiler      Enable TT-Metal device profiler (cycles) via env var
+  --tracy                Enable host-side Tracy zones (TTLANG_TRACY=1)
   --out /tmp/profile.jsonl
 """
 
@@ -137,6 +141,11 @@ def main() -> int:
         action="store_true",
         help="Enable TT-Metal device profiler (cycles) via TT_METAL_DEVICE_PROFILER=1.",
     )
+    parser.add_argument(
+        "--tracy",
+        action="store_true",
+        help="Enable host-side Tracy zones for tt-lang stages (TTLANG_TRACY=1).",
+    )
     args = parser.parse_args()
 
     out_path = Path(args.out)
@@ -146,6 +155,9 @@ def main() -> int:
 
     os.environ["TTLANG_PROFILE_COMPILE"] = "1"
     os.environ["TTLANG_PROFILE_COMPILE_OUT"] = str(out_path)
+
+    if args.tracy:
+        os.environ["TTLANG_TRACY"] = "1"
 
     if args.device_profiler:
         os.environ["TT_METAL_DEVICE_PROFILER"] = "1"
@@ -163,6 +175,11 @@ def main() -> int:
 
         print("=== Cold start (clear caches) ===")
         _clear_caches(device)
+        try:
+            if args.tracy:
+                ttnn.profiler.tracy_frame()  # type: ignore[attr-defined]
+        except Exception:
+            pass
         t0 = time.perf_counter()
         add_kernel(lhs, rhs, out)
         ttnn.synchronize_device(device)
@@ -172,6 +189,11 @@ def main() -> int:
         print(json.dumps({"cold_wall_s": cold_wall_s, **cold_summary}, indent=2))
 
         print("\n=== Warm start (same kernel, cached) ===")
+        try:
+            if args.tracy:
+                ttnn.profiler.tracy_frame()  # type: ignore[attr-defined]
+        except Exception:
+            pass
         t0 = time.perf_counter()
         add_kernel(lhs, rhs, out)
         ttnn.synchronize_device(device)
@@ -200,4 +222,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

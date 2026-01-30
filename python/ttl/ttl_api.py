@@ -68,6 +68,7 @@ from .kernel_runner import (
 from .operators import CopyTransferHandler, TensorBlock, copy
 from .ttl_utils import get_thread_type_string
 from .config import HAS_TT_DEVICE
+from .profiling import span as profile_span
 
 # Thread registry for automatic collection of @compute and @datamovement threads
 _thread_registry: List[Callable] = []
@@ -432,30 +433,30 @@ class CompiledTTNNKernel:
             )
 
         # Build kernel specs from stored kernel info.
-        t0 = time.perf_counter()
-        kernel_specs = []
-        for kernel_idx, (kernel_path, thread_type) in enumerate(self.kernel_paths):
-            tensor_indices = self.kernel_tensor_indices[kernel_idx]
-            config = self.kernel_configs[kernel_idx]
-            spec = KernelSpec(
-                path=kernel_path,
-                thread_type=thread_type,
-                tensor_indices=tensor_indices,
-                config=config,
-            )
-            kernel_specs.append(spec)
-        build_kernel_specs_s = time.perf_counter() - t0
+        with profile_span("ttl.execute.build_kernel_specs") as sp:
+            kernel_specs = []
+            for kernel_idx, (kernel_path, thread_type) in enumerate(self.kernel_paths):
+                tensor_indices = self.kernel_tensor_indices[kernel_idx]
+                config = self.kernel_configs[kernel_idx]
+                spec = KernelSpec(
+                    path=kernel_path,
+                    thread_type=thread_type,
+                    tensor_indices=tensor_indices,
+                    config=config,
+                )
+                kernel_specs.append(spec)
+        build_kernel_specs_s = sp.elapsed_s
 
         # Use shared kernel execution logic.
-        t0 = time.perf_counter()
-        result = run_kernel_on_device(
-            kernel_specs=kernel_specs,
-            tensors=list(args),
-            cb_configs=self.cb_configs,
-            core_ranges=self.core_ranges,
-            program_hash=self.program_hash,
-        )
-        run_kernel_on_device_s = time.perf_counter() - t0
+        with profile_span("ttl.execute.run_kernel_on_device") as sp:
+            result = run_kernel_on_device(
+                kernel_specs=kernel_specs,
+                tensors=list(args),
+                cb_configs=self.cb_configs,
+                core_ranges=self.core_ranges,
+                program_hash=self.program_hash,
+            )
+        run_kernel_on_device_s = sp.elapsed_s
 
         if profile_enabled:
             try:
@@ -968,11 +969,11 @@ def _compile_kernel(
     _reset_cb_counter()
     _set_current_grid(grid)
 
-    t0 = time.perf_counter()
-    _clear_thread_registry()
-    f(*args, **kwargs)
-    threads = _get_registered_threads()
-    stage_times_s["python_kernel_build_s"] = time.perf_counter() - t0
+    with profile_span("ttl.python_kernel_build") as sp:
+        _clear_thread_registry()
+        f(*args, **kwargs)
+        threads = _get_registered_threads()
+    stage_times_s["python_kernel_build_s"] = sp.elapsed_s
 
     if not threads:
         raise ValueError(
@@ -980,9 +981,9 @@ def _compile_kernel(
             "@ttl.datamovement() function inside your kernel."
         )
 
-    t0 = time.perf_counter()
-    cb_configs = _collect_cb_configs(threads)
-    stage_times_s["collect_cb_configs_s"] = time.perf_counter() - t0
+    with profile_span("ttl.collect_cb_configs") as sp:
+        cb_configs = _collect_cb_configs(threads)
+    stage_times_s["collect_cb_configs_s"] = sp.elapsed_s
 
     injected_program_kwargs = {
         "grid": grid,
@@ -1013,67 +1014,67 @@ def _compile_kernel(
         # Track per-kernel line offsets for correct display
         kernel_line_offsets = {}
 
-        t0 = time.perf_counter()
-        for compile_thread in program.threads:
-            try:
-                ct = compile_thread(*program.args, **program.kwargs)
-            except TTLangCompileError as e:
-                # Thread-level error with embedded source location - use it
-                raise type(e)(e.format()) from None
-            except (ValueError, TypeError) as e:
-                # Kernel-level error (no embedded location) - use kernel decorator
-                formatted = format_python_error(
-                    e, kernel_source_file, kernel_line_offset
+        with profile_span("ttl.thread_compile") as sp:
+            for compile_thread in program.threads:
+                try:
+                    ct = compile_thread(*program.args, **program.kwargs)
+                except TTLangCompileError as e:
+                    # Thread-level error with embedded source location - use it
+                    raise type(e)(e.format()) from None
+                except (ValueError, TypeError) as e:
+                    # Kernel-level error (no embedded location) - use kernel decorator
+                    formatted = format_python_error(
+                        e, kernel_source_file, kernel_line_offset
+                    )
+                    raise type(e)(formatted) from None
+                compiled_threads.append(ct)
+                thread_tensor_indices.append(ct._tensor_accessor_global_indices)
+
+                # Set TensorAccessor indexing attributes for C++ lowering
+                base_cta = get_cb_count()
+                ct.func_entry.attributes["ttl.base_cta_index"] = IntegerAttr.get(
+                    IntegerType.get_signless(32, ctx), base_cta
                 )
-                raise type(e)(formatted) from None
-            compiled_threads.append(ct)
-            thread_tensor_indices.append(ct._tensor_accessor_global_indices)
+                crta_indices = ct._tensor_accessor_global_indices
+                ct.func_entry.attributes["ttl.crta_indices"] = ArrayAttr.get(
+                    [
+                        IntegerAttr.get(IntegerType.get_signless(32, ctx), idx)
+                        for idx in crta_indices
+                    ],
+                    ctx,
+                )
 
-            # Set TensorAccessor indexing attributes for C++ lowering
-            base_cta = get_cb_count()
-            ct.func_entry.attributes["ttl.base_cta_index"] = IntegerAttr.get(
-                IntegerType.get_signless(32, ctx), base_cta
-            )
-            crta_indices = ct._tensor_accessor_global_indices
-            ct.func_entry.attributes["ttl.crta_indices"] = ArrayAttr.get(
-                [
-                    IntegerAttr.get(IntegerType.get_signless(32, ctx), idx)
-                    for idx in crta_indices
-                ],
-                ctx,
-            )
+                # Collect source info for error reporting
+                if hasattr(ct, "source_file") and hasattr(ct, "source_lines"):
+                    all_source_files[ct.name] = ct.source_file
+                    all_source_lines[ct.name] = ct.source_lines
+                # Track per-kernel line offset
+                if hasattr(ct, "line_offset"):
+                    kernel_line_offsets[ct.name] = ct.line_offset
 
-            # Collect source info for error reporting
-            if hasattr(ct, "source_file") and hasattr(ct, "source_lines"):
-                all_source_files[ct.name] = ct.source_file
-                all_source_lines[ct.name] = ct.source_lines
-            # Track per-kernel line offset
-            if hasattr(ct, "line_offset"):
-                kernel_line_offsets[ct.name] = ct.line_offset
+        stage_times_s["thread_compile_s"] = sp.elapsed_s
 
-        stage_times_s["thread_compile_s"] = time.perf_counter() - t0
+        with profile_span("ttl.module_assembly") as sp:
+            module = Module.create(loc)
 
-        t0 = time.perf_counter()
-        module = Module.create(loc)
-
-        # Insert standalone thread functions directly into module
-        with InsertionPoint(module.body):
-            for ct in compiled_threads:
-                ct.func_entry.operation.detach_from_parent()
-                module.body.append(ct.func_entry)
-        stage_times_s["module_assembly_s"] = time.perf_counter() - t0
+            # Insert standalone thread functions directly into module
+            with InsertionPoint(module.body):
+                for ct in compiled_threads:
+                    ct.func_entry.operation.detach_from_parent()
+                    module.body.append(ct.func_entry)
+        stage_times_s["module_assembly_s"] = sp.elapsed_s
 
         initial_mlir_path = os.environ.get("TTLANG_INITIAL_MLIR")
         if initial_mlir_path:
-            t_dump0 = time.perf_counter()
-            with open(initial_mlir_path, "w") as fd:
-                module.operation.print(
-                    file=fd,
-                    enable_debug_info=print_debug_locations,
-                    print_generic_op_form=False,
-                )
-            print(f"SAVED INITIAL TO {initial_mlir_path}")
-            stage_times_s["dump_initial_mlir_s"] = time.perf_counter() - t_dump0
+            with profile_span("ttl.dump_initial_mlir") as sp:
+                with open(initial_mlir_path, "w") as fd:
+                    module.operation.print(
+                        file=fd,
+                        enable_debug_info=print_debug_locations,
+                        print_generic_op_form=False,
+                    )
+                print(f"SAVED INITIAL TO {initial_mlir_path}")
+            stage_times_s["dump_initial_mlir_s"] = sp.elapsed_s
 
         verify = True
 
@@ -1160,9 +1161,9 @@ def _compile_kernel(
 
         # Run the pass manager with error handling for source-aware diagnostics
         try:
-            t0 = time.perf_counter()
-            pm.run(module.operation)
-            stage_times_s["mlir_pipeline_s"] = time.perf_counter() - t0
+            with profile_span("ttl.mlir_pipeline") as sp:
+                pm.run(module.operation)
+            stage_times_s["mlir_pipeline_s"] = sp.elapsed_s
         except Exception as e:
             error_msg = str(e)
             # Try to format error with source context
@@ -1178,15 +1179,15 @@ def _compile_kernel(
 
         final_mlir_path = os.environ.get("TTLANG_FINAL_MLIR")
         if final_mlir_path:
-            t_dump1 = time.perf_counter()
-            with open(final_mlir_path, "w") as fd:
-                module.operation.print(
-                    file=fd,
-                    enable_debug_info=print_debug_locations,
-                    print_generic_op_form=False,
-                )
-            print(f"SAVED FINAL TO {final_mlir_path}")
-            stage_times_s["dump_final_mlir_s"] = time.perf_counter() - t_dump1
+            with profile_span("ttl.dump_final_mlir") as sp:
+                with open(final_mlir_path, "w") as fd:
+                    module.operation.print(
+                        file=fd,
+                        enable_debug_info=print_debug_locations,
+                        print_generic_op_form=False,
+                    )
+                print(f"SAVED FINAL TO {final_mlir_path}")
+            stage_times_s["dump_final_mlir_s"] = sp.elapsed_s
 
         # Extract source lines for auto-profiling (use first thread's source)
         profile_source_lines = None
@@ -1195,22 +1196,22 @@ def _compile_kernel(
             profile_source_lines = all_source_lines[first_thread]
 
         # Compile to CompiledTTNNKernel for ttnn.generic_op
-        t0 = time.perf_counter()
-        compiled_kernel = _compile_ttnn_kernel(
-            module,
-            args,
-            grid,
-            num_outs,
-            thread_tensor_indices,
-            cb_configs,
-            program_hash=program_hash,
-            fp32_dest_acc_en=fp32_dest_acc_en,
-            dst_full_sync_en=dst_full_sync_en,
-            source_lines=profile_source_lines,
-            all_source_lines=all_source_lines,
-            kernel_line_offsets=kernel_line_offsets,
-        )
-        stage_times_s["ttnn_kernel_packaging_s"] = time.perf_counter() - t0
+        with profile_span("ttl.ttnn_kernel_packaging") as sp:
+            compiled_kernel = _compile_ttnn_kernel(
+                module,
+                args,
+                grid,
+                num_outs,
+                thread_tensor_indices,
+                cb_configs,
+                program_hash=program_hash,
+                fp32_dest_acc_en=fp32_dest_acc_en,
+                dst_full_sync_en=dst_full_sync_en,
+                source_lines=profile_source_lines,
+                all_source_lines=all_source_lines,
+                kernel_line_offsets=kernel_line_offsets,
+            )
+        stage_times_s["ttnn_kernel_packaging_s"] = sp.elapsed_s
 
         stage_times_s["compile_total_s"] = time.perf_counter() - compile_t0
         compile_profile["stages_s"] = stage_times_s
@@ -1311,9 +1312,9 @@ def pykernel_gen(
             if profile_enabled:
                 import hashlib
 
-                cache_key_id = hashlib.sha256(repr(cache_key).encode("utf-8")).hexdigest()[
-                    :16
-                ]
+                cache_key_id = hashlib.sha256(
+                    repr(cache_key).encode("utf-8")
+                ).hexdigest()[:16]
 
             # Check cache for previously compiled kernel
             if cache_hit:
@@ -1348,7 +1349,9 @@ def pykernel_gen(
                     try:
                         setattr(compiled_kernel, "_ttlang_cache_hit", cache_hit)
                         if cache_key_id is not None:
-                            setattr(compiled_kernel, "_ttlang_cache_key_id", cache_key_id)
+                            setattr(
+                                compiled_kernel, "_ttlang_cache_key_id", cache_key_id
+                            )
                     except Exception:
                         pass
                 result = compiled_kernel(*args)
