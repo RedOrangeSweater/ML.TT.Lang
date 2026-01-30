@@ -15,6 +15,9 @@ def TTLConvertTTLToTTKernel
     - Optional: TRID-aware barriers (noc_async_*_set_trid +
       noc_async_*_barrier_with_trid).
 
+    TODO(ttl): Profile both modes on representative benchmarks and consider
+    changing the default.
+
     TODO(ttl): Refine lowering to emit real CB handles and proper NOC addresses.
     Issue: #77 (umbrella issue with subtasks #78-#89).
   }];
