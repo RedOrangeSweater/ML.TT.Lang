@@ -1091,7 +1091,7 @@ lowerTTLOpsToTTKernel(ModuleOp mod, MLIRContext &ctx,
 
   // Apply post-conversion cleanup patterns (e.g., barrier deduplication).
   RewritePatternSet cleanupPatterns(&ctx);
-  ttkernel::populateTTKernelCleanupPatterns(cleanupPatterns);
+  ttkernel::populateTTKernelCleanupPatterns(cleanupPatterns, useTridBarriers);
   if (failed(applyPatternsGreedily(mod, std::move(cleanupPatterns)))) {
     return failure();
   }
