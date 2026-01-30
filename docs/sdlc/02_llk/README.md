@@ -12,4 +12,4 @@
 
 Связанные процессы: [00_Main](../00_Main/) (tt-lang), [01_tt_metal](../01_tt_metal/) (tt-metal).
 
-Канонический SDLC tt_llk: в репо tt-metal см. `tt_metal/third_party/tt_llk/docs/sdlc/00_Main/`.
+Каноническое расположение SDLC tt_llk — **здесь** (tt-lang). В репо tt_llk только стаб: `docs/sdlc/README.md` указывает сюда.
