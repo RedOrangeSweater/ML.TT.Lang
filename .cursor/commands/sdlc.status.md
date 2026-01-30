@@ -11,7 +11,7 @@
 1. SoT + start here: `docs/README.md`.
 2. Статус: `docs/sdlc/00_Main/00_Status/00_projects_graph.md`, `01_Kanban.md`.
 3. Контекст: свежие `docs/06_Development/TASK_*.md`.
-4. При необходимости: `docs/sdlc/00_Main/01_BA/*`, `docs/sdlc/00_Main/02_Architecture/*`.
+4. При необходимости: `docs/03_BA/*`, `docs/01_Architecture/*`.
 
 Если статус пустой/расходится — явно сказать и предложить next actions.
 

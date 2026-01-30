@@ -23,5 +23,5 @@ If the task requires a GraphDB-formalized domain model intended for later MLIR t
 - Step -1: operational semantics (ops/transitions/queries + test scenarios)
 - Step 0: GraphDB representation
 
-Reference: `docs/sdlc/00_Main/02_Architecture/04_Negative_SDLC_PreGraphDB.md` (or see tt-metal repo if not in tt-lang).
+Reference: `docs/01_Architecture/04_Negative_SDLC_PreGraphDB.md`.
 
