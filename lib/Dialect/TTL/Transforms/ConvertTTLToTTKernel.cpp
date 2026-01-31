@@ -905,7 +905,8 @@ struct WaitLowering : OpConversionPattern<WaitOp> {
             op,
             "transfer handle must be type-converted to i32 before ttl.wait");
       }
-      // Currently fixed to NOC 0. TODO(ttl): Generalize NOC selection (issue #77).
+      // Currently fixed to NOC 0. TODO(ttl): Generalize NOC selection (issue
+      // #77).
       Value nocVal = makeZeroI8(op.getLoc(), rewriter);
       if (*kind == TransferKind::read) {
         rewriter.create<ttk::NocAsyncReadBarrierWithTridOp>(op.getLoc(),

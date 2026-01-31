@@ -14,7 +14,7 @@ namespace mlir::tt::ttkernel {
 /// consecutive barriers of the same type).
 /// When useTridBarriers is true, also adds TRID-barrier deduplication patterns.
 void populateTTKernelCleanupPatterns(RewritePatternSet &patterns,
-                                      bool useTridBarriers = false);
+                                     bool useTridBarriers = false);
 
 } // namespace mlir::tt::ttkernel
 

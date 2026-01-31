@@ -79,9 +79,9 @@ void populateTTKernelCleanupPatterns(RewritePatternSet &patterns,
     patterns
         .add<DeduplicateConsecutiveTridBarriers<NocAsyncReadBarrierWithTridOp>>(
             patterns.getContext());
-    patterns
-        .add<DeduplicateConsecutiveTridBarriers<NocAsyncWriteBarrierWithTridOp>>(
-            patterns.getContext());
+    patterns.add<
+        DeduplicateConsecutiveTridBarriers<NocAsyncWriteBarrierWithTridOp>>(
+        patterns.getContext());
   }
 }
 
