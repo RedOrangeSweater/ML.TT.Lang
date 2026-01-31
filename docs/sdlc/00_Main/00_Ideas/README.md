@@ -7,3 +7,4 @@
 - [13_architecture_impact_and_refactor_vision.md](13_architecture_impact_and_refactor_vision.md) — примеры целевого кода пользователя, архитектурные изменения, план рефакторинга (Python → C++), гибкая система с распределением по умолчанию (low latency).
 - [14_implementation_roadmap.md](14_implementation_roadmap.md) — дорожная карта внедрения: program, toy examples, последовательное переписывание tt-lang (фазы 0–9+).
 - [15_salabim_tensix_dataflow_simulator.md](15_salabim_tensix_dataflow_simulator.md) — симулятор Tensix/DataFlow на базе salabim (ShopsSimilarity): разноцветные вычислительные блоки и DataFlow state блоки, Tensix-cores слабо на фоне.
+- [16_scheduler_visualization_and_gym.md](16_scheduler_visualization_and_gym.md) — UI визуализации планировщика (React 3D, три вида, пошаговый дебаггер) и Gymnasium environment для поиска маппинга алго-граф → HW-топология.
