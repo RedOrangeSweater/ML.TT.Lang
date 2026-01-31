@@ -42,6 +42,7 @@ class _TTLNamespace:
         from .typedefs import Pipe, Shape, Size
 
         self.kernel = kernel
+        self.program = kernel  # one program may compile to one or more device kernels
         self.grid_size = grid_size
         self.make_circular_buffer_like = make_circular_buffer_like
         self.compute = compute

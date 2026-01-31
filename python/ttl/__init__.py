@@ -6,9 +6,10 @@
 
 __version__ = "0.1.0"
 
-# Export TTL DSL API directly at package level so `import ttl; ttl.kernel` works
+# Export TTL DSL API directly at package level so `import ttl; ttl.program` works
 from ttl.ttl import (
     kernel,
+    program,
     compute,
     datamovement,
     Program,
@@ -33,6 +34,7 @@ from ttl.ttl_api import (
 
 __all__ = [
     "kernel",
+    "program",
     "compute",
     "datamovement",
     "Program",

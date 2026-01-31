@@ -6,7 +6,8 @@
 TTL DSL module providing the unified ttl.* API namespace.
 
 Decorators:
-    @ttl.kernel() - Define a kernel function
+    @ttl.program() - Define a program (may compile to one or more device kernels)
+    @ttl.kernel()  - Alias for program; backward compatibility
     @ttl.compute() - Define a compute thread (auto-collected)
     @ttl.datamovement() - Define a data movement thread (auto-collected)
 
@@ -20,7 +21,7 @@ Math operations:
     ttl.math.sqrt(), ttl.math.exp(), etc.
 """
 
-from .ttl_api import pykernel_gen as kernel, compute, datamovement, Program
+from .ttl_api import pykernel_gen as kernel, program, compute, datamovement, Program
 from .circular_buffer import make_circular_buffer_like
 from .operators import copy, core, grid_size
 
@@ -29,6 +30,7 @@ from . import ttl_math as math
 
 __all__ = [
     "kernel",
+    "program",
     "compute",
     "datamovement",
     "Program",

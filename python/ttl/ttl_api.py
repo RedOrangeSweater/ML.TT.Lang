@@ -67,6 +67,16 @@ from .operators import CopyTransferHandler, TensorBlock, copy
 from .ttl_utils import get_thread_type_string
 from .config import HAS_TT_DEVICE
 
+# For kernel body: TensorAccessor and dma (alias for copy) used in examples
+# TensorAccessor(tensor) returns the tensor so it is captured; compiler treats
+# subscript access (accessor[i,j]) as tensor accessor in MLIR (see ttl_ast).
+def TensorAccessor(tensor):
+    """Wrap a tensor for use as accessor in DM threads (e.g. accessor[i, j] in copy)."""
+    return tensor
+
+
+dma = copy  # Alias used in examples (DMA = copy for data movement)
+
 # Thread registry for automatic collection of @compute and @datamovement threads
 _thread_registry: List[Callable] = []
 
@@ -1252,10 +1262,14 @@ def pykernel_gen(
 # Alias for backward compatibility
 kernel = pykernel_gen
 
+# Preferred name: one program may compile to one or more device kernels (Reader/Compute/Writer etc.)
+program = pykernel_gen
+
 
 __all__ = [
     "pykernel_gen",
     "kernel",
+    "program",
     "Program",
     "compute",
     "datamovement",
@@ -1263,5 +1277,7 @@ __all__ = [
     "CircularBuffer",
     "CopyTransferHandler",
     "copy",
+    "dma",
+    "TensorAccessor",
     "CompiledTTNNKernel",
 ]
