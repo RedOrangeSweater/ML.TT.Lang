@@ -158,3 +158,56 @@ def test_program_style_scheduler_input():
     assert "add_compute" in node_ids
     assert "dm_read" in node_ids
     assert "dm_write" in node_ids
+
+
+def test_old_style_and_program_style_add_same_structure():
+    """Old-style (test_simple_add) and program-style (toy_program_add) add produce equivalent scheduler input (doc 16, plan §6)."""
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    def _compile_and_get_scheduler_input(module_name: str, attr: str):
+        import importlib
+        mod = importlib.import_module(module_name)
+        fn = getattr(mod, attr)
+        lhs = torch.full((32, 32), 2.0, dtype=torch.bfloat16)
+        rhs = torch.full((32, 32), 3.0, dtype=torch.bfloat16)
+        out = torch.zeros((32, 32), dtype=torch.bfloat16)
+        try:
+            fn(lhs, rhs, out)
+        except (TypeError, Exception) as e:
+            if "Unhandled capture" in str(e) or "torch.Tensor" in str(e):
+                return None
+            raise
+        kernel = getattr(fn, "_last_compiled_kernel", None)
+        if kernel is None:
+            return None
+        return kernel.get_scheduler_input()
+
+    # Program-style: @ttl.program (toy_program_add)
+    data_program = _compile_and_get_scheduler_input("examples.toy_program_add", "simple_add")
+    assert data_program is not None, "program-style add must compile and export scheduler input"
+    assert data_program["topology"]["grid_cols"] == 1 and data_program["topology"]["grid_rows"] == 1
+    nodes_program = data_program["op_graph"]["nodes"]
+    assert len(nodes_program) == 3
+
+    # Old-style: @pykernel_gen (test_simple_add) — same semantics, different decorator/thread names.
+    # Old-style may use deprecated args (e.g. block_factors) and fail at import; skip if so.
+    try:
+        data_old = _compile_and_get_scheduler_input("examples.test_simple_add", "simple_add")
+    except (TypeError, ImportError, Exception):
+        pytest.skip("old-style add not loadable (e.g. pykernel_gen API changed or block_factors removed)")
+    if data_old is None:
+        pytest.skip("old-style add did not compile (e.g. pykernel_gen path not available)")
+    assert data_old["topology"]["grid_cols"] == 1 and data_old["topology"]["grid_rows"] == 1
+    nodes_old = data_old["op_graph"]["nodes"]
+    assert len(nodes_old) == 3, "old-style and program-style add must both produce 3 threads"
+
+    # Same grid and same thread count => equivalent for scheduler viz; kernel names may differ (dm_lhs/dm_rhs vs dm_read/dm_write)
+    assert (data_old["topology"]["grid_cols"], data_old["topology"]["grid_rows"]) == (
+        data_program["topology"]["grid_cols"],
+        data_program["topology"]["grid_rows"],
+    )

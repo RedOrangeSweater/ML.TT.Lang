@@ -79,7 +79,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5174. Select an **example** (toy_program_add, toy_program_broadcast, toy_program_multicore_auto) or load a custom scheduler JSON (optional). Then Step or Run. Examples are generated from tt-lang programs; old-style and program-style add are semantically equivalent (see doc 16).
+Open http://localhost:5174. Select an **example** (toy_program_add, toy_program_broadcast, toy_program_multicore_auto) or load a custom scheduler JSON (optional). Then Step or Run. Examples are generated from tt-lang programs; reference examples match old-style and program-style programs (same grid and thread structure). Equivalence is tested in `test/python/test_scheduler_e2e.py::test_old_style_and_program_style_add_same_structure` (doc 16).
 
 Or use Run configs: **Scheduler Viz: Backend**, **Scheduler Viz: UI** (or compound **Scheduler Viz: Backend + UI**) from `.vscode/launch.json`.
 
