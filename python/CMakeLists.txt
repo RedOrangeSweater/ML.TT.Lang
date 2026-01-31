@@ -152,8 +152,10 @@ declare_mlir_python_sources(TTLangPythonCommon.Scheduler
   ADD_TO_PARENT TTLangPythonCommon
   SOURCES
     scheduler/__init__.py
+    scheduler/config.py
     scheduler/op_graph.py
     scheduler/scheduler_stub.py
+    scheduler/scheduler_toy.py
     scheduler/topology.py
     scheduler/export.py
 )
