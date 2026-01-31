@@ -1,5 +1,5 @@
 ---
-description: "Core: atomic git workflow (stage/commit), commit-after-checks, no auto-push"
+description: "Core: atomic git workflow (stage/commit), commit-after-checks, push by default"
 alwaysApply: true
 ---
 

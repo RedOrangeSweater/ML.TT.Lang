@@ -1,23 +1,24 @@
 ---
-description: "Core: interpret commit/push requests as actions"
+description: "Core: commit+push after done; interpret commit/push as actions"
 alwaysApply: true
 ---
 
-## Git shortcuts (commit/push by request)
+## Git: commit and push when work is done (default)
 
-When the user says variants of **“коммит” / “закоммить” / “commit”** they are asking the agent to perform the git commit workflow (not just explain commands).
+**Do not wait for the user to say “commit” or “push”.** When a task or step is logically complete and verified (DoD met, tests/lint OK), create an atomic commit and push immediately. The user should not have to ask every time.
 
-When the user says **“пуш” / “push”** the user is explicitly requesting a push.
+- **After each logically complete step**: atomic commit + push, unless the user has asked not to push.
+- “Verified” = checks relevant to the change passed (e.g. build, linter, tests); if no checks are configured, proceed after the change is done.
 
-### Required behavior
+### When the user says “commit” / “пуш” / “push”
+
+- **“коммит” / “закоммить” / “commit”** → perform the git commit workflow (not just explain).
+- **“пуш” / “push”** → push (after commit if there are unpushed commits).
+- **“commit and push”** → commit then push.
+
+### Required behavior (every commit)
 
 - Follow the repo **Atomic git workflow**: split unrelated work into separate commits.
-- Run safety inspection before committing:
-  - `git status`
-  - `git diff` and `git diff --staged`
-  - `git log` (to match commit message style)
-- Stage **only** files relevant to the requested change.
-- Use a commit message consistent with recent history.
-- **After each logically complete step** (DoD met, tests/lint OK for that step): create an atomic commit and **push immediately**, unless the user has asked not to push. “Verified” means checks relevant to the change have passed (e.g. cmake/build, linter, tests).
-- When the user explicitly says “commit” or “push”, perform that workflow; if they say “commit and push”, commit then push.
+- Before committing: `git status`, `git diff`, `git diff --staged`, `git log` (match message style).
+- Stage **only** files relevant to the change.
 - Never push without completing the commit workflow first; never push if the user has requested not to push.
