@@ -136,4 +136,3 @@ flowchart TD
   Plan --> Mapping["Mapping to PhysicalHW"]
   Mapping --> Exec["Execution/Simulation + Metrics"]
 ```
-

@@ -25,4 +25,3 @@
 - Определить формат импорта LLK DB v2 (пер arch) в таблицы/атрибуты.
 - Спроектировать `ResourceContractInterface` и pass `llk-verify-resource-states` (CFG-aware dataflow).
 - Добавить lit-тесты для positive/negative кейсов verifier'а (в tt-lang или в соседнем проекте, где используется verifier).
-

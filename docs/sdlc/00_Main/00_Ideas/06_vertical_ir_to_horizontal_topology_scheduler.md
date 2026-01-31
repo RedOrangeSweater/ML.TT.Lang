@@ -160,4 +160,3 @@ sequenceDiagram
 - Связать измерения с существующим профилированием:
   - host-side stage boundaries (Tracy) и cold/warm режимы,
   - device-side cycles (TT-Metal device profiler) где доступно.
-

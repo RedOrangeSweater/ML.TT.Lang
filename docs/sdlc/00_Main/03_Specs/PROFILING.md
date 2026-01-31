@@ -44,4 +44,3 @@ python tools/profile_reconfiguration_latency.py --device-id 0 --tracy
 # Add device-side profiler capture
 python tools/profile_reconfiguration_latency.py --device-id 0 --tracy --device-profiler
 ```
-

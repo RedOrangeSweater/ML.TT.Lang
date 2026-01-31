@@ -9,5 +9,6 @@
 **Связанные блоки SDLC**: tt-lang main: [00_Main/](../../00_Main/). LLK: [02_llk/](../../02_llk/).
 
 - **Scheduler-viz** (док 16, 17): UI визуализации планировщика + Gym env; следующий шаг — реестр алгоритмов и Run configs в .vscode.
+- **Next**: документ «Python dialect layers and data flow» ([00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md](../../00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md)) — выполнен; далее — расширение Pydantic на kernel_runner (request-модели), затем E2E планировщик (Фазы 3–4 roadmap).
 
 Обновлять при изменении структуры репо или приоритетов.

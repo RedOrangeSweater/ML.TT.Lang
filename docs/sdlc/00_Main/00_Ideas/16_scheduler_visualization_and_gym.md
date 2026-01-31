@@ -104,6 +104,8 @@ audience: разработчики планировщика, UI, RL/симуля
 
 Функция/скрипт в tt-lang: `export_scheduler_input(program, grid)` или аналог, выдающий такой JSON (файл или поток).
 
+**Эталонные примеры (fixtures)** в `apps/scheduler-viz/fixtures/` генерируются из tt-lang program-style программ (`toy_program_add`, `toy_program_broadcast`, `toy_program_multicore_auto`) скриптом `apps/scheduler-viz/scripts/export_fixtures.py`. Старый стиль (pykernel_gen, например `examples/test_simple_add.py`) и program-стиль (`@ttl.program`, например `examples/toy_program_add.py`) дают **тот же смысл** для add/broadcast; MLIR может отличаться по именам потоков и структуре (число DM-потоков), но семантика операций совпадает. См. также README scheduler-viz.
+
 ---
 
 ## 6. Где размещать код
