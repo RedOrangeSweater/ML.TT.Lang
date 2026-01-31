@@ -78,18 +78,19 @@ flowchart LR
 | (OpGraph) SchedulePlan | grid / program_config | Планировщик (заглушка) → grid, placement. |
 | TTNNKernelCompileRequest | CompiledTTNNKernel | Валидация request (тензоры TTNN, число ядер) — в TTNNKernelCompileRequest (model_validator). `_compile_ttnn_kernel(req)`. |
 | ThreadConfigBuildRequest | (config, entries) | `_build_config_for_thread(request)` → descriptor_options + ttnn_proxy. |
-| CompiledTTNNKernel + tensors | run | `kernel_runner.build_*_descriptors`, `run_kernel_on_device`. |
+| CompiledTTNNKernel + tensors | run | `ttl.runtime.build_*_descriptors`, `run_kernel_on_device` (реализация в `ttl.runtime.runner`; `ttl.kernel_runner` — тонкий реэкспорт для совместимости). |
 
-Входы и выходы трансформаций — только Pydantic-типы или типы из ttnn_proxy.
+Входы и выходы трансформаций — только Pydantic-типы или типы из ttnn_proxy. Логика компиляции: `ttl.compile.pipeline` (_compile_kernel, _compile_ttnn_kernel); логика рантайма: `ttl.runtime.runner`; типы на границе с ttnn/MLIR: `ttl.boundary` (ttnn_types, mlir_types). Контракты run: RunRequest (num_outs == 1), декоратор: ProgramDecoratorParams (grid обязателен, indexing_maps при iterator_types).
 
 ## 5. Реестр Python-диалектов
 
-- **Program**: ProgramOptions, ProgramConfig, KernelCompileRequest (иерархия: root + options: ProgramOptions).
+- **Program**: ProgramOptions, ProgramDecoratorParams, ProgramConfig, KernelCompileRequest, ProgramSpec, RunRequest (иерархия: root + options: ProgramOptions).
 - **Graph**: OpGraph, OpNode, Topology, SchedulePlan.
-- **Compile**: KernelCompileRequest, TTNNKernelCompileRequest, ThreadConfigBuildRequest, KernelWriteRequest, ComputeDescriptorBuildContext, TTNNKernelCompileOptions, ThreadSourceInfo; хелперы `_compile_kernel(f, args, kwargs, request)`, `_collect_source_info_from_threads(threads)`; TTLGenericCompiler.source_info → ThreadSourceInfo.
-- **Runtime**: KernelSpec (Pydantic), дескрипторы через ttnn_proxy (ComputeConfigProxy/Resolved, ReaderConfigProxy, WriterConfigProxy, CoreCoordProxy, CoreRangeProxy, CoreRangeSetProxy).
+- **Compile**: KernelCompileRequest, TTNNKernelCompileRequest, ThreadConfigBuildRequest, KernelWriteRequest, ComputeDescriptorBuildContext, TTNNKernelCompileOptions, ThreadSourceInfo; хелперы в `ttl.compile.pipeline`: `_compile_kernel(f, args, kwargs, request)`, `_compile_ttnn_kernel(req)`, `_collect_source_info_from_threads(threads)`; валидация в `ttl.compile.validation`; TTLGenericCompiler.source_info → ThreadSourceInfo.
+- **Runtime**: KernelSpec, KernelDescriptorBuildRequest, CBDescriptorBuildRequest, RunKernelRequest (Pydantic); реализация в `ttl.runtime.runner` (build_kernel_descriptors, build_cb_descriptors, run_kernel_on_device); дескрипторы через ttnn_proxy; `ttl.kernel_runner` — тонкий реэкспорт из ttl.runtime.
+- **Boundary**: `ttl.boundary` — типы на границе с ttnn и MLIR (ttnn_types: Protocols для тензоров/сетки/CoreRangeSet; mlir_types: MlirModuleLike); Any допустим только в ttnn_proxy.
 
-Внутренние типы на границах слоёв приведены к Pydantic: ThreadWrapperView, CompilerContext (ttl_ast), KernelSpec (kernel_runner), TTNNLayoutConfig (layouts) — все BaseModel; ProgramSpec и run(spec, *args) — фасад идеального UX (см. 18_ideal_ux_and_layer_responsibilities.md). Модуль ttl.layers реэкспортирует типы по слоям для одного фокуса при чтении.
+Внутренние типы на границах слоёв приведены к Pydantic: ThreadWrapperView, CompilerContext (ttl_ast), KernelSpec (ttl.runtime.runner), TTNNLayoutConfig (layouts) — все BaseModel; ProgramSpec и run(spec, *args) — фасад идеального UX (см. 18_ideal_ux_and_layer_responsibilities.md). Модуль ttl.layers реэкспортирует типы по слоям для одного фокуса при чтении.
 
 Реестр исполнительных Python-диалектов ведётся отдельно от документационного пайплайна (Doc–MLIR–GraphDB, диалект ttm.sdlc_doc). Регистрация: в этом документе и при необходимости в `.cursor/artifacts_mlir_graphdb` или `docs/sdlc/_KG_MLIR` для прослеживаемости.
 

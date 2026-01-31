@@ -165,8 +165,8 @@ Grid и память заданы в декораторе; фреймворк с
 |------|-----------------|---------------------------|
 | Program | ProgramOptions, ProgramSpec, KernelCompileRequest | Декоратор `@ttl.program`, `run(spec, *args)`, построение KernelCompileRequest из spec и args. |
 | Graph | OpGraph, OpNode, Topology, SchedulePlan | scheduler/ (op_graph, topology, scheduler_stub); планировщик пока заглушка. |
-| Compile | KernelCompileRequest, TTNNKernelCompileRequest, ThreadConfigBuildRequest, TTNNKernelCompileOptions, ThreadSourceInfo | _compile_kernel(f, args, kwargs, request), _compile_ttnn_kernel(req), descriptor_options, ttl_ast (TTLGenericCompiler). |
-| Runtime | KernelSpec, KernelDescriptorBuildRequest, CBDescriptorBuildRequest, RunKernelRequest | build_kernel_descriptors, build_cb_descriptors, run_kernel_on_device (kernel_runner). |
+| Compile | KernelCompileRequest, TTNNKernelCompileRequest, ThreadConfigBuildRequest, TTNNKernelCompileOptions, ThreadSourceInfo | ttl.compile.pipeline: _compile_kernel(f, args, kwargs, request), _compile_ttnn_kernel(req); ttl.compile.validation; descriptor_options; ttl_ast (TTLGenericCompiler). |
+| Runtime | KernelSpec, KernelDescriptorBuildRequest, CBDescriptorBuildRequest, RunKernelRequest | ttl.runtime.runner: build_kernel_descriptors, build_cb_descriptors, run_kernel_on_device; ttl.kernel_runner — тонкий реэкспорт. |
 
 Реестр трансформаций «From → To → Реализация» приведён в [08_PythonDialectLayersAndDataFlow.md](08_PythonDialectLayersAndDataFlow.md) (§4); здесь не дублируется.
 
@@ -185,8 +185,9 @@ Reader/Compute/Writer — один из паттернов размещения 
 | `python/ttl/ttl_api.py` | Фасад | `run`, `pykernel_gen` (kernel/program), `ProgramSpec`, `KernelCompileRequest`, декораторы compute/datamovement; импорт из program/, compile/, runtime/, graph/. |
 | `python/ttl/program/` | Program | ProgramOptions, ProgramSpec, KernelCompileRequest, построение request из spec и args. |
 | `python/ttl/graph/` | Graph | Реэкспорт OpGraph, SchedulePlan, Topology из scheduler/; при необходимости алиас scheduler → graph. |
-| `python/ttl/compile/` | Compile | _compile_kernel, _compile_ttnn_kernel, TTNNKernelCompileRequest, ThreadConfigBuildRequest, descriptor_options (или импорт из descriptor_options), ttl_ast (компиляция тредов). |
-| `python/ttl/runtime/` | Runtime | KernelSpec, build_kernel_descriptors, build_cb_descriptors, run_kernel_on_device; либо текущий kernel_runner.py с реэкспортом из runtime/. |
+| `python/ttl/compile/` | Compile | pipeline.py: _compile_kernel, _compile_ttnn_kernel; validation.py: валидация TTNN/модуля; TTNNKernelCompileRequest, ThreadConfigBuildRequest; импорт descriptor_options, ttl_ast. |
+| `python/ttl/runtime/` | Runtime | runner.py: KernelSpec, build_kernel_descriptors, build_cb_descriptors, run_kernel_on_device; kernel_runner.py — тонкий реэкспорт из ttl.runtime для совместимости. |
+| `python/ttl/boundary/` | Boundary | ttnn_types.py (Protocols), mlir_types.py (MlirModuleLike); типы на границе с ttnn/MLIR; Any только в ttnn_proxy. |
 | `python/ttl/layers.py` | Реэкспорт | Типы по слоям для одного фокуса при чтении (как сейчас). |
 
 Общая структура каталогов (после рефакторинга):
@@ -196,10 +197,11 @@ python/ttl/
   __init__.py       # публичный API пакета
   ttl_api.py        # фасад (run, pykernel_gen, декораторы)
   layers.py         # реэкспорт типов по слоям
-  program/          # ProgramOptions, ProgramSpec, KernelCompileRequest
+  program/          # ProgramOptions, ProgramSpec, RunRequest, ProgramDecoratorParams, KernelCompileRequest
   graph/            # OpGraph, SchedulePlan, Topology (реэкспорт scheduler)
-  compile/          # _compile_kernel, TTNNKernelCompileRequest, descriptor_options
-  runtime/          # KernelSpec, build_*_descriptors, run_kernel_on_device
+  compile/          # pipeline (_compile_kernel, _compile_ttnn_kernel), validation
+  runtime/          # runner (KernelSpec, build_*_descriptors, run_kernel_on_device); kernel_runner — реэкспорт
+  boundary/         # ttnn_types, mlir_types (типы на границе с ttnn/MLIR)
   scheduler/        # текущая реализация графа (op_graph, topology, ...)
   _src/             # ttl_ast, tensor_registry, auto_profile
   ...
