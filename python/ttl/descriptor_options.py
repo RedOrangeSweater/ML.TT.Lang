@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .boundary import MlirModuleLike
+from .constants import MemorySpace
 from .ttnn_proxy import (
     ComputeConfigProxy,
     ComputeConfigResolved,
@@ -24,10 +26,16 @@ from .ttnn_proxy import (
 class ComputeConfigOptions(BaseModel):
     """Options for building ttnn.ComputeConfigDescriptor. Proxy for fp32_dest_acc_en / dst_full_sync_en."""
 
-    fp32_dest_acc_en: bool | None = Field(default=None, description="Enable fp32 destination accumulator")
-    dst_full_sync_en: bool | None = Field(default=None, description="Enable destination full sync")
+    fp32_dest_acc_en: bool | None = Field(
+        default=None, description="Enable fp32 destination accumulator"
+    )
+    dst_full_sync_en: bool | None = Field(
+        default=None, description="Enable destination full sync"
+    )
 
-    def build_ttnn_descriptor(self, context: ComputeDescriptorBuildContext) -> tuple[Any, dict[str, str]]:
+    def build_ttnn_descriptor(
+        self, context: ComputeDescriptorBuildContext
+    ) -> tuple[object, dict[str, str]]:
         """
         Build ttnn.ComputeConfigDescriptor and thread_to_kernel entries.
         When fp32_dest_acc_en is None and context.has_f32 is True, enables fp32_dest_acc_en automatically.
@@ -49,10 +57,14 @@ class ComputeConfigOptions(BaseModel):
 class NocConfigOptions(BaseModel):
     """Options for building ttnn Reader/Writer config. noc_kernel_idx 0 -> Reader, 1 -> Writer."""
 
-    noc_kernel_idx: int = Field(..., ge=0, le=1, description="0=Reader/NCRISC, 1=Writer/BRISC")
-    kernel_name: str = Field(..., description="Kernel name for thread_to_kernel entries")
+    noc_kernel_idx: int = Field(
+        ..., ge=0, le=1, description="0=Reader/NCRISC, 1=Writer/BRISC"
+    )
+    kernel_name: str = Field(
+        ..., description="Kernel name for thread_to_kernel entries"
+    )
 
-    def build_ttnn_descriptor(self) -> tuple[Any, dict[str, str]]:
+    def build_ttnn_descriptor(self) -> tuple[object, dict[str, str]]:
         """Build ttnn.ReaderConfigDescriptor or WriterConfigDescriptor and thread_to_kernel entries."""
         if self.noc_kernel_idx == 0:
             config = ReaderConfigProxy().to_ttnn()
@@ -66,9 +78,11 @@ class NocConfigOptions(BaseModel):
 class ReaderConfigOptions(BaseModel):
     """Options for building ttnn.ReaderConfigDescriptor (fallback for unknown thread_type)."""
 
-    kernel_name: str = Field(default="", description="Kernel name for thread_to_kernel entries")
+    kernel_name: str = Field(
+        default="", description="Kernel name for thread_to_kernel entries"
+    )
 
-    def build_ttnn_descriptor(self) -> tuple[Any, dict[str, str]]:
+    def build_ttnn_descriptor(self) -> tuple[object, dict[str, str]]:
         """Build ttnn.ReaderConfigDescriptor and empty entries (default reader fallback)."""
         config = ReaderConfigProxy().to_ttnn()
         return config, {}
@@ -90,7 +104,7 @@ class CoreRangeSetOptions(BaseModel):
             raise ValueError("grid (cols, rows) must have both >= 1")
         return v
 
-    def build_ttnn_core_range_set(self) -> Any:
+    def build_ttnn_core_range_set(self) -> object:
         """Build ttnn.CoreRangeSet covering [0,0] to (grid[0]-1, grid[1]-1)."""
         return CoreRangeSetProxy(grid=self.grid).to_ttnn()
 
@@ -98,12 +112,18 @@ class CoreRangeSetOptions(BaseModel):
 class ProgramRunConfig(BaseModel):
     """Pydantic config passed to each thread and stored in Program. Replaces injected_program_kwargs dict."""
 
-    grid: list[int] = Field(default_factory=lambda: [1, 1], description="Grid dimensions (cols, rows)")
-    memory_space: str = Field(default="L1", description="L1 or DRAM")
+    grid: list[int] = Field(
+        default_factory=lambda: [1, 1], description="Grid dimensions (cols, rows)"
+    )
+    memory_space: MemorySpace = Field(default="L1", description="L1 or DRAM")
     tiled: bool = Field(default=True, description="Whether to use tiled layout")
-    debug_locations: bool = Field(default=True, description="Generate source locations for error messages")
+    debug_locations: bool = Field(
+        default=True, description="Generate source locations for error messages"
+    )
 
-    def inject_into_kwargs(self, kwargs: dict[str, Any], param_names: set[str]) -> None:
+    def inject_into_kwargs(
+        self, kwargs: dict[str, object], param_names: set[str]
+    ) -> None:
         """Inject only the keys that the kernel function accepts (in-place)."""
         for name in ("grid", "memory_space", "tiled"):
             if name in param_names:
@@ -113,7 +133,9 @@ class ProgramRunConfig(BaseModel):
 class ProgramConfig(BaseModel):
     """Pydantic model for program_config (grid, objective, placement). Replaces ad-hoc dict handling."""
 
-    grid: tuple[int, int] | None = Field(default=None, description="(cols, rows) for scheduler/compile")
+    grid: tuple[int, int] | None = Field(
+        default=None, description="(cols, rows) for scheduler/compile"
+    )
     objective: Literal["latency", "throughput", "balanced"] | None = Field(
         default=None, description="Scheduler objective"
     )
@@ -121,7 +143,7 @@ class ProgramConfig(BaseModel):
         default=None, description="Scheduler placement"
     )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Dict for compatibility with scheduler and CompiledTTNNKernel.program_config."""
         return self.model_dump(exclude_none=False)
 
@@ -131,7 +153,9 @@ class ThreadConfigBuildRequest(BaseModel):
 
     thread_type: str = Field(..., description="compute | noc | other")
     name: str = Field(..., description="Kernel name")
-    noc_kernel_idx: int = Field(default=0, ge=0, description="NOC index (0=Reader, 1=Writer)")
+    noc_kernel_idx: int = Field(
+        default=0, ge=0, description="NOC index (0=Reader, 1=Writer)"
+    )
     compute_opts: ComputeConfigOptions = Field(
         default_factory=ComputeConfigOptions,
         description="Compute options when thread_type is compute",
@@ -139,7 +163,7 @@ class ThreadConfigBuildRequest(BaseModel):
     has_f32: bool = Field(default=False, description="Whether args have float32")
     verbose: bool = Field(default=False, description="Print messages")
 
-    def build_config_and_entries(self) -> tuple[Any, dict[str, str]]:
+    def build_config_and_entries(self) -> tuple[object, dict[str, str]]:
         """Build (ttnn config descriptor, thread_to_kernel entries) for this thread. Single entry point."""
         if self.thread_type == "compute":
             context = ComputeDescriptorBuildContext(
@@ -159,10 +183,14 @@ class ThreadConfigBuildRequest(BaseModel):
 class TTNNKernelCompileOptions(BaseModel):
     """Single options object for _compile_ttnn_kernel. Replaces many scalar parameters."""
 
-    fp32_dest_acc_en: bool | None = Field(default=None, description="Override for compute fp32 dest acc")
-    dst_full_sync_en: bool | None = Field(default=None, description="Override for compute dst full sync")
+    fp32_dest_acc_en: bool | None = Field(
+        default=None, description="Override for compute fp32 dest acc"
+    )
+    dst_full_sync_en: bool | None = Field(
+        default=None, description="Override for compute dst full sync"
+    )
     verbose: bool = Field(default=True, description="Print compilation info")
-    program_config: ProgramConfig | dict[str, Any] | None = Field(
+    program_config: ProgramConfig | dict[str, object] | None = Field(
         default=None, description="Grid, objective, placement (dict or ProgramConfig)"
     )
 
@@ -273,7 +301,9 @@ class KernelWriteRequest(BaseModel):
 
     name: str = Field(..., description="Kernel name for filename")
     source: str = Field(..., description="Kernel C++ source")
-    base_dir: Path | None = Field(default=None, description="Output directory or None for /tmp/{user}")
+    base_dir: Path | None = Field(
+        default=None, description="Output directory or None for /tmp/{user}"
+    )
 
 
 class TTNNCompileInput(BaseModel):
@@ -281,11 +311,13 @@ class TTNNCompileInput(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    module: Any = Field(..., description="MLIR module after D2M pipeline")
-    args: Any = Field(..., description="Input/output tensors")
+    module: MlirModuleLike = Field(..., description="MLIR module after D2M pipeline")
+    args: tuple[object, ...] = Field(..., description="Input/output tensors")
     grid: tuple[int, int] = Field(..., description="(cols, rows)")
     num_outs: int = Field(..., description="Number of output tensors")
-    thread_tensor_indices: Any = Field(..., description="Tensor indices per thread")
+    thread_tensor_indices: list[list[int]] = Field(
+        ..., description="Tensor indices per thread"
+    )
 
 
 class TTNNCompileCacheAndCb(BaseModel):
@@ -293,8 +325,10 @@ class TTNNCompileCacheAndCb(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    cb_configs: Any = Field(default=None, description="Circular buffer configs")
-    program_hash: Any = Field(default=None, description="Program cache hash")
+    cb_configs: list[object] | None = Field(
+        default=None, description="Circular buffer configs"
+    )
+    program_hash: int | None = Field(default=None, description="Program cache hash")
 
 
 class TTNNProfilingInput(BaseModel):
@@ -302,9 +336,15 @@ class TTNNProfilingInput(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    source_lines: Any = Field(default=None, description="Source lines for profiling")
-    all_source_lines: Any = Field(default=None, description="All thread source lines")
-    kernel_line_offsets: Any = Field(default=None, description="Line offsets per kernel")
+    source_lines: list[str] | None = Field(
+        default=None, description="Source lines for profiling"
+    )
+    all_source_lines: dict[str, list[str]] | None = Field(
+        default=None, description="All thread source lines"
+    )
+    kernel_line_offsets: dict[str, int] | None = Field(
+        default=None, description="Line offsets per kernel"
+    )
 
 
 class TTNNKernelCompileRequest(BaseModel):
@@ -312,7 +352,10 @@ class TTNNKernelCompileRequest(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    input: TTNNCompileInput = Field(..., description="Compilation input (module, args, grid, num_outs, thread_tensor_indices)")
+    input: TTNNCompileInput = Field(
+        ...,
+        description="Compilation input (module, args, grid, num_outs, thread_tensor_indices)",
+    )
     compile_options: TTNNKernelCompileOptions | None = Field(
         default=None, description="fp32/verbose/program_config options"
     )
@@ -332,8 +375,6 @@ class TTNNKernelCompileRequest(BaseModel):
         )
 
         args = self.input.args
-        validate_ttnn_tensors_for_request(
-            args if isinstance(args, tuple) else tuple()
-        )
+        validate_ttnn_tensors_for_request(args if isinstance(args, tuple) else tuple())
         validate_kernel_count_for_request(self.input.module)
         return self

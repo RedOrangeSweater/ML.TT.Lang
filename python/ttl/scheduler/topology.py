@@ -11,7 +11,6 @@ No per-core resource detail for stub.
 
 from __future__ import annotations
 
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -29,7 +28,7 @@ class Topology(BaseModel):
         """(col, row) for each core in row-major order."""
         return [(c, r) for r in range(self.grid_rows) for c in range(self.grid_cols)]
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize for JSON."""
         return self.model_dump()
 

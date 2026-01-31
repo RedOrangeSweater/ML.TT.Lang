@@ -17,7 +17,9 @@ class TTNNLayoutConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    logical_shape: list[int] = Field(..., description="Logical tensor shape (rows, cols)")
+    logical_shape: list[int] = Field(
+        ..., description="Logical tensor shape (rows, cols)"
+    )
     grid: list[int] = Field(..., description="Grid dimensions (cols, rows)")
     dtype: str = Field(..., description="Tensor dtype (ttnn or string)")
 

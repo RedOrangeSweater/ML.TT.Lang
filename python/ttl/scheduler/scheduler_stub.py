@@ -11,7 +11,6 @@ Output: plan (placement of each op on core); stub always assigns all to (0,0) fo
 
 from __future__ import annotations
 
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -31,7 +30,7 @@ class SchedulePlan(BaseModel):
         coords = self.placement.get(node_id, [0, 0])
         return (coords[0], coords[1]) if len(coords) >= 2 else (0, 0)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize for JSON."""
         return self.model_dump()
 

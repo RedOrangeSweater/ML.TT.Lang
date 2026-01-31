@@ -9,7 +9,7 @@ One focus: KernelSpec, CB configs, CoreRangeSet -> ttnn descriptors -> execution
 See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
 """
 
-from ..kernel_runner import (
+from .runner import (
     CBDescriptorBuildRequest,
     KernelDescriptorBuildRequest,
     KernelSpec,

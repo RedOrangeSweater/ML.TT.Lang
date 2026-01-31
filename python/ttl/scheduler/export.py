@@ -12,8 +12,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
-
 from pydantic import BaseModel
 
 from .op_graph import OpGraph, OpGraphSchema, build_op_graph_from_threads
@@ -28,7 +26,7 @@ class SchedulerInput(BaseModel):
     topology: Topology
     plan: SchedulePlan
 
-    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
+    def model_dump(self, **kwargs: object) -> dict[str, object]:
         """Serialize for JSON (same shape as existing fixtures)."""
         return super().model_dump(**kwargs)
 
@@ -36,8 +34,8 @@ class SchedulerInput(BaseModel):
 def export_scheduler_input(
     thread_infos: list[tuple[str, str]],
     grid: tuple[int, ...] | list[int],
-    program_config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    program_config: dict[str, object] | None = None,
+) -> dict[str, object]:
     """
     Build op graph, topology, and stub plan; return JSON-serializable dict.
 
@@ -55,7 +53,7 @@ def export_scheduler_input_to_json(
     thread_infos: list[tuple[str, str]],
     grid: tuple[int, ...] | list[int],
     path: str | Path,
-    program_config: dict[str, Any] | None = None,
+    program_config: dict[str, object] | None = None,
     indent: int = 2,
 ) -> None:
     """Export scheduler input to a JSON file."""

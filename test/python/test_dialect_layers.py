@@ -50,6 +50,7 @@ from ttl import run
 
 def test_program_spec_to_compile_request():
     """ProgramSpec.to_compile_request(args, kwargs, program_hash) returns KernelCompileRequest."""
+
     def _dummy_program(_x):
         pass
 
@@ -82,6 +83,7 @@ def test_run_with_raw_callable_raises_not_implemented():
 
 def test_run_with_program_no_grid_raises():
     """run(program, *args) without grid= raises ValueError when program is @ttl.program-like."""
+
     def _fake_program(_x):
         pass
 
@@ -92,6 +94,7 @@ def test_run_with_program_no_grid_raises():
 
 def test_run_with_spec_accepts():
     """run(ProgramSpec(...), *args) builds and runs (no device)."""
+
     def _dummy_program(_x):
         pass
 
@@ -176,7 +179,9 @@ def test_compute_config_resolved_to_ttnn():
     """ComputeConfigResolved.from_proxy_and_context(...).to_ttnn() returns descriptor."""
     pytest.importorskip("ttnn")
     proxy = ComputeConfigProxy(fp32_dest_acc_en=True, dst_full_sync_en=False)
-    context = ComputeDescriptorBuildContext(kernel_name="k", has_f32=False, verbose=False)
+    context = ComputeDescriptorBuildContext(
+        kernel_name="k", has_f32=False, verbose=False
+    )
     resolved = ComputeConfigResolved.from_proxy_and_context(proxy, context)
     config = resolved.to_ttnn()
     assert config is not None

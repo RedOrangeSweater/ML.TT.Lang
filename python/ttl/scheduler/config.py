@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -27,14 +27,20 @@ class GraphSourceSpec(BaseModel):
 
     source: Literal["program", "generator"] = "program"
     path: str | None = Field(default=None, description="Path to IR or generator script")
-    program_hash: int | None = Field(default=None, description="Program hash when source=program")
+    program_hash: int | None = Field(
+        default=None, description="Program hash when source=program"
+    )
 
 
 class ToyGraphGeneratorSpec(BaseModel):
     """Parameters for Toy domain graph generator (shops/bakeries)."""
 
-    num_nodes: int = Field(..., ge=1, description="Number of nodes (factories/stores/bakeries)")
-    product_types: list[str] = Field(default_factory=list, description="Product/operation types")
+    num_nodes: int = Field(
+        ..., ge=1, description="Number of nodes (factories/stores/bakeries)"
+    )
+    product_types: list[str] = Field(
+        default_factory=list, description="Product/operation types"
+    )
     bom: dict[str, list[str]] = Field(
         default_factory=dict,
         description="BOM: product -> list of input product types",
@@ -68,7 +74,7 @@ class SimulatorOptions(BaseModel):
     """Optional simulator backend and parameters."""
 
     backend: Literal["salabim", "stub"] | None = Field(default=None)
-    params: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, object] = Field(default_factory=dict)
 
 
 class PlannerOptions(BaseModel):
@@ -86,7 +92,9 @@ class AbstractEngineConfig(BaseModel):
     See docs/sdlc/00_Main/00_Ideas/20_nickel_mlir_config_abstract_engine.md.
     """
 
-    backend: BackendType = Field(..., description="tenstorrent | toy_shops | toy_bakeries")
+    backend: BackendType = Field(
+        ..., description="tenstorrent | toy_shops | toy_bakeries"
+    )
     objective: ObjectiveType = Field(default="latency")
 
     # Graph: either source ref or Toy generator params

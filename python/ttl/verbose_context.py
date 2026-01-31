@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any
 
 _verbose_compilation: ContextVar[bool] = ContextVar(
     "verbose_compilation", default=False
@@ -33,7 +32,7 @@ def verbose_compilation(enable: bool):
         _verbose_compilation.reset(token)
 
 
-def verbose_print(*args: Any, **kwargs: Any) -> None:
+def verbose_print(*args: object, **kwargs: object) -> None:
     """Print only when inside a verbose_compilation(True) context."""
     if _verbose_compilation.get():
         print(*args, **kwargs)

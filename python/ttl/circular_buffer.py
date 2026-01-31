@@ -4,7 +4,7 @@
 
 """Circular buffer operations for inter-thread communication."""
 
-from typing import Any, Tuple
+from typing import Tuple
 
 from ttmlir.ir import *
 
@@ -56,7 +56,7 @@ class CircularBuffer:
 
     def __init__(
         self,
-        tensor: Any,
+        tensor: object,
         shape: Tuple[int, int],
         buffer_factor: int,
     ):
@@ -146,7 +146,7 @@ class CircularBuffer:
 
 
 def make_circular_buffer_like(
-    tensor: Any,
+    tensor: object,
     shape: Tuple[int, int],
     buffer_factor: int = 2,
 ) -> CircularBuffer:

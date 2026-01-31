@@ -14,12 +14,20 @@ getattr(ttnn.DataType, dtype_name) when needed.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, Union
+from typing import Annotated, Literal, Union
 
 import torch
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from ttmlir.dialects import ttcore
+
+from .constants import MemorySpace
+from .runtime_tensor import is_runtime_tensor
+
+# Alias for backward compatibility; use is_runtime_tensor from ttl.runtime_tensor or ttl.
+is_ttnn_tensor = is_runtime_tensor
+
+_INTERLEAVED = "INTERLEAVED"
 
 
 # -----------------------------------------------------------------------------
@@ -52,8 +60,16 @@ _DTYPE_TABLE: list[tuple[ttcore.DataType, str, int]] = [
     (ttcore.DataType.UInt16, DTypeName.UINT16.value, 32 * 32 * 2),
     (ttcore.DataType.UInt8, DTypeName.UINT8.value, 32 * 32),
     (ttcore.DataType.Bool, DTypeName.UINT8.value, 32 * 32),  # bool -> UINT8 tile size
-    (ttcore.DataType.BFloat16, DTypeName.BFLOAT8_B.value, 32 * 32 * 2),  # approximate for MLIR
-    (ttcore.DataType.BFloat16, DTypeName.BFLOAT4_B.value, 32 * 32 * 2),  # approximate for MLIR
+    (
+        ttcore.DataType.BFloat16,
+        DTypeName.BFLOAT8_B.value,
+        32 * 32 * 2,
+    ),  # approximate for MLIR
+    (
+        ttcore.DataType.BFloat16,
+        DTypeName.BFLOAT4_B.value,
+        32 * 32 * 2,
+    ),  # approximate for MLIR
 ]
 
 _NAME_TO_TTCORE: dict[str, ttcore.DataType] = {}
@@ -67,27 +83,27 @@ for tc, name, tb in _DTYPE_TABLE:
     _TTCORE_TO_TILE_BYTES[tc] = tb
 
 
-def is_ttnn_tensor(tensor: object) -> bool:
-    """Check if tensor is a runtime tensor (e.g. ttnn.Tensor when ttnn is installed).
+def _buffer_type_str_to_memory_space(buffer_type_str: str) -> MemorySpace | None:
+    """Map buffer_type string to MemorySpace. Returns None if not L1 or DRAM."""
+    if "L1" in buffer_type_str:
+        return "L1"
+    if "DRAM" in buffer_type_str:
+        return "DRAM"
+    return None
 
-    Uses runtime_tensor layer: types are proxied there; validation only at init.
-    When ttnn is not installed, returns False. See docs/sdlc/00_Main/00_Ideas/21_ttnn_tensor_proxy_layer.md.
-    """
-    from .runtime_tensor import is_runtime_tensor
-    return is_runtime_tensor(tensor)
 
-
-def detect_memory_space_from_tensor(tensor: object, default: str) -> str:
+def detect_memory_space_from_tensor(
+    tensor: object,
+    default: MemorySpace | Literal["unknown"] = "L1",
+) -> MemorySpace | Literal["unknown"]:
     """Detect memory space (L1/DRAM) from a ttnn tensor's buffer type. Returns default if not ttnn or no buffer_type."""
     if not is_ttnn_tensor(tensor):
         return default
     mem_config = tensor.memory_config()
     if hasattr(mem_config, "buffer_type"):
-        buffer_type_str = str(mem_config.buffer_type)
-        if "L1" in buffer_type_str:
-            return "L1"
-        if "DRAM" in buffer_type_str:
-            return "DRAM"
+        mapped = _buffer_type_str_to_memory_space(str(mem_config.buffer_type))
+        if mapped is not None:
+            return mapped
     return default
 
 
@@ -97,7 +113,7 @@ def is_interleaved_tensor(tensor: object) -> bool:
         return False
     mem_config = tensor.memory_config()
     if hasattr(mem_config, "memory_layout"):
-        return "INTERLEAVED" in str(mem_config.memory_layout)
+        return _INTERLEAVED in str(mem_config.memory_layout)
     return False
 
 
@@ -147,7 +163,9 @@ def _name_to_ttcore(name: str) -> ttcore.DataType:
 # -----------------------------------------------------------------------------
 
 
-def _coerce_to_ttcore(v: Union[torch.dtype, ttcore.DataType, str, object]) -> ttcore.DataType:
+def _coerce_to_ttcore(
+    v: Union[torch.dtype, ttcore.DataType, str, object],
+) -> ttcore.DataType:
     """Coerce torch/ttcore/name/object-with-.name to ttcore.DataType. No ttnn."""
     if isinstance(v, ttcore.DataType):
         return v
@@ -163,7 +181,9 @@ def _coerce_to_ttcore(v: Union[torch.dtype, ttcore.DataType, str, object]) -> tt
     raise ValueError(f"Cannot coerce to ttcore.DataType: {v}")
 
 
-def _coerce_to_dtype_name(v: Union[torch.dtype, ttcore.DataType, str, DTypeName, object]) -> DTypeName:
+def _coerce_to_dtype_name(
+    v: Union[torch.dtype, ttcore.DataType, str, DTypeName, object],
+) -> DTypeName:
     """Coerce to DTypeName. No ttnn."""
     if isinstance(v, DTypeName):
         return v

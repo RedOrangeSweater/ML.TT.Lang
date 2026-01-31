@@ -27,6 +27,7 @@ from ttl._generated_elementwise import *  # noqa: F401,F403
 from ttl._generated_elementwise import __all__ as _elementwise_all
 
 # Export additional TTL DSL API classes
+from ttl.constants import MemorySpace
 from ttl.operators import signpost
 from ttl.runtime_tensor import is_runtime_tensor
 from ttl.ttl_api import (
@@ -38,6 +39,7 @@ from ttl.ttl_api import (
 __all__ = [
     "CircularBuffer",
     "CopyTransferHandler",
+    "MemorySpace",
     "Program",
     "is_runtime_tensor",
     "ProgramSpec",

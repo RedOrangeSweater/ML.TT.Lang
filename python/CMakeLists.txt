@@ -174,12 +174,21 @@ declare_mlir_python_sources(TTLangPythonCommon.Graph
   SOURCES
     graph/__init__.py
 )
+declare_mlir_python_sources(TTLangPythonCommon.Boundary
+  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ttl"
+  ADD_TO_PARENT TTLangPythonCommon
+  SOURCES
+    boundary/__init__.py
+    boundary/mlir_types.py
+    boundary/ttnn_types.py
+)
 declare_mlir_python_sources(TTLangPythonCommon.Compile
   ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ttl"
   ADD_TO_PARENT TTLangPythonCommon
   SOURCES
     compile/__init__.py
     compile/validation.py
+    compile/pipeline.py
 )
 declare_mlir_python_sources(TTLangPythonCommon.Runtime
   ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ttl"

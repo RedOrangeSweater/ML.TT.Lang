@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 def _import_ttnn():  # noqa: ANN202
     try:
         import ttnn  # type: ignore[import-untyped]
+
         return ttnn
     except (ModuleNotFoundError, ImportError):
         raise RuntimeError("ttnn is required to build config descriptors") from None
@@ -27,16 +28,25 @@ def _import_ttnn():  # noqa: ANN202
 class ComputeDescriptorBuildContext(BaseModel):
     """Context for building compute config descriptor. Supplies has_f32 and verbose for resolution."""
 
-    kernel_name: str = Field(..., description="Kernel name for thread_to_kernel entries")
-    has_f32: bool = Field(default=False, description="Whether args contain float32 (auto-enable fp32_dest_acc_en)")
+    kernel_name: str = Field(
+        ..., description="Kernel name for thread_to_kernel entries"
+    )
+    has_f32: bool = Field(
+        default=False,
+        description="Whether args contain float32 (auto-enable fp32_dest_acc_en)",
+    )
     verbose: bool = Field(default=False, description="Print auto-enable messages")
 
 
 class ComputeConfigProxy(BaseModel):
     """Pydantic proxy for ttnn.ComputeConfigDescriptor. Optional flags only."""
 
-    fp32_dest_acc_en: bool | None = Field(default=None, description="Enable fp32 destination accumulator")
-    dst_full_sync_en: bool | None = Field(default=None, description="Enable destination full sync")
+    fp32_dest_acc_en: bool | None = Field(
+        default=None, description="Enable fp32 destination accumulator"
+    )
+    dst_full_sync_en: bool | None = Field(
+        default=None, description="Enable destination full sync"
+    )
 
 
 class ComputeConfigResolved(BaseModel):

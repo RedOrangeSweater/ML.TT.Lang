@@ -11,7 +11,6 @@ Optional resource annotation (color) per node: NOC, SFPU, FPU, etc.
 
 from __future__ import annotations
 
-from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -77,12 +76,12 @@ class OpGraph(BaseModel):
         """Topological order (simplified: same as insertion)."""
         return list(self.nodes.keys())
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialize for JSON (list of nodes)."""
         return {"nodes": [n.model_dump() for n in self.nodes.values()]}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> OpGraph:
+    def from_dict(cls, data: dict[str, object]) -> OpGraph:
         """Build from JSON dict (nodes as list)."""
         nodes = {n["id"]: OpNode(**n) for n in data.get("nodes", [])}
         return cls(nodes=nodes)

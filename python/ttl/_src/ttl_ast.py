@@ -4,14 +4,12 @@
 
 import ast
 import inspect
-from typing import Any
-
 from pydantic import BaseModel, ConfigDict, Field
 from pykernel._src.kernel_ast import TTCompilerBase
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import *
 
-from ..constants import DEFAULT_TILE_SIZE
+from ..constants import DEFAULT_TILE_SIZE, MemorySpace, SUPPORTED_MEMORY_SPACES
 from ..diagnostics import TTLangCompileError
 from ..dialects import ttl
 from ..dtype_utils import is_ttnn_tensor, TensorDtype
@@ -56,11 +54,11 @@ def _raise_tensor_error(tensor, message: str):
     raise ValueError(message)
 
 
-def _build_tensor_type(ctx, tensor, grid, tiled, memory_space):
+def _build_tensor_type(ctx, tensor, grid, tiled, memory_space: MemorySpace):
     """Build MLIR tensor type for a ttnn tensor with TTNNLayoutAttr."""
     if not tiled:
         raise ValueError("Only tiled tensors supported for TTNN interop")
-    if memory_space not in ("L1", "DRAM"):
+    if memory_space not in SUPPORTED_MEMORY_SPACES:
         raise ValueError(f"Only L1 or DRAM memory space supported, got {memory_space}")
     if len(grid) != 2:
         raise ValueError(f"Only 2D grids supported, got grid {tuple(grid)}")
@@ -99,7 +97,7 @@ class CompilerContext(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     grid: list[int] = Field(..., description="Grid dimensions (cols, rows)")
-    memory_space: str = Field(..., description="L1 or DRAM")
+    memory_space: MemorySpace = Field(..., description="L1 or DRAM")
     tiled: bool = Field(..., description="Whether to use tiled layout")
 
 
@@ -109,13 +107,17 @@ class TTLCompilerConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     grid: list[int] = Field(default_factory=lambda: [1, 1])
-    memory_space: str = "L1"
+    memory_space: MemorySpace = "L1"
     tiled: bool = True
     debug_locations: bool = False
     source_file: str = Field("<unknown>", validation_alias="_source_file")
-    source_lines: list[str] = Field(default_factory=list, validation_alias="_source_lines")
+    source_lines: list[str] = Field(
+        default_factory=list, validation_alias="_source_lines"
+    )
     line_offset: int = Field(0, validation_alias="_line_offset")
-    fn_globals: dict[str, Any] = Field(default_factory=dict, validation_alias="_globals")
+    fn_globals: dict[str, object] = Field(
+        default_factory=dict, validation_alias="_globals"
+    )
 
 
 class ThreadSourceInfo(BaseModel):
@@ -160,7 +162,7 @@ class TTLGenericCompiler(TTCompilerBase):
         self.line_offset = config.line_offset
         self.fn_globals = config.fn_globals
 
-        self._cb_info: list[dict[str, Any]] = []
+        self._cb_info: list[dict[str, object]] = []
         self.auto_profile_enabled = is_auto_profile_enabled()
         self.line_mapper = get_line_mapper() if self.auto_profile_enabled else None
         if self.line_mapper:

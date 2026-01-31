@@ -33,6 +33,7 @@ def tmp_dir(
     finally:
         pass  # Keep dir so paths handed out remain valid
 
+
 # Mapping from kernel type strings to thread type strings
 _KERNEL_TYPE_TO_THREAD_TYPE = {
     "compute": "compute",

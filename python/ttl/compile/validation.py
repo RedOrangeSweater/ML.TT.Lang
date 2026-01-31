@@ -11,10 +11,10 @@ See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
 
 from __future__ import annotations
 
-from typing import Any
-
 from ttmlir.passes import get_ttkernel_names
 
+from ..boundary import MlirModuleLike
+from ..constants import SUPPORTED_MEMORY_SPACES
 from ..dtype_utils import (
     detect_memory_space_from_tensor,
     is_interleaved_tensor,
@@ -22,7 +22,7 @@ from ..dtype_utils import (
 )
 
 
-def validate_ttnn_tensors_for_request(args: tuple[Any, ...]) -> None:
+def validate_ttnn_tensors_for_request(args: tuple[object, ...]) -> None:
     """Validate tensor types and TTNN tensor properties. Raises ValueError on invalid."""
     ttnn_count = sum(1 for arg in args if is_ttnn_tensor(arg))
     if ttnn_count > 0 and ttnn_count < len(args):
@@ -35,7 +35,7 @@ def validate_ttnn_tensors_for_request(args: tuple[Any, ...]) -> None:
         if not is_ttnn_tensor(arg):
             continue
         mem_space = detect_memory_space_from_tensor(arg, "unknown")
-        if mem_space not in ("L1", "DRAM"):
+        if mem_space not in SUPPORTED_MEMORY_SPACES:
             raise ValueError(
                 f"TTNN interop requires L1 or DRAM memory space, but tensor {i} is in {mem_space}."
             )
@@ -51,7 +51,7 @@ def validate_ttnn_tensors_for_request(args: tuple[Any, ...]) -> None:
             )
 
 
-def validate_kernel_count_for_request(module: Any) -> None:
+def validate_kernel_count_for_request(module: MlirModuleLike) -> None:
     """Validate kernel count (exactly 3: 1 compute + 2 data movement). Raises ValueError if not."""
     kernel_info = get_ttkernel_names(module)
     if len(kernel_info) != 3:

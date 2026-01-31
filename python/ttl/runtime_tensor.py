@@ -12,11 +12,13 @@ is_runtime_tensor() returns False. Validation runs only at initialization.
 
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
+
+from .boundary import TtnnDeviceLike
 
 # Types that implement "runtime tensor" (device tensor we can run kernels on).
 # Populated at module load when ttnn is available; validated then if ttnn present.
-_RUNTIME_TENSOR_TYPES: list[type] = []
+_RUNTIME_TENSOR_TYPES: set[type] = set()
 
 
 @runtime_checkable
@@ -27,11 +29,11 @@ class RuntimeTensor(Protocol):
     device() and memory_config(). No ttnn import here; validation at init.
     """
 
-    def device(self) -> Any:
+    def device(self) -> TtnnDeviceLike:
         """Return device handle (e.g. for grid/bounding_box)."""
         ...
 
-    def memory_config(self) -> Any:
+    def memory_config(self) -> object:
         """Return memory config (buffer_type, memory_layout for L1/DRAM, interleaved)."""
         ...
 
@@ -44,19 +46,11 @@ def _validate_runtime_tensor_type(t: type) -> None:
         raise TypeError(f"{t!r} has no callable memory_config()")
 
 
-def register_runtime_tensor_type(t: type, *, validate: bool = True) -> None:
-    """Register a type as runtime tensor. If validate=True and t is available, check protocol."""
-    if validate:
-        _validate_runtime_tensor_type(t)
-    if t not in _RUNTIME_TENSOR_TYPES:
-        _RUNTIME_TENSOR_TYPES.append(t)
-
-
 def is_runtime_tensor(obj: object) -> bool:
     """Return True if obj is a registered runtime tensor (e.g. ttnn.Tensor when ttnn present).
 
     No ttnn import here; uses _RUNTIME_TENSOR_TYPES populated at module load.
-    When ttnn is not installed, list is empty and this always returns False.
+    When ttnn is not installed, set is empty and this always returns False.
     """
     return any(isinstance(obj, t) for t in _RUNTIME_TENSOR_TYPES)
 
@@ -65,7 +59,9 @@ def _init_ttnn_if_available() -> None:
     """Register ttnn.Tensor as runtime tensor when ttnn is available; validate at init."""
     try:
         import ttnn  # type: ignore[import-untyped]
-        register_runtime_tensor_type(ttnn.Tensor, validate=True)
+
+        _validate_runtime_tensor_type(ttnn.Tensor)
+        _RUNTIME_TENSOR_TYPES.add(ttnn.Tensor)
     except (ModuleNotFoundError, ImportError):
         pass
 
