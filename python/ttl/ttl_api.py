@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Dict, Generator, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 try:
     import ttnn
@@ -59,12 +59,13 @@ from .diagnostics import (
     format_python_error,
 )
 from .dtype_utils import (
+    TensorDtype,
     is_ttnn_tensor,
     tile_bytes_from_dtype,
-    torch_dtype_to_ttnn_datatype,
 )
 from .kernel_runner import (
     KernelSpec,
+    RunKernelRequest,
     run_kernel_on_device,
 )
 from .operators import CopyTransferHandler, TensorBlock, copy
@@ -357,7 +358,7 @@ def _track_tensor_sources(f_params, args, source_file: str) -> None:
             register_tensor_source(arg, source_file, assign_line)
 
 
-class CompiledTTNNKernel:
+class CompiledTTNNKernel(BaseModel):
     """
     A compiled tt-lang kernel ready for execution via ttnn.generic_op.
 
@@ -365,58 +366,70 @@ class CompiledTTNNKernel:
     can be executed multiple times with different tensors without recompiling.
     """
 
-    def __init__(
-        self,
-        kernel_paths,
-        kernel_configs,
-        kernel_arg_specs,
-        num_tensors,
-        core_ranges,
-        kernel_tensor_indices,
-        cb_configs=None,
-        program_hash=None,
-        source_lines=None,
-        all_source_lines=None,
-        thread_to_kernel=None,
-        kernel_line_offsets=None,
-        program_config=None,
-        thread_names=None,
-    ):
-        """
-        Initialize with pre-compiled kernel artifacts.
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-        Args:
-            kernel_paths: List of (path, thread_type) tuples for each kernel
-            kernel_configs: List of config descriptors matching kernel_paths
-            kernel_arg_specs: List of arg specs (rt_args list) for each kernel
-            num_tensors: Number of input/output tensors
-            core_ranges: CoreRangeSet for kernel execution
-            kernel_tensor_indices: List of global tensor indices used by each kernel
-            cb_configs: List of (shape, buffer_factor) tuples for each CB, indexed by cb_index
-            program_hash: Hash for tt-metal program cache
-            source_lines: Source code lines for auto-profiling reports (deprecated)
-            all_source_lines: Dict mapping kernel name to source lines
-            thread_to_kernel: Dict mapping RISC thread name to kernel name
-            kernel_line_offsets: Dict mapping kernel name to line offset
-            program_config: Dict with grid, objective, placement, etc.
-            thread_names: List of thread names in same order as kernel_paths (for scheduler export)
-        """
-        self.kernel_paths = kernel_paths
-        self.kernel_configs = kernel_configs
-        self.kernel_arg_specs = kernel_arg_specs
-        self.num_tensors = num_tensors
-        self.core_ranges = core_ranges
-        self.kernel_tensor_indices = kernel_tensor_indices
-        self.cb_configs = cb_configs or []
-        self.program_hash = program_hash
-        self.source_lines = source_lines
-        self.all_source_lines = all_source_lines or {}
-        self.thread_to_kernel = thread_to_kernel or {}
-        self.kernel_line_offsets = kernel_line_offsets or {}
-        self.program_config = program_config or {}
-        self.thread_names = thread_names or []
+    kernel_paths: List[tuple[str, str]] = Field(
+        ...,
+        description="List of (path, thread_type) tuples for each kernel",
+    )
+    kernel_configs: List[object] = Field(
+        ...,
+        description="List of config descriptors matching kernel_paths",
+    )
+    kernel_arg_specs: List[object] = Field(
+        ...,
+        description="List of arg specs (rt_args list) for each kernel",
+    )
+    num_tensors: int = Field(..., ge=0, description="Number of input/output tensors")
+    core_ranges: object = Field(..., description="CoreRangeSet for kernel execution")
+    kernel_tensor_indices: List[List[int]] = Field(
+        ...,
+        description="List of global tensor indices used by each kernel",
+    )
+    cb_configs: List[object] = Field(
+        default_factory=list,
+        description="CircularBuffer configs per CB index",
+    )
+    program_hash: Optional[object] = Field(default=None, description="Hash for tt-metal program cache")
+    source_lines: Optional[object] = Field(default=None, description="Source lines (deprecated)")
+    all_source_lines: Dict[str, object] = Field(
+        default_factory=dict,
+        description="Dict mapping kernel name to source lines",
+    )
+    thread_to_kernel: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Dict mapping RISC thread name to kernel name",
+    )
+    kernel_line_offsets: Dict[str, object] = Field(
+        default_factory=dict,
+        description="Dict mapping kernel name to line offset",
+    )
+    program_config: Dict[str, object] = Field(
+        default_factory=dict,
+        description="Grid, objective, placement, etc.",
+    )
+    thread_names: List[str] = Field(
+        default_factory=list,
+        description="Thread names in same order as kernel_paths (for scheduler export)",
+    )
 
-    def __call__(self, *args):
+    @field_validator("cb_configs", "thread_names", mode="before")
+    @classmethod
+    def _none_to_list(cls, v: object) -> object:
+        """Coerce None to [] for optional list fields (call site may pass None)."""
+        return v if v is not None else []
+
+    @field_validator(
+        "all_source_lines",
+        "thread_to_kernel",
+        "kernel_line_offsets",
+        "program_config",
+        mode="before",
+    )
+    @classmethod
+    def _none_to_dict(cls, v: object) -> object:
+        """Coerce None to {} for optional dict fields (call site may pass None)."""
+        return v if v is not None else {}
         """Execute the kernel with the given tensors."""
         if len(args) != self.num_tensors:
             raise ValueError(f"Expected {self.num_tensors} tensors, got {len(args)}")
@@ -445,14 +458,14 @@ class CompiledTTNNKernel:
             )
             kernel_specs.append(spec)
 
-        # Use shared kernel execution logic.
-        return run_kernel_on_device(
+        run_req = RunKernelRequest(
             kernel_specs=kernel_specs,
             tensors=list(args),
             cb_configs=self.cb_configs,
             core_ranges=self.core_ranges,
             program_hash=self.program_hash,
         )
+        return run_kernel_on_device(run_req)
 
     def get_scheduler_input(self) -> dict:
         """

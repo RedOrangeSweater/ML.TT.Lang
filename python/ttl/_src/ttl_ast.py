@@ -14,7 +14,7 @@ from ttmlir.ir import *
 from ..constants import DEFAULT_TILE_SIZE
 from ..diagnostics import TTLangCompileError
 from ..dialects import ttl
-from ..dtype_utils import is_ttnn_tensor, tensor_dtype_to_ttcore_datatype
+from ..dtype_utils import is_ttnn_tensor, TensorDtype
 from ..layouts import TTNNLayoutConfig, create_ttnn_layout
 from ..ttl_utils import get_thread_type_string
 from .auto_profile import (
@@ -80,7 +80,7 @@ def _build_tensor_type(ctx, tensor, grid, tiled, memory_space):
         ),
     )
 
-    ttcore_dtype = tensor_dtype_to_ttcore_datatype(tensor.dtype)
+    ttcore_dtype = TensorDtype(dtype=tensor.dtype).to_ttcore()
     element_type = ttcore.ir.TileType.get(
         ctx, DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE, ttcore_dtype
     )
@@ -408,7 +408,7 @@ class TTLGenericCompiler(TTCompilerBase):
 
     def _emit_cb_from_capture(self, cb):
         """Emit ttl.bind_cb for a captured CircularBuffer instance."""
-        ttcore_dtype = tensor_dtype_to_ttcore_datatype(cb.dtype)
+        ttcore_dtype = TensorDtype(dtype=cb.dtype).to_ttcore()
         element_type = ttcore.ir.TileType.get(
             self.ctx, DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE, ttcore_dtype
         )
@@ -436,7 +436,15 @@ class TTLGenericCompiler(TTCompilerBase):
         self._tensor_accessor_global_indices = []
         func_arg_types = []
         for name, val in self.captures.items():
-            if is_ttnn_tensor(val):
+            is_tensor = is_ttnn_tensor(val)
+            if not is_tensor:
+                try:
+                    import torch
+
+                    is_tensor = isinstance(val, torch.Tensor)
+                except ImportError:
+                    pass
+            if is_tensor:
                 tensor_type = _build_tensor_type(
                     self.ctx,
                     val,
@@ -481,6 +489,14 @@ class TTLGenericCompiler(TTCompilerBase):
             for name, val in self.captures.items():
                 if is_ttnn_tensor(val):
                     continue  # Already handled via function arguments
+                # torch.Tensor in compile-only path: same as ttnn, handled via args
+                try:
+                    import torch
+
+                    if isinstance(val, torch.Tensor):
+                        continue
+                except ImportError:
+                    pass
                 assert isinstance(name, str)
                 if isinstance(val, int):
                     self.symbol_tables[-1][name] = arith.ConstantOp(

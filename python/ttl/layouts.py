@@ -10,7 +10,7 @@ from typing import List
 from ttmlir.dialects import ttcore, ttnn
 
 from .constants import DEFAULT_TILE_SIZE
-from .dtype_utils import tensor_dtype_to_ttcore_datatype
+from .dtype_utils import TensorDtype
 
 
 @dataclass(frozen=True)
@@ -57,7 +57,7 @@ def create_ttnn_layout(ctx, config: TTNNLayoutConfig):
 
     # logical_shape is (rows, cols), mlir_grid is (rows, cols)
 
-    ttcore_dtype = tensor_dtype_to_ttcore_datatype(config.dtype)
+    ttcore_dtype = TensorDtype(dtype=config.dtype).to_ttcore()
     element_type = ttcore.ir.TileType.get(
         ctx, DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE, ttcore_dtype
     )
