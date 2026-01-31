@@ -23,6 +23,7 @@ with pre-installed tt-mlir `cmake -G Ninja -B build -DTTMLIR_DIR=/path/to/tt-mli
 - **Comments**: Full sentences, explain why not what, TODO with alias and issue
   link
 - **Python**: PEP 8 with black formatter (v23.x), Python 3.10+ only
+- **Typing**: Avoid `Any` when concrete types are known; use `ttcore.DataType`, `torch.dtype`, `ttnn.DataType` (or string forward ref `"ttnn.DataType"` when ttnn is optional), `int`, etc.
 - **Functions**: Bottom-up order, helpers before callers, static/anonymous
   namespace for .cpp
 - **Namespaces**: Lowercase, avoid `using namespace`, no aliases in headers
