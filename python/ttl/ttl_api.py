@@ -987,6 +987,23 @@ def _compile_kernel(
             if hasattr(ct, "line_offset"):
                 kernel_line_offsets[ct.name] = ct.line_offset
 
+        # Optional: build op graph and run scheduler stub (Phase 3-4)
+        if os.environ.get("TTLANG_USE_SCHEDULER", "0") == "1":
+            from .scheduler import (
+                build_op_graph_from_threads,
+                build_topology_from_grid,
+                schedule_stub,
+            )
+
+            thread_infos = [(ct.name, getattr(ct, "kernel_type", "dm")) for ct in compiled_threads]
+            op_graph = build_op_graph_from_threads(thread_infos)
+            topology = build_topology_from_grid(grid)
+            plan = schedule_stub(op_graph, topology, program_config)
+            # Verify plan matches current grid (stub assigns all to (0,0))
+            assert plan.grid_cols == topology.grid_cols and plan.grid_rows == topology.grid_rows
+            for nid in op_graph.node_ids_in_order():
+                assert plan.placement.get(nid) == (0, 0), f"stub plan mismatch for {nid}"
+
         module = Module.create(loc)
 
         # Insert standalone thread functions directly into module

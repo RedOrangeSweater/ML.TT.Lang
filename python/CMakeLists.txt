@@ -142,6 +142,17 @@ declare_mlir_python_sources(TTLangPythonCommon.Src
     _src/tensor_registry.py
 )
 
+declare_mlir_python_sources(TTLangPythonCommon.Scheduler
+  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ttl"
+  ADD_TO_PARENT TTLangPythonCommon
+  SOURCES
+    scheduler/__init__.py
+    scheduler/op_graph.py
+    scheduler/scheduler_stub.py
+    scheduler/topology.py
+    scheduler/export.py
+)
+
 declare_mlir_python_sources(TTLangPythonCommon.Utils
   ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
   ADD_TO_PARENT TTLangPythonCommon
