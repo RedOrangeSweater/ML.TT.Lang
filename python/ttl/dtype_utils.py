@@ -76,6 +76,30 @@ def is_ttnn_tensor(tensor: object) -> bool:
         return False
 
 
+def detect_memory_space_from_tensor(tensor: object, default: str) -> str:
+    """Detect memory space (L1/DRAM) from a ttnn tensor's buffer type. Returns default if not ttnn or no buffer_type."""
+    if not is_ttnn_tensor(tensor):
+        return default
+    mem_config = tensor.memory_config()
+    if hasattr(mem_config, "buffer_type"):
+        buffer_type_str = str(mem_config.buffer_type)
+        if "L1" in buffer_type_str:
+            return "L1"
+        if "DRAM" in buffer_type_str:
+            return "DRAM"
+    return default
+
+
+def is_interleaved_tensor(tensor: object) -> bool:
+    """Check if a ttnn tensor has interleaved memory layout. Returns False if not ttnn."""
+    if not is_ttnn_tensor(tensor):
+        return False
+    mem_config = tensor.memory_config()
+    if hasattr(mem_config, "memory_layout"):
+        return "INTERLEAVED" in str(mem_config.memory_layout)
+    return False
+
+
 def torch_dtype_to_ttcore_datatype(torch_dtype: torch.dtype) -> ttcore.DataType:
     """
     Convert PyTorch dtype to ttcore.DataType enum.

@@ -70,6 +70,7 @@ from .diagnostics import (
 )
 from .dtype_utils import (
     TensorDtype,
+    detect_memory_space_from_tensor,
     is_ttnn_tensor,
     tile_bytes_from_dtype,
 )
@@ -252,26 +253,6 @@ def _run_profiling_pipeline(
             print("[Auto-profile] No signpost results found in profile CSV")
     except Exception as e:
         print(f"[Auto-profile] Failed to parse profile CSV: {e}")
-
-
-def _detect_memory_space_from_tensor(tensor, default: str) -> str:
-    """Detect memory space (L1/DRAM) from a ttnn tensor's buffer type."""
-    mem_config = tensor.memory_config()
-    if hasattr(mem_config, "buffer_type"):
-        buffer_type_str = str(mem_config.buffer_type)
-        if "L1" in buffer_type_str:
-            return "L1"
-        elif "DRAM" in buffer_type_str:
-            return "DRAM"
-    return default
-
-
-def _is_interleaved_tensor(tensor) -> bool:
-    """Check if a ttnn tensor has interleaved memory layout."""
-    mem_config = tensor.memory_config()
-    if hasattr(mem_config, "memory_layout"):
-        return "INTERLEAVED" in str(mem_config.memory_layout)
-    return False
 
 
 def _has_float32_args(args) -> bool:
@@ -542,47 +523,6 @@ class CompiledTTNNKernel(BaseModel):
         return export_scheduler_input(thread_infos, grid, self.program_config)
 
 
-def validate_ttnn_tensors(args: tuple) -> None:
-    """Validate tensor types and TTNN tensor properties. Raises ValueError on invalid."""
-    ttnn_count = sum(1 for arg in args if is_ttnn_tensor(arg))
-    if ttnn_count > 0 and ttnn_count < len(args):
-        raise ValueError(
-            f"TTNN interop requires all tensors to be the same type. "
-            f"Got {ttnn_count} TTNN tensors and {len(args) - ttnn_count} host tensors. "
-            f"Mixed tensor types would generate extra bounce kernels."
-        )
-    for i, arg in enumerate(args):
-        if not is_ttnn_tensor(arg):
-            continue
-        mem_space = _detect_memory_space_from_tensor(arg, "unknown")
-        if mem_space not in ("L1", "DRAM"):
-            raise ValueError(
-                f"TTNN interop requires L1 or DRAM memory space, but tensor {i} is in {mem_space}."
-            )
-        if not _is_interleaved_tensor(arg):
-            raise ValueError(
-                f"TTNN interop requires interleaved tensors, but tensor {i} is not. "
-                f"Use ttnn.DRAM_MEMORY_CONFIG or ttnn.L1_MEMORY_CONFIG for interleaved tensors."
-            )
-        if hasattr(arg, "layout") and "TILE" not in str(arg.layout):
-            raise ValueError(
-                f"TTNN interop requires tilized tensors, but tensor {i} has layout {arg.layout}. "
-                f"Use ttnn.to_layout(tensor, ttnn.TILE_LAYOUT) to convert."
-            )
-
-
-def validate_kernel_count(kernel_info: list) -> None:
-    """Validate kernel count (exactly 3: 1 compute + 2 data movement). Raises ValueError if not."""
-    if len(kernel_info) != 3:
-        compute_count = sum(1 for _, t in kernel_info if t == "compute")
-        dm_count = sum(1 for _, t in kernel_info if t == "noc")
-        raise ValueError(
-            f"TTNN interop requires exactly 3 kernels (1 compute + 2 data movement), "
-            f"got {len(kernel_info)} kernels ({compute_count} compute, {dm_count} data movement). "
-            f"Each core has only 2 NOCs, so more than 2 DM kernels causes NOC conflicts."
-        )
-
-
 def _build_config_for_thread(request: ThreadConfigBuildRequest) -> tuple:
     """Build (config, thread_to_kernel_entries) from a single Pydantic request."""
     return request.build_config_and_entries()
@@ -636,9 +576,7 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest):
     All inputs are carried by the single Pydantic request object.
     """
     opts = req.compile_options or TTNNKernelCompileOptions()
-    kernel_info = get_ttkernel_names(req.module)
-    validate_ttnn_tensors(req.args)
-    validate_kernel_count(kernel_info)
+    # Validation runs in TTNNKernelCompileRequest model_validator (Pydantic).
 
     if opts.verbose:
         print("=" * 60)
@@ -1029,7 +967,7 @@ def _compile_kernel(
     if has_ttnn_tensors:
         first_ttnn_tensor = next((arg for arg in args if is_ttnn_tensor(arg)), None)
         if first_ttnn_tensor is not None:
-            memory_space = _detect_memory_space_from_tensor(
+            memory_space = detect_memory_space_from_tensor(
                 first_ttnn_tensor, memory_space
             )
             print(f"[TTNN interop] Detected {memory_space} memory space")

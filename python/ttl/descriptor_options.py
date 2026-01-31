@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .ttnn_proxy import (
     ComputeConfigProxy,
@@ -200,3 +200,17 @@ class TTNNKernelCompileRequest(BaseModel):
     source_lines: Any = Field(default=None, description="Source lines for profiling")
     all_source_lines: Any = Field(default=None, description="All thread source lines")
     kernel_line_offsets: Any = Field(default=None, description="Line offsets per kernel")
+
+    @model_validator(mode="after")
+    def validate_ttnn_interop(self) -> Self:
+        """TTNN interop: all tensors same type (TTNN), L1/DRAM, interleaved, tilized; exactly 3 kernels."""
+        from .compile.validation import (
+            validate_kernel_count_for_request,
+            validate_ttnn_tensors_for_request,
+        )
+
+        validate_ttnn_tensors_for_request(
+            self.args if isinstance(self.args, tuple) else tuple()
+        )
+        validate_kernel_count_for_request(self.module)
+        return self

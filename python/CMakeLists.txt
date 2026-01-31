@@ -178,6 +178,7 @@ declare_mlir_python_sources(TTLangPythonCommon.Compile
   ADD_TO_PARENT TTLangPythonCommon
   SOURCES
     compile/__init__.py
+    compile/validation.py
 )
 declare_mlir_python_sources(TTLangPythonCommon.Runtime
   ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ttl"
