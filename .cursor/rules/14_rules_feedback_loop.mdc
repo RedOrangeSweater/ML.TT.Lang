@@ -7,6 +7,8 @@ alwaysApply: true
 
 If the user corrects the assistant (format, conventions, workflow, repeated mistake), treat it as a **signal** that the current rules/commands/templates are insufficient.
 
+If the user **reminds** about something that should happen by default (commit+push, SDLC check, validation in Pydantic, etc.), treat it as a signal to: (1) update the rule or add a command so that next time the action runs automatically; (2) avoid requiring the user to repeat the same reminder. Goal: **minimum user action**.
+
 ## Requirements
 
 - **Capture the correction** as a rule update in this repo whenever it is reusable:

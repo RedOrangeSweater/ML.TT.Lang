@@ -1,0 +1,12 @@
+---
+description: "Validation only in Pydantic; no validate_* in business logic"
+alwaysApply: true
+---
+
+## Validation only in Pydantic
+
+- **Contract validation** belongs in Pydantic models (field_validator, model_validator on request/response).
+- **Do not** add or keep ad-hoc `validate_*` calls in business logic (ttl_api, kernel_runner, _compile_ttnn_kernel, etc.). New checks go into the appropriate request/response model.
+- When reviewing or refactoring validation, use the `/code.validation.pydantic` command to find validate_* and raise ValueError/TypeError in business logic and suggest moving them into Pydantic.
+
+Reference: docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md (§1, §4).
