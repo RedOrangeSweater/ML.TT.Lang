@@ -11,27 +11,27 @@ No per-core resource detail for stub.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass
-class Topology:
+
+class Topology(BaseModel):
     """Rectangular grid of cores (cols x rows)."""
 
-    grid_cols: int
-    grid_rows: int
+    grid_cols: int = Field(..., ge=1)
+    grid_rows: int = Field(..., ge=1)
 
     def num_cores(self) -> int:
         return self.grid_cols * self.grid_rows
 
     def core_coords(self) -> list[tuple[int, int]]:
-        """Yield (col, row) for each core in row-major order."""
+        """(col, row) for each core in row-major order."""
         return [(c, r) for r in range(self.grid_rows) for c in range(self.grid_cols)]
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize for export (e.g. JSON for scheduler viz)."""
-        return {"grid_cols": self.grid_cols, "grid_rows": self.grid_rows}
+        """Serialize for JSON."""
+        return self.model_dump()
 
 
 def build_topology_from_grid(grid: tuple[int, ...] | list[int]) -> Topology:

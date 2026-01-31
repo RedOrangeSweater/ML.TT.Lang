@@ -11,31 +11,29 @@ Output: plan (placement of each op on core); stub always assigns all to (0,0) fo
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from .op_graph import OpGraph
 from .topology import Topology
 
 
-@dataclass
-class SchedulePlan:
-    """Placement of each op (node id) on core (col, row)."""
+class SchedulePlan(BaseModel):
+    """Placement of each op (node id) on core (col, row). JSON uses list for coords."""
 
-    placement: dict[str, tuple[int, int]]  # node_id -> (col, row)
-    grid_cols: int
-    grid_rows: int
+    placement: dict[str, list[int]] = Field(default_factory=dict)
+    grid_cols: int = Field(..., ge=1)
+    grid_rows: int = Field(..., ge=1)
 
     def core_for(self, node_id: str) -> tuple[int, int]:
-        return self.placement.get(node_id, (0, 0))
+        """Return (col, row) for node; (0, 0) if not placed."""
+        coords = self.placement.get(node_id, [0, 0])
+        return (coords[0], coords[1]) if len(coords) >= 2 else (0, 0)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize for export (e.g. JSON for scheduler viz). Placement as node_id -> [col, row]."""
-        return {
-            "placement": {nid: [c, r] for nid, (c, r) in self.placement.items()},
-            "grid_cols": self.grid_cols,
-            "grid_rows": self.grid_rows,
-        }
+        """Serialize for JSON."""
+        return self.model_dump()
 
 
 def schedule_stub(
@@ -46,13 +44,10 @@ def schedule_stub(
     """
     Stub scheduler: reproduces current RCW behavior.
 
-    All ops placed on core (0, 0) for single-core grid; grid from topology.
-    Does not use program_config for decisions (Phase 2).
+    All ops placed on core (0, 0). Does not use program_config (Phase 2).
     """
     _ = program_config
-    placement: dict[str, tuple[int, int]] = {}
-    for nid in graph.node_ids_in_order():
-        placement[nid] = (0, 0)
+    placement = {nid: [0, 0] for nid in graph.node_ids_in_order()}
     return SchedulePlan(
         placement=placement,
         grid_cols=topology.grid_cols,

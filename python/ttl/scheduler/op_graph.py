@@ -11,56 +11,87 @@ Optional resource annotation (color) per node: NOC, SFPU, FPU, etc.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import BaseModel, Field
 
-@dataclass
-class OpNode:
+
+# Thread type to op_type/resource mapping (avoids long if-chains in build_op_graph_from_threads)
+_THREAD_TYPE_TO_OP: dict[str, tuple[str, str]] = {
+    "compute": ("elementwise", "SFPU"),
+    "datamovement": ("dm", "NOC"),
+    "noc": ("dm", "NOC"),
+}
+
+
+def _op_type_for_dm_index(index: int, total_dm: int) -> str:
+    """Map DM index to load/dm/store."""
+    if total_dm <= 0:
+        return "dm"
+    if index == 0:
+        return "load"
+    if index == total_dm - 1:
+        return "store"
+    return "dm"
+
+
+class OpNode(BaseModel):
     """Single node in the op graph."""
 
-    id: str  # thread/kernel name
-    op_type: str  # "load" | "store" | "elementwise" | "dm" (generic)
-    resource: str | None = None  # optional "NOC" | "SFPU" | "FPU" | ...
-    predecessors: list[str] = field(default_factory=list)  # node ids
-    successors: list[str] = field(default_factory=list)
+    id: str
+    op_type: str
+    resource: str | None = None
+    predecessors: list[str] = Field(default_factory=list)
+    successors: list[str] = Field(default_factory=list)
 
     def __repr__(self) -> str:
         return f"OpNode(id={self.id!r}, op_type={self.op_type!r})"
 
 
-@dataclass
-class OpGraph:
+class OpGraph(BaseModel):
     """DAG of operations with data dependencies."""
 
-    nodes: dict[str, OpNode] = field(default_factory=dict)
+    nodes: dict[str, OpNode] = Field(default_factory=dict)
 
-    def add_node(self, node: OpNode) -> None:
-        self.nodes[node.id] = node
+    def add_node(self, node: OpNode) -> OpGraph:
+        """Return new graph with node added (immutable)."""
+        return self.model_copy(update={"nodes": {**self.nodes, node.id: node}})
 
-    def add_edge(self, from_id: str, to_id: str) -> None:
-        if from_id in self.nodes and to_id in self.nodes:
-            self.nodes[from_id].successors.append(to_id)
-            self.nodes[to_id].predecessors.append(from_id)
+    def add_edge(self, from_id: str, to_id: str) -> OpGraph:
+        """Return new graph with edge added if both nodes exist."""
+        if from_id not in self.nodes or to_id not in self.nodes:
+            return self
+        from_node = self.nodes[from_id]
+        to_node = self.nodes[to_id]
+        new_from = from_node.model_copy(
+            update={"successors": [*from_node.successors, to_id]}
+        )
+        new_to = to_node.model_copy(
+            update={"predecessors": [*to_node.predecessors, from_id]}
+        )
+        return self.model_copy(
+            update={"nodes": {**self.nodes, from_id: new_from, to_id: new_to}}
+        )
 
     def node_ids_in_order(self) -> list[str]:
-        """Return node ids in topological order (simplified: same as insertion)."""
+        """Topological order (simplified: same as insertion)."""
         return list(self.nodes.keys())
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize for tests/logging."""
-        return {
-            "nodes": [
-                {
-                    "id": n.id,
-                    "op_type": n.op_type,
-                    "resource": n.resource,
-                    "predecessors": n.predecessors,
-                    "successors": n.successors,
-                }
-                for n in self.nodes.values()
-            ]
-        }
+        """Serialize for JSON (list of nodes)."""
+        return {"nodes": [n.model_dump() for n in self.nodes.values()]}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> OpGraph:
+        """Build from JSON dict (nodes as list)."""
+        nodes = {n["id"]: OpNode(**n) for n in data.get("nodes", [])}
+        return cls(nodes=nodes)
+
+
+class OpGraphSchema(BaseModel):
+    """JSON shape for op_graph (nodes as list). Used by SchedulerInput."""
+
+    nodes: list[OpNode] = Field(default_factory=list)
 
 
 def build_op_graph_from_threads(
@@ -69,35 +100,27 @@ def build_op_graph_from_threads(
     """
     Build op graph from list of (thread_name, thread_type).
 
-    thread_type is "compute" or "datamovement".
-    For RCW (1 compute + 2 DM): first DM = load, second DM = store, compute = elementwise.
+    thread_type is "compute" or "datamovement"/"noc".
+    RCW: first DM = load, last DM = store, compute = elementwise.
     Edges: load -> elementwise -> store.
     """
-    graph = OpGraph()
     compute_ids: list[str] = []
     dm_ids: list[str] = []
-
     for name, kt in thread_infos:
         if kt == "compute":
             compute_ids.append(name)
-        elif kt == "datamovement" or kt == "noc":
-            dm_ids.append(name)
         else:
             dm_ids.append(name)
 
-    # Assign op types: for RCW, first dm = load, last dm = store, compute = elementwise
+    graph = OpGraph()
     for i, nid in enumerate(dm_ids):
-        op_type = "load" if i == 0 else "store" if i == len(dm_ids) - 1 else "dm"
-        resource = "NOC"
-        graph.add_node(OpNode(id=nid, op_type=op_type, resource=resource))
-
+        op_type = _op_type_for_dm_index(i, len(dm_ids))
+        graph = graph.add_node(OpNode(id=nid, op_type=op_type, resource="NOC"))
     for nid in compute_ids:
-        graph.add_node(OpNode(id=nid, op_type="elementwise", resource="SFPU"))
+        graph = graph.add_node(OpNode(id=nid, op_type="elementwise", resource="SFPU"))
 
-    # Edges: load -> elementwise -> store (for 1 compute, 2 dm)
-    if len(dm_ids) >= 1 and len(compute_ids) >= 1:
-        graph.add_edge(dm_ids[0], compute_ids[0])
-    if len(compute_ids) >= 1 and len(dm_ids) >= 2:
-        graph.add_edge(compute_ids[0], dm_ids[-1])
-
+    if dm_ids and compute_ids:
+        graph = graph.add_edge(dm_ids[0], compute_ids[0])
+    if compute_ids and len(dm_ids) >= 2:
+        graph = graph.add_edge(compute_ids[0], dm_ids[-1])
     return graph

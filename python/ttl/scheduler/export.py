@@ -14,9 +14,23 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .op_graph import OpGraph, build_op_graph_from_threads
+from pydantic import BaseModel
+
+from .op_graph import OpGraph, OpGraphSchema, build_op_graph_from_threads
 from .scheduler_stub import SchedulePlan, schedule_stub
 from .topology import Topology, build_topology_from_grid
+
+
+class SchedulerInput(BaseModel):
+    """Unified scheduler input: op_graph, topology, plan. Validates and serializes JSON."""
+
+    op_graph: OpGraphSchema
+    topology: Topology
+    plan: SchedulePlan
+
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
+        """Serialize for JSON (same shape as existing fixtures)."""
+        return super().model_dump(**kwargs)
 
 
 def export_scheduler_input(
@@ -32,11 +46,9 @@ def export_scheduler_input(
     graph = build_op_graph_from_threads(thread_infos)
     topology = build_topology_from_grid(grid)
     plan = schedule_stub(graph, topology, program_config)
-    return {
-        "op_graph": graph.to_dict(),
-        "topology": topology.to_dict(),
-        "plan": plan.to_dict(),
-    }
+    schema = OpGraphSchema(nodes=list(graph.nodes.values()))
+    inp = SchedulerInput(op_graph=schema, topology=topology, plan=plan)
+    return inp.model_dump()
 
 
 def export_scheduler_input_to_json(
