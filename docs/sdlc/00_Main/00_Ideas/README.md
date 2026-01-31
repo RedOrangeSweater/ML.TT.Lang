@@ -8,3 +8,4 @@
 - [14_implementation_roadmap.md](14_implementation_roadmap.md) — дорожная карта внедрения: program, toy examples, последовательное переписывание tt-lang (фазы 0–9+).
 - [15_salabim_tensix_dataflow_simulator.md](15_salabim_tensix_dataflow_simulator.md) — симулятор Tensix/DataFlow на базе salabim (ShopsSimilarity): разноцветные вычислительные блоки и DataFlow state блоки, Tensix-cores слабо на фоне.
 - [16_scheduler_visualization_and_gym.md](16_scheduler_visualization_and_gym.md) — UI визуализации планировщика (React 3D, три вида, пошаговый дебаггер) и Gymnasium environment для поиска маппинга алго-граф → HW-топология.
+- [17_flexible_scheduler_framework_ux.md](17_flexible_scheduler_framework_ux.md) — гибкий фреймворк планировщика: целевой UX (алгоритмы RCW/Дейкстра/A*/MCTS/AlphaStar-like, async прогоны, пауза/перемотка, лог решений, статистика по нодам, гибкий симулятор, визуализация в стиле AAA).

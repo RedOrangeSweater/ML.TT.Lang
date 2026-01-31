@@ -15,6 +15,7 @@ audience: разработчики планировщика, UI, RL/симуля
 - [06_vertical_ir_to_horizontal_topology_scheduler.md](06_vertical_ir_to_horizontal_topology_scheduler.md) — вертикальный граф с ресурсными требованиями vs горизонтальная топология (lat/bw).
 - [12_colored_compute_graph_and_tensix_state_machine.md](12_colored_compute_graph_and_tensix_state_machine.md) — раскрашенный граф, RCW vs оптимальный маппинг, «цветной Tetris».
 - [15_salabim_tensix_dataflow_simulator.md](15_salabim_tensix_dataflow_simulator.md) — симулятор «фабрик» и DataFlow; визуализация может переиспользовать метафоры (цвета блоков, пучки данных).
+- [17_flexible_scheduler_framework_ux.md](17_flexible_scheduler_framework_ux.md) — целевой UX фреймворка планировщика (алгоритмы, async, пауза/перемотка, симулятор, визуализация в стиле AAA).
 
 ---
 
@@ -110,6 +111,7 @@ audience: разработчики планировщика, UI, RL/симуля
 - **Идея и JSON schema**: в tt-lang, [docs/sdlc/00_Main/00_Ideas/](.) (этот документ).
 - **Экспорт**: в tt-lang (scheduler module или скрипт).
 - **Приложение (UI + Gym env)**: отдельный репозиторий (например scheduler-viz) или поддиректория в tt-lang `apps/scheduler-viz/` (React + Python backend с Gymnasium env), сборка опциональна.
+- **Запуск**: см. [apps/scheduler-viz/README.md](../../../apps/scheduler-viz/README.md) и Run configs **Scheduler Viz** в `.vscode/launch.json`.
 
 ---
 
