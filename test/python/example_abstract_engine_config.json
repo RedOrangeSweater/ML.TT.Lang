@@ -1,0 +1,18 @@
+{
+  "backend": "toy_shops",
+  "objective": "latency",
+  "graph_toy_generator": {
+    "num_nodes": 4,
+    "product_types": ["flour", "bread"],
+    "bom": {"bread": ["flour"]}
+  },
+  "topology_graph": {
+    "nodes": ["factory_0", "store_0", "store_1", "store_2"],
+    "edges": [
+      {"from_id": "factory_0", "to_id": "store_0", "latency": 1.0},
+      {"from_id": "factory_0", "to_id": "store_1", "latency": 2.0},
+      {"from_id": "store_0", "to_id": "store_1"},
+      {"from_id": "store_1", "to_id": "store_2", "latency": 1.0}
+    ]
+  }
+}
