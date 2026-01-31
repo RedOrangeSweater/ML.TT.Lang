@@ -1,0 +1,57 @@
+{
+  "op_graph": {
+    "nodes": [
+      {
+        "id": "demo_read",
+        "op_type": "load",
+        "resource": "NOC",
+        "predecessors": [],
+        "successors": [
+          "demo_compute"
+        ]
+      },
+      {
+        "id": "demo_write",
+        "op_type": "store",
+        "resource": "NOC",
+        "predecessors": [
+          "demo_compute"
+        ],
+        "successors": []
+      },
+      {
+        "id": "demo_compute",
+        "op_type": "elementwise",
+        "resource": "SFPU",
+        "predecessors": [
+          "demo_read"
+        ],
+        "successors": [
+          "demo_write"
+        ]
+      }
+    ]
+  },
+  "topology": {
+    "grid_cols": 2,
+    "grid_rows": 2
+  },
+  "plan": {
+    "placement": {
+      "demo_read": [
+        0,
+        0
+      ],
+      "demo_write": [
+        0,
+        0
+      ],
+      "demo_compute": [
+        0,
+        0
+      ]
+    },
+    "grid_cols": 2,
+    "grid_rows": 2
+  }
+}

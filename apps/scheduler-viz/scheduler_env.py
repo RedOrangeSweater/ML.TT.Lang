@@ -20,6 +20,26 @@ from typing import Any, Callable
 import gymnasium as gym
 import numpy as np
 
+try:
+    from models import SchedulerInputPayload
+except ImportError:
+    SchedulerInputPayload = None  # type: ignore[misc, assignment]
+
+
+def _scheduler_input_to_dict(
+    scheduler_input: dict[str, Any] | str | Path | Any,
+) -> dict[str, Any]:
+    """Normalize scheduler input to dict (op_graph, topology, plan). Accepts model, dict, or path."""
+    if SchedulerInputPayload is not None and isinstance(
+        scheduler_input, SchedulerInputPayload
+    ):
+        return scheduler_input.to_env_dict()
+    if isinstance(scheduler_input, dict):
+        return scheduler_input
+    path = Path(scheduler_input)
+    with path.open() as f:
+        return json.load(f)
+
 
 def _node_order(graph: dict[str, Any]) -> list[str]:
     """Topological order: nodes by dependencies (simplified: use list order)."""
@@ -41,6 +61,26 @@ def _edge_list(graph: dict[str, Any]) -> list[tuple[str, str]]:
     return edges
 
 
+def _manhattan(c1: int, r1: int, c2: int, r2: int) -> int:
+    """Manhattan distance between (c1, r1) and (c2, r2)."""
+    return abs(c1 - c2) + abs(r1 - r2)
+
+
+def _sum_edge_manhattan(
+    edges: list[tuple[str, str]],
+    placement: dict[str, tuple[int, int]],
+) -> float:
+    """Sum of Manhattan distances over edges; 0 if any endpoint unplaced."""
+    total = 0.0
+    for u, v in edges:
+        if u not in placement or v not in placement:
+            return 0.0
+        c1, r1 = placement[u]
+        c2, r2 = placement[v]
+        total += _manhattan(c1, r1, c2, r2)
+    return total
+
+
 def _reward_stub(
     graph: dict[str, Any],
     topology: dict[str, Any],
@@ -50,14 +90,7 @@ def _reward_stub(
     edges = _edge_list(graph)
     if not edges:
         return 0.0
-    total = 0.0
-    for u, v in edges:
-        if u not in placement or v not in placement:
-            return 0.0
-        c1, r1 = placement[u]
-        c2, r2 = placement[v]
-        total += abs(c1 - c2) + abs(r1 - r2)
-    return -float(total)
+    return -float(_sum_edge_manhattan(edges, placement))
 
 
 def reward_from_simulator_stub(
@@ -87,7 +120,7 @@ class SchedulerPlacementEnv(gym.Env[dict[str, Any], int]):
 
     def __init__(
         self,
-        scheduler_input: dict[str, Any] | str | Path,
+        scheduler_input: dict[str, Any] | str | Path | Any,
         render_mode: str | None = None,
         reward_fn: (
             Callable[
@@ -99,12 +132,9 @@ class SchedulerPlacementEnv(gym.Env[dict[str, Any], int]):
     ):
         super().__init__()
         self._reward_fn = reward_fn or _reward_stub
-        if isinstance(scheduler_input, (str, Path)):
-            path = Path(scheduler_input)
-            with open(path) as f:
-                scheduler_input = json.load(f)
-        self._graph = scheduler_input["op_graph"]
-        self._topology = scheduler_input["topology"]
+        data = _scheduler_input_to_dict(scheduler_input)
+        self._graph = data["op_graph"]
+        self._topology = data["topology"]
         self._node_ids = _node_order(self._graph)
         self._n_nodes = len(self._node_ids)
         self._coords = _core_coords(
@@ -154,7 +184,11 @@ class SchedulerPlacementEnv(gym.Env[dict[str, Any], int]):
         super().reset(seed=seed)
         self._placement = {}
         self._next_idx = 0
-        return self._obs(), {"placement": dict(self._placement), "graph": self._graph, "topology": self._topology}
+        return self._obs(), {
+            "placement": dict(self._placement),
+            "graph": self._graph,
+            "topology": self._topology,
+        }
 
     def step(
         self,
@@ -180,9 +214,7 @@ class SchedulerPlacementEnv(gym.Env[dict[str, Any], int]):
 
     def get_full_state(self) -> dict[str, Any]:
         """Return full state for UI: graph, topology, placement, plan dict."""
-        placement_list = {
-            nid: [c, r] for nid, (c, r) in self._placement.items()
-        }
+        placement_list = {nid: [c, r] for nid, (c, r) in self._placement.items()}
         return {
             "op_graph": self._graph,
             "topology": self._topology,
