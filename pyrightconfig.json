@@ -1,0 +1,12 @@
+{
+  "include": ["python", "examples", "test", "apps"],
+  "extraPaths": [
+    "build/python_packages",
+    "python",
+    "build/_deps/tt-mlir-build/python_packages",
+    "build/_deps/tt-mlir-build/ttrt/runtime/ttnn"
+  ],
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none",
+  "pythonVersion": "3.11"
+}
