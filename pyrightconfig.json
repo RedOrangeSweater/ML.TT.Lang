@@ -3,6 +3,7 @@
   "extraPaths": [
     "build/python_packages",
     "python",
+    "examples",
     "build/_deps/tt-mlir-build/python_packages",
     "build/_deps/tt-mlir-build/ttrt/runtime/ttnn"
   ],

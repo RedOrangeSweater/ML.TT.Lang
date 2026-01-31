@@ -44,8 +44,12 @@ build = "cp311-manylinux_x86_64*"
 skip = "*-musllinux_*"
 build-verbosity = 2
 
+[tool.mypy]
+mypy_path = "examples"
+
 [tool.pyright]
 typeCheckingMode = "strict"
+extraPaths = ["examples"]
 reportMissingParameterType = "error"
 reportMissingTypeStubs = "warning"
 reportMissingImports = "error"
