@@ -103,25 +103,30 @@ def TensorAccessor(tensor):
 
 dma = copy  # Alias used in examples (DMA = copy for data movement)
 
-# Thread registry for automatic collection of @compute and @datamovement threads
-_thread_registry: list[Callable[..., object]] = []
+class ThreadRegistry:
+    """Registry for automatic collection of @compute and @datamovement threads."""
+
+    __slots__ = ("_threads",)
+
+    def __init__(self) -> None:
+        self._threads: list[Callable[..., object]] = []
+
+    def register(self, thread_fn: Callable[..., object]) -> None:
+        """Register a thread function during decoration."""
+        self._threads.append(thread_fn)
+
+    def clear(self) -> None:
+        """Clear the registry before kernel execution."""
+        self._threads.clear()
+
+    def get_and_clear(self) -> list[Callable[..., object]]:
+        """Return all registered threads and clear the registry."""
+        threads = list(self._threads)
+        self._threads.clear()
+        return threads
 
 
-def _register_thread(thread_fn: Callable) -> None:
-    """Register a thread function during decoration."""
-    _thread_registry.append(thread_fn)
-
-
-def _clear_thread_registry() -> None:
-    """Clear the thread registry before kernel execution."""
-    _thread_registry.clear()
-
-
-def _get_registered_threads() -> list[Callable[..., object]]:
-    """Get all registered threads and clear the registry."""
-    threads = list(_thread_registry)
-    _thread_registry.clear()
-    return threads
+_thread_registry = ThreadRegistry()
 
 
 def _get_tensor_cache_info(tensor) -> tuple:
@@ -878,7 +883,7 @@ def _compile(
         _wrapper._decorator_name = kernel_type + "_thread"
         _wrapper._source_file = source_file
         # Register thread for automatic collection
-        _register_thread(_wrapper)
+        _thread_registry.register(_wrapper)
         if inspect.ismethod(f):
             return staticmethod(_wrapper)
         return _wrapper
@@ -1053,9 +1058,9 @@ def _compile_kernel(
     _reset_cb_counter()
     _set_current_grid(grid)
 
-    _clear_thread_registry()
+    _thread_registry.clear()
     f(*args, **kwargs)
-    threads = _get_registered_threads()
+    threads = _thread_registry.get_and_clear()
 
     if not threads:
         raise ValueError(
