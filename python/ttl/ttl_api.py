@@ -21,7 +21,10 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from types import CellType
-from typing import Callable, Generator, Literal
+from typing import TYPE_CHECKING, Callable, Generator, Literal
+
+if TYPE_CHECKING:
+    from .scheduler import AbstractEngineConfig
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -981,6 +984,7 @@ def _compile_kernel(
     args: tuple,
     kwargs: dict,
     request: KernelCompileRequest,
+    engine_config: AbstractEngineConfig | None = None,
 ) -> CompiledTTNNKernel | None:
     """
     Compile kernel function to MLIR and return CompiledTTNNKernel.
@@ -992,6 +996,9 @@ def _compile_kernel(
         request: KernelCompileRequest with grid, program_hash, indexing_maps, iterator_types,
             and nested options (ProgramOptions: num_outs, memory_space, tiled, fp32_dest_acc_en,
             dst_full_sync_en, objective, placement). See KernelCompileRequest and ProgramOptions.
+        engine_config: Optional abstract engine config for scheduler (backend, topology).
+            When use_scheduler is True, tenstorrent uses topology from config if set;
+            toy backend runs schedule_toy_stub.
 
     Returns:
         CompiledTTNNKernel ready for execution
@@ -1111,21 +1118,50 @@ def _compile_kernel(
                 build_op_graph_from_threads,
                 build_topology_from_grid,
                 schedule_stub,
+                schedule_toy_stub,
+                validate_topology_connectivity,
             )
 
-            thread_infos: list[tuple[str, str]] = [
-                (ct.name, ct.kernel_type or "dm") for ct in compiled_threads
-            ]
-            op_graph = build_op_graph_from_threads(thread_infos)
-            topology = build_topology_from_grid(grid)
-            plan = schedule_stub(op_graph, topology, program_config)
-            # Verify plan matches current grid (stub assigns all to (0,0))
-            assert (
-                plan.grid_cols == topology.grid_cols
-                and plan.grid_rows == topology.grid_rows
-            )
-            for nid in op_graph.node_ids_in_order():
-                assert plan.core_for(nid) == (0, 0), f"stub plan mismatch for {nid}"
+            engine_cfg = engine_config
+            if engine_cfg is None:
+                thread_infos = [
+                    (ct.name, ct.kernel_type or "dm") for ct in compiled_threads
+                ]
+                op_graph = build_op_graph_from_threads(thread_infos)
+                topology = build_topology_from_grid(grid)
+                plan = schedule_stub(op_graph, topology, program_config)
+                assert (
+                    plan.grid_cols == topology.grid_cols
+                    and plan.grid_rows == topology.grid_rows
+                )
+                for nid in op_graph.node_ids_in_order():
+                    assert plan.core_for(nid) == (0, 0), (
+                        f"stub plan mismatch for {nid}"
+                    )
+            elif engine_cfg.backend == "tenstorrent":
+                thread_infos = [
+                    (ct.name, ct.kernel_type or "dm") for ct in compiled_threads
+                ]
+                op_graph = build_op_graph_from_threads(thread_infos)
+                grid_for_topology = (
+                    engine_cfg.get_topology_grid()
+                    if engine_cfg.get_topology_grid() is not None
+                    else grid
+                )
+                topology = build_topology_from_grid(grid_for_topology)
+                plan = schedule_stub(op_graph, topology, program_config)
+                assert (
+                    plan.grid_cols == topology.grid_cols
+                    and plan.grid_rows == topology.grid_rows
+                )
+                for nid in op_graph.node_ids_in_order():
+                    assert plan.core_for(nid) == (0, 0), (
+                        f"stub plan mismatch for {nid}"
+                    )
+            else:
+                # toy_shops | toy_bakeries
+                validate_topology_connectivity(engine_cfg)
+                plan = schedule_toy_stub(engine_cfg)
 
         module = Module.create(loc)
 
@@ -1301,6 +1337,8 @@ def run(
     *args: object,
     grid: (tuple[int, ...] | list[int] | Callable[..., object]) | None = None,
     options: ProgramOptions | None = None,
+    engine_config_path: str | Path | None = None,
+    engine_config: AbstractEngineConfig | None = None,
     **kwargs: object,
 ) -> object | None:
     """
@@ -1311,10 +1349,19 @@ def run(
     - run(program, *args, grid=..., options=..., **kwargs) — program is @ttl.program-decorated;
       grid is required; options default to ProgramOptions().
 
+    Optional engine_config_path or engine_config: abstract engine config for scheduler
+    (backend, topology, objective). When use_scheduler is True, tenstorrent backend uses
+    topology from config if topology_grid is set; toy backend runs schedule_toy_stub.
+    See docs/sdlc/00_Main/00_Ideas/20_nickel_mlir_config_abstract_engine.md.
+
     Lambda / raw callable: passing a lambda (e.g. lambda lhs, rhs: lhs + rhs) is planned;
     inference from parameters and return type is not yet implemented. Use @ttl.program for now.
     See 20_IdealDataFlowAndModuleStructure.md (lambda + inference).
     """
+    if engine_config_path is not None:
+        from .scheduler import load_abstract_engine_config
+
+        engine_config = load_abstract_engine_config(engine_config_path)
     if isinstance(spec_or_program, ProgramSpec):
         spec = spec_or_program
     else:
@@ -1348,7 +1395,9 @@ def run(
     )
     program_hash = hash((id(spec.program), cache_key))
     request = spec.to_compile_request(args, kwargs, program_hash)
-    compiled = _compile_kernel(spec.program, args, dict(kwargs), request)
+    compiled = _compile_kernel(
+        spec.program, args, dict(kwargs), request, engine_config=engine_config
+    )
     if compiled is None:
         return None
     if _should_execute():
