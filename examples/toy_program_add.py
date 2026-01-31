@@ -66,15 +66,24 @@ if __name__ == "__main__":
     try:
         device = ttnn.open_device(device_id=0)
         lhs_tt = ttnn.from_torch(
-            lhs, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            lhs,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
         rhs_tt = ttnn.from_torch(
-            rhs, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            rhs,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
         out_tt = ttnn.from_torch(
-            out, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            out,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
         simple_add(lhs_tt, rhs_tt, out_tt)
@@ -83,6 +92,7 @@ if __name__ == "__main__":
     except Exception:
         # Compile-only path: run with torch tensors to trigger compilation
         import os
+
         os.environ["TTLANG_COMPILE_ONLY"] = "1"
         simple_add(lhs, rhs, out)
         print("Compile-only: no device, output unchanged")
@@ -92,6 +102,8 @@ if __name__ == "__main__":
         if torch.allclose(out, expected, rtol=1e-2, atol=1e-2):
             print("Output matches expected.")
         else:
-            print(f"MISMATCH: max error = {(out.float() - expected.float()).abs().max().item():.6f}")
+            print(
+                f"MISMATCH: max error = {(out.float() - expected.float()).abs().max().item():.6f}"
+            )
     else:
         print("Done (compile-only or no device).")

@@ -224,13 +224,3 @@ class SchedulerPlacementEnv(gym.Env[dict[str, Any], int]):
                 "grid_rows": self._topology["grid_rows"],
             },
         }
-
-
-def get_action_rcw(env: SchedulerPlacementEnv) -> int:
-    """RCW preset: always place on core 0 (first core)."""
-    return 0
-
-
-def get_action_random(env: SchedulerPlacementEnv) -> int:
-    """Random policy: sample from action space."""
-    return int(env.action_space.sample())

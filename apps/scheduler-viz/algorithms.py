@@ -11,10 +11,7 @@ Adding a new algorithm = one register() call, no if-chains in backend.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
-
-if TYPE_CHECKING:
-    from scheduler_env import SchedulerPlacementEnv
+from typing import Callable
 
 
 class UnknownAlgorithmError(ValueError):
@@ -53,12 +50,6 @@ class AlgorithmRegistry:
 # Global registry; algorithms register on import
 ALGORITHMS = AlgorithmRegistry()
 
-# Register built-in policies (import after registry to avoid circular deps)
-from scheduler_env import get_action_rcw, get_action_random
-
-ALGORITHMS.register("rcw", get_action_rcw)
-ALGORITHMS.register("random", get_action_random)
-
 
 def register(algorithm_id: str) -> Callable[[PolicyFn], PolicyFn]:
     """Decorator to register a policy: @register(\"rcw\") def get_action_rcw(env): ..."""
@@ -68,3 +59,19 @@ def register(algorithm_id: str) -> Callable[[PolicyFn], PolicyFn]:
         return fn
 
     return decorator
+
+
+# Built-in policies: use decorator so adding a new algorithm = one @register line
+from scheduler_env import SchedulerPlacementEnv
+
+
+@register("rcw")
+def get_action_rcw(env: SchedulerPlacementEnv) -> int:
+    """RCW preset: always place on core 0 (first core)."""
+    return 0
+
+
+@register("random")
+def get_action_random(env: SchedulerPlacementEnv) -> int:
+    """Random policy: sample from action space."""
+    return int(env.action_space.sample())

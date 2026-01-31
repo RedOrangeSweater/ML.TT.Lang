@@ -75,19 +75,31 @@ if __name__ == "__main__":
     try:
         device = ttnn.open_device(device_id=0)
         a_tt = ttnn.from_torch(
-            a, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            a,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
         b_tt = ttnn.from_torch(
-            b, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            b,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
         c_tt = ttnn.from_torch(
-            c, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            c,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
         out_tt = ttnn.from_torch(
-            out, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            out,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
         fused_bcast(a_tt, b_tt, c_tt, out_tt)
@@ -95,6 +107,7 @@ if __name__ == "__main__":
         ttnn.close_device(device)
     except Exception:
         import os
+
         os.environ["TTLANG_COMPILE_ONLY"] = "1"
         fused_bcast(a, b, c, out)
         print("Compile-only: no device, output unchanged")
@@ -104,6 +117,8 @@ if __name__ == "__main__":
         if torch.allclose(out, expected, rtol=1e-2, atol=1e-2):
             print("Output matches expected (a*b + c).")
         else:
-            print(f"MISMATCH: max error = {(out.float() - expected.float()).abs().max().item():.6f}")
+            print(
+                f"MISMATCH: max error = {(out.float() - expected.float()).abs().max().item():.6f}"
+            )
     else:
         print("Done (compile-only or no device).")

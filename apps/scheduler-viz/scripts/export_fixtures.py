@@ -42,7 +42,9 @@ def export_toy_program_add() -> None:
     simple_add(lhs, rhs, out)
     kernel = getattr(simple_add, "_last_compiled_kernel", None)
     if kernel is None:
-        raise RuntimeError("toy_program_add: no _last_compiled_kernel (compile failed?)")
+        raise RuntimeError(
+            "toy_program_add: no _last_compiled_kernel (compile failed?)"
+        )
     data = kernel.get_scheduler_input()
     out_path = FIXTURES_DIR / "toy_program_add.json"
     with open(out_path, "w") as f:
@@ -61,7 +63,9 @@ def export_toy_program_broadcast() -> None:
     fused_bcast(a, b, c, out)
     kernel = getattr(fused_bcast, "_last_compiled_kernel", None)
     if kernel is None:
-        raise RuntimeError("toy_program_broadcast: no _last_compiled_kernel (compile failed?)")
+        raise RuntimeError(
+            "toy_program_broadcast: no _last_compiled_kernel (compile failed?)"
+        )
     data = kernel.get_scheduler_input()
     out_path = FIXTURES_DIR / "toy_program_broadcast.json"
     with open(out_path, "w") as f:

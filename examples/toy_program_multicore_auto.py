@@ -151,19 +151,31 @@ if __name__ == "__main__":
     try:
         device = ttnn.open_device(device_id=0)
         a_tt = ttnn.from_torch(
-            a, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            a,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
         b_tt = ttnn.from_torch(
-            b, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            b,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
         c_tt = ttnn.from_torch(
-            c, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            c,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
         y_tt = ttnn.from_torch(
-            y, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device,
+            y,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            device=device,
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
         fused_mul_add(a_tt, b_tt, c_tt, y_tt)
@@ -178,6 +190,7 @@ if __name__ == "__main__":
             print(f"MISMATCH: max error = {err:.6f}")
     except Exception:
         import os
+
         os.environ["TTLANG_COMPILE_ONLY"] = "1"
         fused_mul_add(a, b, c, y)
         print("Compile-only: no device, output unchanged.")
