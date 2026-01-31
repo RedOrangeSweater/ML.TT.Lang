@@ -111,6 +111,8 @@ declare_mlir_python_sources(TTLangPythonCommon.Main
     __init__.py
     circular_buffer.py
     constants.py
+    descriptor_options.py
+    ttnn_proxy.py
     diagnostics.py
     kernel_runner.py
     settings.py

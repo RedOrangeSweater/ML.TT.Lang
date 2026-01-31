@@ -11,8 +11,12 @@ import functools
 import inspect
 import os
 import random
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, Generator, List, Literal, Optional, Union
+
+from pydantic import BaseModel, Field, ValidationError
 
 try:
     import ttnn
@@ -64,6 +68,16 @@ from .kernel_runner import (
     run_kernel_on_device,
 )
 from .operators import CopyTransferHandler, TensorBlock, copy
+from .descriptor_options import (
+    CoreRangeSetOptions,
+    KernelWriteRequest,
+    NocConfigOptions,
+    ProgramConfig,
+    ReaderConfigOptions,
+    ThreadConfigBuildRequest,
+    TTNNKernelCompileOptions,
+    TTNNKernelCompileRequest,
+)
 from .settings import get_settings
 from .ttl_utils import get_thread_type_string
 from .config import HAS_TT_DEVICE
@@ -508,120 +522,68 @@ def validate_kernel_count(kernel_info: list) -> None:
         )
 
 
-def _build_compute_config(
-    fp32_dest_acc_en: Optional[bool],
-    dst_full_sync_en: Optional[bool],
-    has_f32: bool,
-    name: str,
-    verbose: bool,
-) -> tuple:
-    """Build ComputeConfigDescriptor and thread_to_kernel entries for a compute kernel."""
-    config = ttnn.ComputeConfigDescriptor()
-    if fp32_dest_acc_en is not None:
-        config.fp32_dest_acc_en = fp32_dest_acc_en
-    if dst_full_sync_en is not None:
-        config.dst_full_sync_en = dst_full_sync_en
-    if fp32_dest_acc_en is None and has_f32:
-        config.fp32_dest_acc_en = True
-        if verbose:
-            print("  [fp32 detected] Enabling fp32_dest_acc_en for compute kernel")
-    entries = {"TRISC_0": name, "TRISC_1": name, "TRISC_2": name}
-    return config, entries
+def _build_config_for_thread(request: ThreadConfigBuildRequest) -> tuple:
+    """Build (config, thread_to_kernel_entries) from a single Pydantic request."""
+    return request.build_config_and_entries()
 
 
-def _build_noc_config(noc_kernel_idx: int, name: str) -> tuple:
-    """Build Reader/Writer config and thread_to_kernel entries for a NOC kernel."""
-    if noc_kernel_idx == 0:
-        config = ttnn.ReaderConfigDescriptor()
-        entries = {"NCRISC": name}
-    else:
-        config = ttnn.WriterConfigDescriptor()
-        entries = {"BRISC": name}
-    return config, entries
+@contextmanager
+def tmp_kernel_dir() -> Generator[Path, None, None]:
+    """
+    Context manager: create a dedicated directory for kernel sources for this compilation.
+
+    Yields the directory path. Does not delete on exit so CompiledTTNNKernel paths
+    remain valid. Use for grouping kernel files under one dir instead of /tmp/{user}/.
+    """
+    user = get_settings().user
+    base = Path(f"/tmp/{user}")
+    base.mkdir(parents=True, exist_ok=True)
+    dir_path = base / f"ttlang_kernels_{uuid.uuid4().hex[:12]}"
+    dir_path.mkdir(parents=False, exist_ok=False)
+    try:
+        yield dir_path
+    finally:
+        pass  # Keep dir so kernel paths in CompiledTTNNKernel remain valid
 
 
-def _build_config_for_thread(
-    thread_type: str,
-    name: str,
-    noc_kernel_idx: int,
-    fp32_dest_acc_en: Optional[bool],
-    dst_full_sync_en: Optional[bool],
-    has_f32: bool,
-    verbose: bool,
-) -> tuple:
-    """Registry: thread_type -> (config, thread_to_kernel_entries)."""
-    if thread_type == "compute":
-        return _build_compute_config(
-            fp32_dest_acc_en, dst_full_sync_en, has_f32, name, verbose
-        )
-    if thread_type == "noc":
-        return _build_noc_config(noc_kernel_idx, name)
-    config = ttnn.ReaderConfigDescriptor()
-    return config, {}
-
-
-def _write_kernel_to_tmp(name: str, source: str) -> str:
-    """Write kernel source to /tmp and return the file path."""
+def _write_kernel_to_tmp(req: KernelWriteRequest) -> str:
+    """Write kernel source to req.base_dir or /tmp/{user} and return the file path."""
     import hashlib
-    import re
     import os
 
-    content_hash = hashlib.md5(source.encode()).hexdigest()[:8]
-    user = get_settings().user
-    path = f"/tmp/{user}/ttlang_kernel_{name}_{content_hash}.cpp"
-    os.makedirs(f"/tmp/{user}", exist_ok=True)
-    with open(path, "w") as f:
-        f.write(source)
-    print(f"=== {name} kernel written to {path} ===")
-    print(source)
+    content_hash = hashlib.md5(req.source.encode()).hexdigest()[:8]
+    if req.base_dir is not None:
+        req.base_dir.mkdir(parents=True, exist_ok=True)
+        path = req.base_dir / f"ttlang_kernel_{req.name}_{content_hash}.cpp"
+    else:
+        user = get_settings().user
+        path = Path(f"/tmp/{user}/ttlang_kernel_{req.name}_{content_hash}.cpp")
+        os.makedirs(f"/tmp/{user}", exist_ok=True)
+    with path.open("w") as f:
+        f.write(req.source)
+    print(f"=== {req.name} kernel written to {path} ===")
+    print(req.source)
     print("=" * 60)
-    return path
+    return str(path)
 
 
-def _compile_ttnn_kernel(
-    module,
-    args,
-    grid,
-    num_outs,
-    thread_tensor_indices,
-    cb_configs=None,
-    program_hash=None,
-    fp32_dest_acc_en: Optional[bool] = None,
-    dst_full_sync_en: Optional[bool] = None,
-    verbose=True,
-    source_lines=None,
-    all_source_lines=None,
-    kernel_line_offsets=None,
-    program_config: Optional[dict] = None,
-):
+def _compile_ttnn_kernel(req: TTNNKernelCompileRequest):
     """
     Compile kernel to CompiledTTNNKernel for execution via ttnn.generic_op.
 
     Builds kernel paths, configs, and CB descriptors from compiled MLIR module.
-
-    Args:
-        module: MLIR module after D2M pipeline (with EmitC kernels)
-        args: Input/output tensors (used for shape/dtype info)
-        grid: Grid dimensions tuple
-        num_outs: Number of output tensors
-        program_hash: Hash for tt-metal program cache
-        verbose: Print compilation info
-        source_lines: Source code lines for auto-profiling reports
-
-    Returns:
-        CompiledTTNNKernel ready for execution
+    All inputs are carried by the single Pydantic request object.
     """
-    kernel_info = get_ttkernel_names(module)
-    validate_ttnn_tensors(args)
+    opts = req.compile_options or TTNNKernelCompileOptions()
+    kernel_info = get_ttkernel_names(req.module)
+    validate_ttnn_tensors(req.args)
     validate_kernel_count(kernel_info)
 
-    if verbose:
+    if opts.verbose:
         print("=" * 60)
         print("TTNN INTEROP: Compiling kernel")
         print("=" * 60)
         print(f"Found {len(kernel_info)} kernels:")
-
-    if verbose:
         for name, thread_type in kernel_info:
             print(f"  - {name} ({thread_type})")
 
@@ -629,70 +591,71 @@ def _compile_ttnn_kernel(
         print("\nttnn not available - cannot compile for ttnn.generic_op")
         return None
 
-    # Build CoreRangeSet from grid dimensions
-    # Grid is (cols, rows) = (x, y), matching tt-metal CoreCoord convention
-    grid_cols, grid_rows = grid
-    core_start = ttnn.CoreCoord(0, 0)
-    core_end = ttnn.CoreCoord(grid_cols - 1, grid_rows - 1)
-    core_range = ttnn.CoreRange(core_start, core_end)
-    core_ranges = ttnn.CoreRangeSet([core_range])
-    if verbose:
+    core_ranges = CoreRangeSetOptions(grid=req.grid).build_ttnn_core_range_set()
+    if opts.verbose:
         print(f"\nCore range: {core_ranges}")
 
     kernel_paths = []
     kernel_configs = []
     kernel_arg_specs = []
     noc_kernel_idx = 0
-    has_f32 = _has_float32_args(args)
+    has_f32 = _has_float32_args(req.args)
     thread_to_kernel: Dict[str, str] = {}
 
-    for name, thread_type in kernel_info:
-        cpp_source = ttkernel_to_cpp_by_name(module, name)
-        kernel_path = _write_kernel_to_tmp(name, cpp_source)
-        kernel_paths.append((kernel_path, thread_type))
+    with tmp_kernel_dir() as base_dir:
+        for name, thread_type in kernel_info:
+            cpp_source = ttkernel_to_cpp_by_name(req.module, name)
+            kernel_path = _write_kernel_to_tmp(
+                KernelWriteRequest(name=name, source=cpp_source, base_dir=base_dir)
+            )
+            kernel_paths.append((kernel_path, thread_type))
 
-        config, entries = _build_config_for_thread(
-            thread_type,
-            name,
-            noc_kernel_idx,
-            fp32_dest_acc_en,
-            dst_full_sync_en,
-            has_f32,
-            verbose,
-        )
-        kernel_configs.append(config)
-        thread_to_kernel.update(entries)
-        if thread_type == "noc":
-            noc_kernel_idx += 1
+            thread_req = ThreadConfigBuildRequest(
+                thread_type=thread_type,
+                name=name,
+                noc_kernel_idx=noc_kernel_idx,
+                compute_opts=opts.compute_config_options(),
+                has_f32=has_f32,
+                verbose=opts.verbose,
+            )
+            config, entries = _build_config_for_thread(thread_req)
+            kernel_configs.append(config)
+            thread_to_kernel.update(entries)
+            if thread_type == "noc":
+                noc_kernel_idx += 1
 
-        arg_spec = get_ttkernel_arg_spec(module, name)
-        if arg_spec is not None:
-            arg_spec = ttkernel.ir.ArgSpecAttr.maybe_downcast(arg_spec)
-            kernel_arg_specs.append(arg_spec.rt_args if arg_spec else [])
-        else:
-            kernel_arg_specs.append([])
+            arg_spec = get_ttkernel_arg_spec(req.module, name)
+            if arg_spec is not None:
+                arg_spec = ttkernel.ir.ArgSpecAttr.maybe_downcast(arg_spec)
+                kernel_arg_specs.append(arg_spec.rt_args if arg_spec else [])
+            else:
+                kernel_arg_specs.append([])
 
     thread_names = [name for name, _ in kernel_info]
-    cfg = dict(program_config or {})
-    cfg.setdefault("grid", grid)
+    raw_cfg = opts.program_config
+    if isinstance(raw_cfg, ProgramConfig):
+        cfg = raw_cfg.to_dict()
+    else:
+        cfg = dict(raw_cfg or {})
+    cfg.setdefault("grid", req.grid)
     compiled_kernel = CompiledTTNNKernel(
         kernel_paths=kernel_paths,
         kernel_configs=kernel_configs,
         kernel_arg_specs=kernel_arg_specs,
-        num_tensors=len(args),
+        num_tensors=len(req.args),
         core_ranges=core_ranges,
-        kernel_tensor_indices=thread_tensor_indices,
-        cb_configs=cb_configs,
-        program_hash=program_hash,
-        source_lines=source_lines,
-        all_source_lines=all_source_lines,
+        kernel_tensor_indices=req.thread_tensor_indices,
+        cb_configs=req.cb_configs,
+        program_hash=req.program_hash,
+        source_lines=req.source_lines,
+        all_source_lines=req.all_source_lines,
         thread_to_kernel=thread_to_kernel,
-        kernel_line_offsets=kernel_line_offsets,
+        kernel_line_offsets=req.kernel_line_offsets,
         program_config=cfg,
         thread_names=thread_names,
     )
 
-    if verbose:
+    if opts.verbose:
         print(f"\nCompiled kernel ready (compiled {len(kernel_paths)} threads)")
         print("=" * 60)
 
@@ -1222,26 +1185,71 @@ def _compile_kernel(
             profile_source_lines = all_source_lines[first_thread]
 
         # Compile to CompiledTTNNKernel for ttnn.generic_op
-        compiled_kernel = _compile_ttnn_kernel(
-            module,
-            args,
-            grid,
-            num_outs,
-            thread_tensor_indices,
-            cb_configs,
+        compile_req = TTNNKernelCompileRequest(
+            module=module,
+            args=args,
+            grid=grid,
+            num_outs=num_outs,
+            thread_tensor_indices=thread_tensor_indices,
+            cb_configs=cb_configs,
             program_hash=program_hash,
-            fp32_dest_acc_en=fp32_dest_acc_en,
-            dst_full_sync_en=dst_full_sync_en,
+            compile_options=TTNNKernelCompileOptions(
+                fp32_dest_acc_en=fp32_dest_acc_en,
+                dst_full_sync_en=dst_full_sync_en,
+                program_config=program_config,
+            ),
             source_lines=profile_source_lines,
             all_source_lines=all_source_lines,
             kernel_line_offsets=kernel_line_offsets,
-            program_config=program_config,
         )
+        compiled_kernel = _compile_ttnn_kernel(compile_req)
         return compiled_kernel
 
 
 OBJECTIVE_VALUES = ("latency", "throughput", "balanced")
 PLACEMENT_VALUES = ("auto", "manual")
+
+
+class ProgramOptions(BaseModel):
+    """Validated options for @ttl.program decorator. Replaces manual if/raise checks."""
+
+    num_outs: int = Field(1, ge=1)
+    memory_space: Literal["L1", "DRAM"] = "L1"
+    tiled: bool = True
+    fp32_dest_acc_en: Optional[bool] = None
+    dst_full_sync_en: Optional[bool] = None
+    objective: Optional[Literal["latency", "throughput", "balanced"]] = None
+    placement: Optional[Literal["auto", "manual"]] = None
+
+    def program_config_dict(self) -> Dict[str, Optional[str]]:
+        """Dict for program_config (objective, placement)."""
+        return {"objective": self.objective, "placement": self.placement}
+
+    def to_program_config(
+        self, grid: Optional[tuple[int, int]] = None
+    ) -> ProgramConfig:
+        """Build ProgramConfig from decorator options (objective, placement, optional grid)."""
+        return ProgramConfig(
+            grid=grid,
+            objective=self.objective,
+            placement=self.placement,
+        )
+
+    def to_compile_options(
+        self,
+        *,
+        verbose: bool = True,
+        program_config: ProgramConfig | dict | None = None,
+    ) -> TTNNKernelCompileOptions:
+        """Build TTNNKernelCompileOptions for _compile_ttnn_kernel."""
+        if program_config is None:
+            program_config = self.to_program_config()
+        return TTNNKernelCompileOptions(
+            fp32_dest_acc_en=self.fp32_dest_acc_en,
+            dst_full_sync_en=self.dst_full_sync_en,
+            verbose=verbose,
+            program_config=program_config,
+        )
 
 
 def pykernel_gen(
@@ -1283,27 +1291,26 @@ def pykernel_gen(
     """
     if grid is None:
         raise ValueError("grid parameter is required")
-    if num_outs != 1:
-        raise ValueError(f"num_outs must be 1, got {num_outs}")
-    if memory_space not in SUPPORTED_MEMORY_SPACES:
-        raise ValueError(
-            f"Invalid memory_space: {memory_space!r}. "
-            f"Must be one of: {', '.join(sorted(SUPPORTED_MEMORY_SPACES))}"
-        )
-    if not isinstance(tiled, bool):
-        raise TypeError(f"tiled must be a boolean, got {type(tiled).__name__}")
     if iterator_types is not None and indexing_maps is None:
         raise ValueError("indexing_maps must be set when iterator_types is set")
-    if objective is not None and objective not in OBJECTIVE_VALUES:
-        raise ValueError(
-            f"objective must be one of {OBJECTIVE_VALUES!r}, got {objective!r}"
-        )
-    if placement is not None and placement not in PLACEMENT_VALUES:
-        raise ValueError(
-            f"placement must be one of {PLACEMENT_VALUES!r}, got {placement!r}"
-        )
 
-    program_config = {"objective": objective, "placement": placement}
+    try:
+        options = ProgramOptions(
+            num_outs=num_outs,
+            memory_space=memory_space,
+            tiled=tiled,
+            fp32_dest_acc_en=fp32_dest_acc_en,
+            dst_full_sync_en=dst_full_sync_en,
+            objective=objective,
+            placement=placement,
+        )
+    except ValidationError as e:
+        raise ValueError(str(e)) from e
+
+    if options.num_outs != 1:
+        raise ValueError(f"num_outs must be 1, got {options.num_outs}")
+
+    program_config = options.program_config_dict()
 
     if indexing_maps is None:
         indexing_maps = []
@@ -1328,15 +1335,12 @@ def pykernel_gen(
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
             resolved_grid = _resolve_grid(grid, args, kwargs)
-            fp32_override = fp32_dest_acc_en
-            dst_sync_override = dst_full_sync_en
 
             # Build cache key from tensor properties
             cache_key = _make_cache_key(
                 args,
-                # Runtime options:
-                fp32_dest_acc_en=fp32_override,
-                dst_full_sync_en=dst_sync_override,
+                fp32_dest_acc_en=options.fp32_dest_acc_en,
+                dst_full_sync_en=options.dst_full_sync_en,
             )
 
             # Check cache for previously compiled kernel
@@ -1354,12 +1358,12 @@ def pykernel_gen(
                     resolved_grid,
                     indexing_maps,
                     iterator_types,
-                    num_outs,
-                    memory_space,
-                    tiled,
+                    options.num_outs,
+                    options.memory_space,
+                    options.tiled,
                     program_hash,
-                    fp32_dest_acc_en=fp32_override,
-                    dst_full_sync_en=dst_sync_override,
+                    fp32_dest_acc_en=options.fp32_dest_acc_en,
+                    dst_full_sync_en=options.dst_full_sync_en,
                     program_config=program_config,
                 )
 
