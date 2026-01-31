@@ -158,6 +158,32 @@ declare_mlir_python_sources(TTLangPythonCommon.Scheduler
     scheduler/export.py
 )
 
+# Layer subpackages (Program / Graph / Compile / Runtime); see 20_IdealDataFlowAndModuleStructure.md
+declare_mlir_python_sources(TTLangPythonCommon.Program
+  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ttl"
+  ADD_TO_PARENT TTLangPythonCommon
+  SOURCES
+    program/__init__.py
+)
+declare_mlir_python_sources(TTLangPythonCommon.Graph
+  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ttl"
+  ADD_TO_PARENT TTLangPythonCommon
+  SOURCES
+    graph/__init__.py
+)
+declare_mlir_python_sources(TTLangPythonCommon.Compile
+  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ttl"
+  ADD_TO_PARENT TTLangPythonCommon
+  SOURCES
+    compile/__init__.py
+)
+declare_mlir_python_sources(TTLangPythonCommon.Runtime
+  ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ttl"
+  ADD_TO_PARENT TTLangPythonCommon
+  SOURCES
+    runtime/__init__.py
+)
+
 declare_mlir_python_sources(TTLangPythonCommon.Utils
   ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
   ADD_TO_PARENT TTLangPythonCommon

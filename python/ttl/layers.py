@@ -8,42 +8,42 @@ Layer boundaries for tt-lang Python API.
 One focus per layer when reading code. Boundaries use Pydantic request/response.
 See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
 
-- Program: user intent -> ProgramSpec, KernelCompileRequest (ttl_api).
-- Graph: OpGraph, SchedulePlan, Topology (scheduler).
-- Compile: KernelCompileRequest -> TTNNKernelCompileRequest -> CompiledTTNNKernel (ttl_api, descriptor_options).
-- Runtime: artifacts -> descriptors -> run_kernel_on_device (kernel_runner).
+- Program: user intent -> ProgramSpec, KernelCompileRequest (ttl.program).
+- Graph: OpGraph, SchedulePlan, Topology (ttl.graph -> scheduler).
+- Compile: KernelCompileRequest -> TTNNKernelCompileRequest -> CompiledTTNNKernel (ttl_api, ttl.compile).
+- Runtime: artifacts -> descriptors -> run_kernel_on_device (ttl.runtime -> kernel_runner).
 """
 
 from __future__ import annotations
 
 # Program layer: spec and compile request
-from .ttl_api import (
+from .program import (
     KernelCompileRequest,
     ProgramOptions,
     ProgramSpec,
-    run,
 )
+from .ttl_api import run
 
 # Graph layer: op graph and schedule plan
-from .scheduler import (
+from .graph import (
     OpGraph,
     SchedulePlan,
     Topology,
 )
 
-# Compile layer: compile requests and options (descriptor_options)
-from .descriptor_options import (
+# Compile layer: compile requests and options
+from .compile import (
     ThreadConfigBuildRequest,
-    TTNNKernelCompileRequest,
     TTNNKernelCompileOptions,
+    TTNNKernelCompileRequest,
 )
 
-# Runtime layer: kernel spec and run request (kernel_runner)
-from .kernel_runner import (
-    KernelDescriptorBuildRequest,
+# Runtime layer: kernel spec and run request
+from .runtime import (
     CBDescriptorBuildRequest,
-    RunKernelRequest,
+    KernelDescriptorBuildRequest,
     KernelSpec,
+    RunKernelRequest,
 )
 
 __all__ = [

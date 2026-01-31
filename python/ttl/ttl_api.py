@@ -76,6 +76,12 @@ from .kernel_runner import (
     run_kernel_on_device,
 )
 from .operators import CopyTransferHandler, TensorBlock, copy
+from .program import (
+    KernelCompileRequest,
+    ProgramOptions,
+    ProgramSpec,
+    _resolve_grid,
+)
 from .descriptor_options import (
     CoreRangeSetOptions,
     KernelWriteRequest,
@@ -304,23 +310,6 @@ def _has_float32_args(args) -> bool:
         pass
 
     return False
-
-
-def _resolve_grid(grid, args, kwargs):
-    """Resolve grid, evaluating callable or 'auto' if needed."""
-    if callable(grid):
-        return grid(*args, **kwargs)
-    if grid == "auto":
-        for arg in args:
-            if is_ttnn_tensor(arg) and hasattr(arg, "device"):
-                device = arg.device()
-                device_grid = device.compute_with_storage_grid_size()
-                return (device_grid.x, device_grid.y)
-        raise ValueError(
-            "grid='auto' requires at least one ttnn tensor argument "
-            "to determine device compute grid"
-        )
-    return grid
 
 
 def _get_source_line_offset(f) -> int:
@@ -1299,113 +1288,57 @@ PLACEMENT_VALUES = ("auto", "manual")
 
 
 # -----------------------------------------------------------------------------
-# Program layer: user intent -> ProgramSpec / KernelCompileRequest.
-# One focus: grid, options, indexing; no MLIR, no descriptors.
-# -----------------------------------------------------------------------------
-
-
-class ProgramOptions(BaseModel):
-    """Validated options for @ttl.program decorator. Replaces manual if/raise checks."""
-
-    num_outs: int = Field(1, ge=1)
-    memory_space: Literal["L1", "DRAM"] = "L1"
-    tiled: bool = True
-    fp32_dest_acc_en: bool | None = None
-    dst_full_sync_en: bool | None = None
-    objective: Literal["latency", "throughput", "balanced"] | None = None
-    placement: Literal["auto", "manual"] | None = None
-
-    def program_config_dict(self) -> dict[str, str | None]:
-        """Dict for program_config (objective, placement)."""
-        return {"objective": self.objective, "placement": self.placement}
-
-    def to_program_config(self, grid: tuple[int, int] | None = None) -> ProgramConfig:
-        """Build ProgramConfig from decorator options (objective, placement, optional grid)."""
-        return ProgramConfig(
-            grid=grid,
-            objective=self.objective,
-            placement=self.placement,
-        )
-
-    def to_compile_options(
-        self,
-        *,
-        verbose: bool = True,
-        program_config: ProgramConfig | dict | None = None,
-    ) -> TTNNKernelCompileOptions:
-        """Build TTNNKernelCompileOptions for _compile_ttnn_kernel."""
-        if program_config is None:
-            program_config = self.to_program_config()
-        return TTNNKernelCompileOptions(
-            fp32_dest_acc_en=self.fp32_dest_acc_en,
-            dst_full_sync_en=self.dst_full_sync_en,
-            verbose=verbose,
-            program_config=program_config,
-        )
-
-
-class KernelCompileRequest(BaseModel):
-    """Hierarchical request for _compile_kernel. Per-invocation data at root; decorator options nested in options."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    grid: tuple[int, ...] | list[int] = Field(..., description="Grid dimensions (cols, rows)")
-    program_hash: int = Field(..., description="Hash for tt-metal program cache")
-    indexing_maps: list[Callable[..., object]] = Field(
-        default_factory=list,
-        description="Lambda functions for indexing",
-    )
-    iterator_types: list[str] = Field(default_factory=list, description="Iterator type strings")
-    options: ProgramOptions = Field(..., description="Decorator-level options (num_outs, memory_space, tiled, etc.)")
-
-
-class ProgramSpec(BaseModel):
-    """Spec for ideal UX: program + grid + options. Used by run(spec, *args)."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    program: Callable[..., object] = Field(..., description="Kernel function (typically @ttl.program-decorated)")
-    grid: tuple[int, ...] | list[int] | Callable[..., object] = Field(
-        ...,
-        description="Grid dimensions or callable to resolve from args",
-    )
-    options: ProgramOptions = Field(..., description="Program options (memory_space, tiled, etc.)")
-    indexing_maps: list[Callable[..., object]] = Field(
-        default_factory=list,
-        description="Indexing maps for the kernel",
-    )
-    iterator_types: list[str] = Field(default_factory=list, description="Iterator types")
-
-    def to_compile_request(
-        self,
-        args: tuple,
-        kwargs: dict,
-        program_hash: int,
-    ) -> KernelCompileRequest:
-        """Build KernelCompileRequest for this spec and invocation."""
-        grid = _resolve_grid(self.grid, args, kwargs)
-        return KernelCompileRequest(
-            grid=grid,
-            program_hash=program_hash,
-            indexing_maps=self.indexing_maps,
-            iterator_types=self.iterator_types,
-            options=self.options,
-        )
-
-
-# -----------------------------------------------------------------------------
 # Runtime entry: ProgramSpec + args -> compile -> run_kernel_on_device (kernel_runner).
-# One focus: artifacts -> descriptors -> device; see kernel_runner for Runtime layer.
+# Program layer types live in ttl.program; see kernel_runner for Runtime layer.
 # -----------------------------------------------------------------------------
 
+# Marker set on @ttl.program-decorated wrappers so run() can accept (program, *args, grid=...).
+_TTL_PROGRAM_ATTR = "_ttl_program"
 
-def run(spec: ProgramSpec, *args: object, **kwargs: object) -> object | None:
-    """
-    Facade: compile and run kernel from a spec. Ideal UX entry point.
 
-    User thinks only "what to compute" and "run params"; this builds
-    KernelCompileRequest, compiles, and runs. See 18_ideal_ux_and_layer_responsibilities.md.
+def run(
+    spec_or_program: ProgramSpec | Callable[..., object],
+    *args: object,
+    grid: (tuple[int, ...] | list[int] | Callable[..., object]) | None = None,
+    options: ProgramOptions | None = None,
+    **kwargs: object,
+) -> object | None:
     """
+    Facade: compile and run kernel from a spec or program. Ideal UX entry point.
+
+    Two forms:
+    - run(spec, *args, **kwargs) — spec is ProgramSpec (program + grid + options).
+    - run(program, *args, grid=..., options=..., **kwargs) — program is @ttl.program-decorated;
+      grid is required; options default to ProgramOptions().
+
+    Lambda / raw callable: passing a lambda (e.g. lambda lhs, rhs: lhs + rhs) is planned;
+    inference from parameters and return type is not yet implemented. Use @ttl.program for now.
+    See 20_IdealDataFlowAndModuleStructure.md (lambda + inference).
+    """
+    if isinstance(spec_or_program, ProgramSpec):
+        spec = spec_or_program
+    else:
+        if not callable(spec_or_program):
+            raise TypeError(
+                "first argument must be ProgramSpec or @ttl.program-decorated callable"
+            )
+        program_fn = spec_or_program
+        if not getattr(program_fn, _TTL_PROGRAM_ATTR, False):
+            raise NotImplementedError(
+                "run() with a raw callable (e.g. lambda) is not yet implemented: "
+                "inference from parameters and return type is planned. "
+                "Use @ttl.program to define the kernel and pass it to run(program, *args, grid=...). "
+                "See docs/sdlc/00_Main/02_Architecture/20_IdealDataFlowAndModuleStructure.md "
+                "(lambda + inference)."
+            )
+        if grid is None:
+            raise ValueError(
+                "grid= is required when passing a program callable; "
+                "e.g. run(add_kernel, lhs, rhs, out, grid=(2, 2))"
+            )
+        opts = options if options is not None else ProgramOptions()
+        spec = ProgramSpec(program=program_fn, grid=grid, options=opts)
+
     if spec.options.num_outs != 1:
         raise ValueError(f"num_outs must be 1, got {spec.options.num_outs}")
     cache_key = _make_cache_key(
@@ -1550,6 +1483,7 @@ def pykernel_gen(
 
                 return result
 
+        setattr(_wrapper, _TTL_PROGRAM_ATTR, True)
         return _wrapper
 
     return _decorator

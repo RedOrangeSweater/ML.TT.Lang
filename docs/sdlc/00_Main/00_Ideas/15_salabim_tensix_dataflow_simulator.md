@@ -61,6 +61,7 @@ Tensix-ядра в этой модели — **слабый фон**: напри
 
 ## Связь с другими документами
 
+- [19_toy_domain_for_scheduler_validation.md](19_toy_domain_for_scheduler_validation.md) — Toy domain (магазины/BOM/пекарни) для валидации планировщика; симулятор можно настроить на Toy (salabim магазины/пекарни) или на Tensix/DataFlow.
 - [12_colored_compute_graph_and_tensix_state_machine.md](12_colored_compute_graph_and_tensix_state_machine.md) — раскрашенный граф, фабрики, state-машина; симулятор реализует визуальную и дискретно-событийную модель этих понятий.
 - [14_implementation_roadmap.md](14_implementation_roadmap.md) — прикидки планировщика из tt-sim и бенчмарков; salabim-симулятор может дополнять визуализацию и эксперименты с размещением пучков (Фаза 7, 9+).
 - **ShopsSimilarity**: `src/simulation/simulator.py`, `simulator_class.py`, `entities.py`, `entities_refactored.py` — образец структуры и использования salabim (Factory, Store, Truck, Batch, VisualEvent, рецепты, очереди, анимация).

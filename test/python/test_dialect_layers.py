@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Tests for Python dialect layers (descriptor_options, ttnn_proxy, kernel_runner).
+Tests for Python dialect layers (program, descriptor_options, ttnn_proxy, kernel_runner).
 
 Verifies Pydantic request models and layer boundaries: Program/Compile/Runtime
 dialects and transformations. See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
@@ -12,6 +12,12 @@ dialects and transformations. See docs/sdlc/00_Main/02_Architecture/08_PythonDia
 import pytest
 from pydantic import ValidationError
 
+from ttl.program import (
+    KernelCompileRequest,
+    ProgramOptions,
+    ProgramSpec,
+    _resolve_grid,
+)
 from ttl.descriptor_options import (
     ComputeConfigOptions,
     CoreRangeSetOptions,
@@ -34,6 +40,69 @@ from ttl.ttnn_proxy import (
     ReaderConfigProxy,
     WriterConfigProxy,
 )
+from ttl import run
+
+
+# -----------------------------------------------------------------------------
+# Program layer (no ttnn required)
+# -----------------------------------------------------------------------------
+
+
+def test_program_spec_to_compile_request():
+    """ProgramSpec.to_compile_request(args, kwargs, program_hash) returns KernelCompileRequest."""
+    def _dummy_program(_x):
+        pass
+
+    options = ProgramOptions(memory_space="L1", tiled=True)
+    spec = ProgramSpec(program=_dummy_program, grid=(2, 2), options=options)
+    req = spec.to_compile_request((), {}, program_hash=42)
+    assert isinstance(req, KernelCompileRequest)
+    assert req.program_hash == 42
+    assert req.grid == (2, 2)
+    assert req.options.memory_space == "L1"
+
+
+def test_resolve_grid_callable():
+    """_resolve_grid(callable, args, kwargs) returns result of callable."""
+    grid = _resolve_grid(lambda a, b: (a, b), (3, 4), {})
+    assert grid == (3, 4)
+
+
+def test_resolve_grid_tuple():
+    """_resolve_grid((cols, rows), args, kwargs) returns grid as-is."""
+    grid = _resolve_grid((2, 3), (), {})
+    assert grid == (2, 3)
+
+
+def test_run_with_raw_callable_raises_not_implemented():
+    """run(lambda lhs, rhs: lhs + rhs, lhs, rhs) raises NotImplementedError (lambda inference planned)."""
+    with pytest.raises(NotImplementedError, match="raw callable.*not yet implemented"):
+        run(lambda lhs, rhs: lhs + rhs, None, None)
+
+
+def test_run_with_program_no_grid_raises():
+    """run(program, *args) without grid= raises ValueError when program is @ttl.program-like."""
+    def _fake_program(_x):
+        pass
+
+    _fake_program._ttl_program = True  # simulate @ttl.program-decorated
+    with pytest.raises(ValueError, match="grid= is required"):
+        run(_fake_program, None)
+
+
+def test_run_with_spec_accepts():
+    """run(ProgramSpec(...), *args) builds and runs (no device)."""
+    def _dummy_program(_x):
+        pass
+
+    spec = ProgramSpec(
+        program=_dummy_program,
+        grid=(1, 1),
+        options=ProgramOptions(),
+    )
+    # Will fail at _compile_kernel (no threads) but run() accepts spec and proceeds
+    with pytest.raises(ValueError, match="No threads found"):
+        run(spec, None)
 
 
 # -----------------------------------------------------------------------------

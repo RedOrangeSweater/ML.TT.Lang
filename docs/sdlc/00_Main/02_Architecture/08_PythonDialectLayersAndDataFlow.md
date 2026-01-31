@@ -2,7 +2,7 @@
 
 - **Статус**: актуально (LLD).
 - **Аудитория**: разработчики Python API, планировщика, тестов.
-- **Связанные документы**: [02_LLD_CompilerPipeline.md](02_LLD_CompilerPipeline.md) (MLIR TTL→TTKernel), [03_LLD_RuntimeAndPythonAPI.md](03_LLD_RuntimeAndPythonAPI.md), [18_ideal_ux_and_layer_responsibilities.md](../00_Ideas/18_ideal_ux_and_layer_responsibilities.md) (идеальный UX, user/framework/engine).
+- **Связанные документы**: [02_LLD_CompilerPipeline.md](02_LLD_CompilerPipeline.md) (MLIR TTL→TTKernel), [03_LLD_RuntimeAndPythonAPI.md](03_LLD_RuntimeAndPythonAPI.md), [18_ideal_ux_and_layer_responsibilities.md](../00_Ideas/18_ideal_ux_and_layer_responsibilities.md) (идеальный UX, user/framework/engine). Идеальный data flow и целевая модульная структура: [20_IdealDataFlowAndModuleStructure.md](20_IdealDataFlowAndModuleStructure.md).
 
 ## 1. Назначение
 

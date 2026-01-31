@@ -8,6 +8,7 @@ audience: разработчики планировщика и компилят�
 
 ## Контекст и связанные документы
 
+- [19_toy_domain_for_scheduler_validation.md](19_toy_domain_for_scheduler_validation.md) — Toy domain (магазины/BOM/пекарни) для валидации планировщика без железа; единая абстрактная модель.
 - [06_vertical_ir_to_horizontal_topology_scheduler.md](06_vertical_ir_to_horizontal_topology_scheduler.md) — вертикальный граф с ресурсными требованиями vs горизонтальная топология
 - [08_ping_neighborhoods_topology_basis_change.md](08_ping_neighborhoods_topology_basis_change.md) — вычислительные блоки, топология, маппинг, ping-neighborhoods
 - [03_tensix_sfpu_fpu_pipelining_dst.md](03_tensix_sfpu_fpu_pipelining_dst.md), [05_ttmetal_execution_model_grid_kernels.md](05_ttmetal_execution_model_grid_kernels.md) — Tensix, RISC, подсистемы (unpack/math/pack)
