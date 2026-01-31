@@ -5,7 +5,7 @@ alwaysApply: true
 
 ## Git: commit and push when work is done (default)
 
-**Do not wait for the user to say "commit" or "push".** When a task or step is logically complete and verified (DoD met, tests/lint OK), create an atomic commit and push immediately. The user should not have to ask every time.
+**Do commit and push yourself when work is done.** Do not wait for the user to type "commit", "push", "коммит", "пуш" or similar. When a task or step is logically complete and verified (DoD met, tests/lint OK), create an atomic commit and push immediately. The user should not have to ask for commit/push.
 
 - **After each logically complete step**: atomic commit + push, unless the user has asked not to push.
 - "Verified" = checks relevant to the change passed (e.g. build, linter, tests); if no checks are configured, proceed after the change is done.
