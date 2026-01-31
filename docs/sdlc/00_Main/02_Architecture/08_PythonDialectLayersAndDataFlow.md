@@ -10,6 +10,8 @@
 
 **Целевой UX (идеальный код первым):** пользователь думает только «что считать» и «с какими параметрами запустить»; фасад `ttl.run(spec, *args)` или `ttl.run(program, *args, grid=...)` скрывает сборку request'ов, компиляцию и запуск. См. [18_ideal_ux_and_layer_responsibilities.md](../00_Ideas/18_ideal_ux_and_layer_responsibilities.md).
 
+**Опциональный конфиг планировщика:** при включённом `use_scheduler` вызов `run(..., engine_config_path=...)` или `run(..., engine_config=AbstractEngineConfig)` задаёт бэкенд и топологию: для бэкенда tenstorrent используется `topology_grid` из конфига (если задан), иначе grid из программы; для бэкенда toy_shops/toy_bakeries выполняется `schedule_toy_stub` по графу и топологии из конфига. См. [20_nickel_mlir_config_abstract_engine.md](../00_Ideas/20_nickel_mlir_config_abstract_engine.md).
+
 **Один фокус при чтении:** в пользовательском коде — только kernel и run; в слое Program — только grid и опции; в Compile — только spec → артефакты; в Runtime — только артефакты → запуск. Границы между слоями — только Pydantic-типы (request/response).
 
 **Reader/Compute/Writer** — один из паттернов размещения внутри движка (Compile/Runtime), а не ось слоёв API; пользователь не обязан знать типы тредов. Лучшие раскладки вычислений могут быть другими.
