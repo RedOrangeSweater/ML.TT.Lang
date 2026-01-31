@@ -1,0 +1,6 @@
+# Scheduler viz: Gymnasium env and optional backend (doc 16).
+gymnasium>=0.29.0
+numpy>=1.20.0
+# Backend for UI step/run
+fastapi>=0.100.0
+uvicorn[standard]>=0.22.0

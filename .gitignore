@@ -65,3 +65,6 @@ test/temp
 # Paths with .ignore suffix (e.g. docs/to_github.ignore/)
 **/*.ignore
 **/*.ignore/**
+
+# Scheduler viz UI (doc 16)
+apps/scheduler-viz/ui/node_modules
