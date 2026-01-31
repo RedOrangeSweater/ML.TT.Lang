@@ -12,10 +12,21 @@ Current env implements **placement phase only**: choose placement (node -> core)
 
 ### Setup
 
+From repo root (recommended: use project venv and uv):
+
+```bash
+# Install scheduler-viz Python deps into project venv (from tt-lang root)
+uv pip install -r apps/scheduler-viz/requirements.txt
+```
+
+Or from `apps/scheduler-viz`:
+
 ```bash
 cd apps/scheduler-viz
 pip install -r requirements.txt
 ```
+
+Ensure the Python used by Run config **Scheduler Viz: Backend** is the same venv (e.g. select tt-lang `.venv` as interpreter).
 
 ### Export from tt-lang
 
@@ -69,6 +80,8 @@ npm run dev
 ```
 
 Open http://localhost:5174, load a scheduler JSON (from tt-lang `export_scheduler_input_to_json`), then Step or Run.
+
+Or use Run configs: **Scheduler Viz: Backend**, **Scheduler Viz: UI** (or compound **Scheduler Viz: Backend + UI**) from `.vscode/launch.json`.
 
 ### Phase 2: Dynamics (planned)
 

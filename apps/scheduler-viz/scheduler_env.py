@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import gymnasium as gym
 import numpy as np
@@ -90,14 +90,11 @@ class SchedulerPlacementEnv(gym.Env[dict[str, Any], int]):
         scheduler_input: dict[str, Any] | str | Path,
         render_mode: str | None = None,
         reward_fn: (
-            None
-            | (
-                (
-                    dict[str, Any],
-                    dict[str, Any],
-                    dict[str, tuple[int, int]],
-                ) -> float
-            )
+            Callable[
+                [dict[str, Any], dict[str, Any], dict[str, tuple[int, int]]],
+                float,
+            ]
+            | None
         ) = None,
     ):
         super().__init__()
@@ -195,3 +192,13 @@ class SchedulerPlacementEnv(gym.Env[dict[str, Any], int]):
                 "grid_rows": self._topology["grid_rows"],
             },
         }
+
+
+def get_action_rcw(env: SchedulerPlacementEnv) -> int:
+    """RCW preset: always place on core 0 (first core)."""
+    return 0
+
+
+def get_action_random(env: SchedulerPlacementEnv) -> int:
+    """Random policy: sample from action space."""
+    return int(env.action_space.sample())

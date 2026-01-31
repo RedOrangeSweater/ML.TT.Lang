@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { VerticalGraphView } from "./views/VerticalGraphView";
 import { ResourceView } from "./views/ResourceView";
 import { HWTopologyView } from "./views/HWTopologyView";
@@ -20,6 +20,15 @@ export default function App() {
   const [nextNode, setNextNode] = useState<number>(0);
   const [reward, setReward] = useState<number | null>(null);
   const [planB, setPlanB] = useState<Record<string, [number, number]> | null>(null);
+  const [algorithmList, setAlgorithmList] = useState<string[]>([]);
+  const [algorithmId, setAlgorithmId] = useState<string>("rcw");
+
+  useEffect(() => {
+    fetch(`${API_BASE}/algorithms`)
+      .then((res) => res.ok ? res.json() : Promise.resolve({ algorithms: ["rcw", "random"] }))
+      .then((data: { algorithms?: string[] }) => setAlgorithmList(data.algorithms ?? ["rcw", "random"]))
+      .catch(() => setAlgorithmList(["rcw", "random"]));
+  }, []);
 
   const loadFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -28,11 +37,12 @@ export default function App() {
     setLoading(true);
     f.text()
       .then((text) => JSON.parse(text))
-      .then(async (data) => {
+      .then(async (data: Record<string, unknown>) => {
+        const body = { ...data, algorithm_id: algorithmId };
         const res = await fetch(`${API_BASE}/load`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
+          body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error(await res.text());
         const out = await res.json();
@@ -41,10 +51,11 @@ export default function App() {
         setNextNode(out.observation?.next_node ?? 0);
         setProgress(out.full_state?.plan?.placement ? Object.keys(out.full_state.plan.placement).length : 0);
         setReward(null);
+        if (out.algorithm_id != null) setAlgorithmId(out.algorithm_id);
       })
-      .catch((err) => setError(err.message))
+      .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [algorithmId]);
 
   const loadPlanB = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -78,13 +89,39 @@ export default function App() {
     if (out.terminated) setReward(out.reward);
   }, [state]);
 
+  const stepAuto = useCallback(async () => {
+    if (state == null) return;
+    setError(null);
+    const res = await fetch(`${API_BASE}/step_auto`, { method: "POST" });
+    if (!res.ok) {
+      setError(await res.text());
+      return;
+    }
+    const out = await res.json();
+    setState(out.full_state);
+    setNextNode(out.observation?.next_node ?? 0);
+    const pl = out.full_state?.plan?.placement ?? {};
+    setProgress(Object.keys(pl).length);
+    if (out.terminated) setReward(out.reward);
+  }, [state]);
+
+  const setAlgorithm = useCallback(async (id: string) => {
+    setAlgorithmId(id);
+    const res = await fetch(`${API_BASE}/algorithm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ algorithm_id: id }),
+    });
+    if (!res.ok) setError(await res.text());
+  }, []);
+
   const nNodes = state?.op_graph?.nodes?.length ?? 0;
   const runAll = useCallback(async () => {
     if (state == null || actionSpaceN === 0 || nNodes === 0) return;
     for (let i = 0; i < nNodes; i++) {
-      await step(0);
+      await stepAuto();
     }
-  }, [state, actionSpaceN, nNodes, step]);
+  }, [state, actionSpaceN, nNodes, stepAuto]);
 
   const nodes = state?.op_graph?.nodes ?? [];
   const placement = state?.plan?.placement as Record<string, [number, number]> | undefined;
@@ -99,6 +136,20 @@ export default function App() {
         <label>
           Load JSON: <input type="file" accept=".json" onChange={loadFile} disabled={loading} />
         </label>
+        {algorithmList.length > 0 && (
+          <label style={{ marginLeft: 16 }}>
+            Algorithm:{" "}
+            <select
+              value={algorithmId}
+              onChange={(e) => setAlgorithm(e.target.value)}
+              disabled={loading}
+            >
+              {algorithmList.map((id) => (
+                <option key={id} value={id}>{id}</option>
+              ))}
+            </select>
+          </label>
+        )}
         {state != null && (
           <label style={{ marginLeft: 16 }}>
             Compare Plan B: <input type="file" accept=".json" onChange={loadPlanB} />
@@ -115,7 +166,7 @@ export default function App() {
             {reward != null && <span>Reward: {reward}</span>}
             {canStep && (
               <>
-                <button type="button" onClick={() => step(0)}>Step (core 0)</button>
+                <button type="button" onClick={stepAuto}>Step ({algorithmId})</button>
                 <button type="button" onClick={runAll}>Run</button>
               </>
             )}
