@@ -8,7 +8,7 @@ description = "Python Bindings and Package for TT-Lang Compiler Project"
 requires-python = ">=3.11"
 keywords = ["mlir", "tt-lang", "tt-mlir", "tenstorrent", "compiler", "dsl", "kernel"]
 license = "Apache-2.0"
-license-files = ["../LICENSE*"]
+license-files = ["LICENSE*"]
 authors = [
   {name = "Tenstorrent AI ULC"}
 ]
@@ -20,7 +20,6 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: Apache Software License",
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS",
   "Programming Language :: Python :: 3",
@@ -33,6 +32,10 @@ classifiers = [
 
 # We will dynamically provide `version` and `dependencies` in setup.py
 dynamic = ["version", "dependencies", "readme"]
+
+[tool.setuptools.dynamic]
+readme = {file = "README.md"}
+
 
 [project.urls]
 Homepage = "https://github.com/tenstorrent/tt-lang"

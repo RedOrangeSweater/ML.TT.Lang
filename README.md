@@ -76,6 +76,8 @@ The simulator setup script creates a lightweight Python environment with only th
 - Validating kernel correctness before hardware deployment
 - Running CI tests without compiler dependencies
 
+**Installing PyTorch:** If `torch` failed to install (e.g. network issues) or you need a specific CUDA build, run `./scripts/install_torch.sh` with the project venv active. The script detects your CUDA version and installs the matching PyTorch wheel index (cu118, cu126, cu128, or CPU). **Note:** PyTorch binary builds no longer support GPUs with compute capability &lt; 7.5 (e.g. GTX 1080 / 1080 Ti); on such systems the script installs CPU-only torch.
+
 ## Example
 
 See the `examples/` and `tests/` directory for complete working examples, including:
