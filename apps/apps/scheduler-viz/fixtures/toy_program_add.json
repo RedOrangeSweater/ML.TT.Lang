@@ -1,0 +1,57 @@
+{
+  "op_graph": {
+    "nodes": [
+      {
+        "id": "dm_read",
+        "op_type": "load",
+        "resource": "NOC",
+        "predecessors": [],
+        "successors": [
+          "add_compute"
+        ]
+      },
+      {
+        "id": "dm_write",
+        "op_type": "store",
+        "resource": "NOC",
+        "predecessors": [
+          "add_compute"
+        ],
+        "successors": []
+      },
+      {
+        "id": "add_compute",
+        "op_type": "elementwise",
+        "resource": "SFPU",
+        "predecessors": [
+          "dm_read"
+        ],
+        "successors": [
+          "dm_write"
+        ]
+      }
+    ]
+  },
+  "topology": {
+    "grid_cols": 1,
+    "grid_rows": 1
+  },
+  "plan": {
+    "placement": {
+      "dm_read": [
+        0,
+        0
+      ],
+      "dm_write": [
+        0,
+        0
+      ],
+      "add_compute": [
+        0,
+        0
+      ]
+    },
+    "grid_cols": 1,
+    "grid_rows": 1
+  }
+}
