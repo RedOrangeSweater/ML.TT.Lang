@@ -362,6 +362,7 @@ class CompiledTTNNKernel:
         all_source_lines=None,
         thread_to_kernel=None,
         kernel_line_offsets=None,
+        program_config=None,
     ):
         """
         Initialize with pre-compiled kernel artifacts.
@@ -392,6 +393,7 @@ class CompiledTTNNKernel:
         self.all_source_lines = all_source_lines or {}
         self.thread_to_kernel = thread_to_kernel or {}
         self.kernel_line_offsets = kernel_line_offsets or {}
+        self.program_config = program_config or {}
 
     def __call__(self, *args):
         """Execute the kernel with the given tensors."""
@@ -617,6 +619,7 @@ def _compile_ttnn_kernel(
         all_source_lines=all_source_lines,
         thread_to_kernel=thread_to_kernel,
         kernel_line_offsets=kernel_line_offsets,
+        program_config=program_config,
     )
 
     if verbose:
@@ -838,6 +841,7 @@ def _compile_kernel(
     program_hash: int,
     fp32_dest_acc_en: Optional[bool] = None,
     dst_full_sync_en: Optional[bool] = None,
+    program_config: Optional[dict] = None,
 ) -> Optional[CompiledTTNNKernel]:
     """
     Compile kernel function to MLIR and return CompiledTTNNKernel.
@@ -855,10 +859,12 @@ def _compile_kernel(
         program_hash: Hash for tt-metal program cache
         fp32_dest_acc_en: Optional override for fp32_dest_acc_en
         dst_full_sync_en: Optional override for dst_full_sync_en
+        program_config: Optional dict with objective/placement (stored, not used for decisions)
 
     Returns:
         CompiledTTNNKernel ready for execution
     """
+    program_config = program_config or {}
     f_params = inspect.signature(f).parameters
 
     # Get kernel source location for error reporting
@@ -1132,6 +1138,10 @@ def _compile_kernel(
         return compiled_kernel
 
 
+OBJECTIVE_VALUES = ("latency", "throughput", "balanced")
+PLACEMENT_VALUES = ("auto", "manual")
+
+
 def pykernel_gen(
     grid: Optional[Union[tuple, Callable]] = None,
     indexing_maps: Optional[List[Callable]] = None,
@@ -1141,6 +1151,8 @@ def pykernel_gen(
     tiled: bool = True,
     fp32_dest_acc_en: Optional[bool] = None,
     dst_full_sync_en: Optional[bool] = None,
+    objective: Optional[str] = None,
+    placement: Optional[str] = None,
 ) -> Callable:
     """
     Decorator for generating TTL kernels from Python functions.
@@ -1158,6 +1170,8 @@ def pykernel_gen(
         tiled: Whether to use tiled layout
         fp32_dest_acc_en: Optional override for fp32_dest_acc_en
         dst_full_sync_en: Optional override for dst_full_sync_en
+        objective: Optional policy "latency" | "throughput" | "balanced" (stored, not used yet)
+        placement: Optional policy "auto" | "manual" (stored, not used yet)
 
     Returns:
         Decorated function that compiles and executes the kernel
@@ -1178,6 +1192,16 @@ def pykernel_gen(
         raise TypeError(f"tiled must be a boolean, got {type(tiled).__name__}")
     if iterator_types is not None and indexing_maps is None:
         raise ValueError("indexing_maps must be set when iterator_types is set")
+    if objective is not None and objective not in OBJECTIVE_VALUES:
+        raise ValueError(
+            f"objective must be one of {OBJECTIVE_VALUES!r}, got {objective!r}"
+        )
+    if placement is not None and placement not in PLACEMENT_VALUES:
+        raise ValueError(
+            f"placement must be one of {PLACEMENT_VALUES!r}, got {placement!r}"
+        )
+
+    program_config = {"objective": objective, "placement": placement}
 
     if indexing_maps is None:
         indexing_maps = []
@@ -1234,6 +1258,7 @@ def pykernel_gen(
                     program_hash,
                     fp32_dest_acc_en=fp32_override,
                     dst_full_sync_en=dst_sync_override,
+                    program_config=program_config,
                 )
 
                 if compiled_kernel is not None:

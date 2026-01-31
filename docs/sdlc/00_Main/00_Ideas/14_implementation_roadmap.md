@@ -45,11 +45,11 @@ audience: разработчики
 
 ---
 
-## Фаза 2: Параметры политики (objective / placement) без изменения поведения
+## Фаза 2: Параметры политики (objective / placement) без изменения поведения (выполнено)
 
-- Добавить в декоратор `@ttl.program` опциональные аргументы `objective` ("latency" | "throughput" | "balanced") и `placement` ("auto" | "manual").
-- Пробросить их в структуру конфигурации (например, в опции компиляции или в будущий «граф программы»); на этапе 2 **не использовать** для принятия решений — только сохранять и передавать дальше.
-- Тесты: вызов с `@ttl.program(objective="latency")` не ломает компиляцию и выполнение; поведение совпадает с текущим.
+- Добавлены в декоратор `@ttl.program` опциональные аргументы `objective` ("latency" | "throughput" | "balanced") и `placement` ("auto" | "manual"); валидация при неверном значении.
+- Проброшены в `program_config` (dict), сохраняются в `CompiledTTNNKernel.program_config`; на этапе 2 **не используются** для принятия решений.
+- Тесты: `test/python/test_program_policy.py` — валидация неверных objective/placement; вызов с `@ttl.program(objective="latency", placement="auto")` не ломает компиляцию (в средах с torch-only compile-only тест помечен skip).
 
 ---
 
