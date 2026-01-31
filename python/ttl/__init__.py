@@ -8,16 +8,18 @@ __version__ = "0.1.0"
 
 # Export TTL DSL API directly at package level so `import ttl; ttl.program` works
 from ttl.ttl import (
-    kernel,
-    program,
-    compute,
-    datamovement,
     Program,
-    make_circular_buffer_like,
+    ProgramSpec,
+    compute,
     copy,
     core,
+    datamovement,
     grid_size,
+    kernel,
     math,
+    program,
+    run,
+    make_circular_buffer_like,
 )
 
 # Export generated elementwise operators (auto-generated from TTLElementwiseOps.def)
@@ -33,20 +35,22 @@ from ttl.ttl_api import (
 )
 
 __all__ = [
-    "kernel",
-    "program",
-    "compute",
-    "datamovement",
-    "Program",
     "CircularBuffer",
-    "TensorBlock",
     "CopyTransferHandler",
-    "make_circular_buffer_like",
+    "Program",
+    "ProgramSpec",
+    "TensorBlock",
+    "compute",
     "copy",
     "core",
+    "datamovement",
     "grid_size",
+    "kernel",
     "math",
+    "program",
+    "run",
     "signpost",
+    "make_circular_buffer_like",
     # Elementwise operators are automatically included from generated file
     *_elementwise_all,
 ]

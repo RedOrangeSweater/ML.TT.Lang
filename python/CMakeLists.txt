@@ -115,6 +115,7 @@ declare_mlir_python_sources(TTLangPythonCommon.Main
     ttnn_proxy.py
     diagnostics.py
     kernel_runner.py
+    layers.py
     settings.py
     ttl.py
     ttl_api.py

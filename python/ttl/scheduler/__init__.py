@@ -3,8 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Scheduler package: op graph, topology, and scheduler stub for E2E planning.
+Scheduler package (Graph layer): op graph, topology, and scheduler stub.
 
+Graph layer: OpGraph, SchedulePlan, Topology. One focus: operations and
+placement plan; R/C/W is an engine placement pattern, not the API axis.
 Phase 3-4: build op graph from program threads, topology from grid,
 scheduler stub produces plan that reproduces current RCW behavior.
 """

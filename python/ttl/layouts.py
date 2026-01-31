@@ -4,22 +4,22 @@
 
 """Layout creation utilities for tensor distribution across cores."""
 
-from dataclasses import dataclass
-from typing import List
-
 from ttmlir.dialects import ttcore, ttnn
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from .constants import DEFAULT_TILE_SIZE
 from .dtype_utils import TensorDtype
 
 
-@dataclass(frozen=True)
-class TTNNLayoutConfig:
+class TTNNLayoutConfig(BaseModel):
     """Configuration for TTNN layout creation. Supports L1/DRAM interleaved tiled layouts."""
 
-    logical_shape: List[int]
-    grid: List[int]
-    dtype: str
+    model_config = ConfigDict(frozen=True)
+
+    logical_shape: list[int] = Field(..., description="Logical tensor shape (rows, cols)")
+    grid: list[int] = Field(..., description="Grid dimensions (cols, rows)")
+    dtype: str = Field(..., description="Tensor dtype (ttnn or string)")
 
 
 # TTNN BufferType enum values (from TTNNOpsEnums.td)

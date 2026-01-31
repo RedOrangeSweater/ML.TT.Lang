@@ -21,7 +21,15 @@ Math operations:
     ttl.math.sqrt(), ttl.math.exp(), etc.
 """
 
-from .ttl_api import pykernel_gen as kernel, program, compute, datamovement, Program
+from .ttl_api import (
+    ProgramSpec,
+    pykernel_gen as kernel,
+    program,
+    compute,
+    datamovement,
+    Program,
+    run,
+)
 from .circular_buffer import make_circular_buffer_like
 from .operators import copy, core, grid_size
 
@@ -29,14 +37,15 @@ from .operators import copy, core, grid_size
 from . import ttl_math as math
 
 __all__ = [
-    "kernel",
-    "program",
-    "compute",
-    "datamovement",
     "Program",
-    "make_circular_buffer_like",
+    "ProgramSpec",
+    "compute",
     "copy",
     "core",
+    "datamovement",
     "grid_size",
+    "kernel",
     "math",
+    "program",
+    "run",
 ]

@@ -2,11 +2,17 @@
 
 - **Статус**: актуально (LLD).
 - **Аудитория**: разработчики Python API, планировщика, тестов.
-- **Связанные документы**: [02_LLD_CompilerPipeline.md](02_LLD_CompilerPipeline.md) (MLIR TTL→TTKernel), [03_LLD_RuntimeAndPythonAPI.md](03_LLD_RuntimeAndPythonAPI.md).
+- **Связанные документы**: [02_LLD_CompilerPipeline.md](02_LLD_CompilerPipeline.md) (MLIR TTL→TTKernel), [03_LLD_RuntimeAndPythonAPI.md](03_LLD_RuntimeAndPythonAPI.md), [18_ideal_ux_and_layer_responsibilities.md](../00_Ideas/18_ideal_ux_and_layer_responsibilities.md) (идеальный UX, user/framework/engine).
 
 ## 1. Назначение
 
 Документ фиксирует слои представления данных в Python-фреймворке tt-lang («диалекты») и трансформации между ними. Цель — явная граница между вводом пользователя, графом операций, компиляцией и рантаймом; все интерфейсы выражаются Pydantic-моделями (или прокси из ttnn_proxy) для однозначности и тестируемости.
+
+**Целевой UX (идеальный код первым):** пользователь думает только «что считать» и «с какими параметрами запустить»; фасад `ttl.run(spec, *args)` или `ttl.run(program, *args, grid=...)` скрывает сборку request'ов, компиляцию и запуск. См. [18_ideal_ux_and_layer_responsibilities.md](../00_Ideas/18_ideal_ux_and_layer_responsibilities.md).
+
+**Один фокус при чтении:** в пользовательском коде — только kernel и run; в слое Program — только grid и опции; в Compile — только spec → артефакты; в Runtime — только артефакты → запуск. Границы между слоями — только Pydantic-типы (request/response).
+
+**Reader/Compute/Writer** — один из паттернов размещения внутри движка (Compile/Runtime), а не ось слоёв API; пользователь не обязан знать типы тредов. Лучшие раскладки вычислений могут быть другими.
 
 Нижний компиляционный пайплайн (Python DSL → TTL IR → passes → TTKernel → EmitC → C++) описан в [02_LLD_CompilerPipeline.md](02_LLD_CompilerPipeline.md). Здесь — уровень Python-объектов до и после вызова этого пайплайна.
 
@@ -77,7 +83,9 @@ flowchart LR
 - **Program**: ProgramOptions, ProgramConfig, KernelCompileRequest (иерархия: root + options: ProgramOptions).
 - **Graph**: OpGraph, OpNode, Topology, SchedulePlan.
 - **Compile**: KernelCompileRequest, TTNNKernelCompileRequest, ThreadConfigBuildRequest, KernelWriteRequest, ComputeDescriptorBuildContext, TTNNKernelCompileOptions, ThreadSourceInfo; хелперы `_compile_kernel(f, args, kwargs, request)`, `_collect_source_info_from_threads(threads)`; TTLGenericCompiler.source_info → ThreadSourceInfo.
-- **Runtime**: KernelSpec, дескрипторы через ttnn_proxy (ComputeConfigProxy/Resolved, ReaderConfigProxy, WriterConfigProxy, CoreCoordProxy, CoreRangeProxy, CoreRangeSetProxy).
+- **Runtime**: KernelSpec (Pydantic), дескрипторы через ttnn_proxy (ComputeConfigProxy/Resolved, ReaderConfigProxy, WriterConfigProxy, CoreCoordProxy, CoreRangeProxy, CoreRangeSetProxy).
+
+Внутренние типы на границах слоёв приведены к Pydantic: ThreadWrapperView, CompilerContext (ttl_ast), KernelSpec (kernel_runner), TTNNLayoutConfig (layouts) — все BaseModel; ProgramSpec и run(spec, *args) — фасад идеального UX (см. 18_ideal_ux_and_layer_responsibilities.md). Модуль ttl.layers реэкспортирует типы по слоям для одного фокуса при чтении.
 
 Реестр исполнительных Python-диалектов ведётся отдельно от документационного пайплайна (Doc–MLIR–GraphDB, диалект ttm.sdlc_doc). Регистрация: в этом документе и при необходимости в `.cursor/artifacts_mlir_graphdb` или `docs/sdlc/_KG_MLIR` для прослеживаемости.
 

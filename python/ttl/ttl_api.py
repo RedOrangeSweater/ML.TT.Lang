@@ -2,7 +2,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Main API for the TTL dialect Python DSL."""
+"""Main API for the TTL dialect Python DSL.
+
+Ideal UX (no constraints): ttl.run(add_kernel, lhs, rhs, out, grid=(2,2))
+or ttl.run(Spec(program=..., grid=...), *tensors). User thinks only "what to compute"
+and "run params"; framework maps to KernelCompileRequest; engine does compile + run.
+See docs/sdlc/00_Main/00_Ideas/18_ideal_ux_and_layer_responsibilities.md.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +19,6 @@ import os
 import random
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from types import CellType
 from typing import Callable, Generator, Literal
@@ -763,8 +768,7 @@ def _collect_captures(
     }
 
 
-@dataclass(frozen=True)
-class ThreadWrapperView:
+class ThreadWrapperView(BaseModel):
     """Typed view of a decorated thread: wrapped callable and its closure.
 
     Built from a callable so getattr for __wrapped__ and __closure__ is done
@@ -772,8 +776,10 @@ class ThreadWrapperView:
     repeated getattr.
     """
 
-    wrapped: Callable[..., object] | None
-    closure: tuple[CellType, ...] | None
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    wrapped: Callable[..., object] | None = None
+    closure: tuple[CellType, ...] | None = None
 
     @classmethod
     def from_callable(cls, thread_fn: Callable[..., object]) -> "ThreadWrapperView":
@@ -968,6 +974,12 @@ def _collect_source_info_from_threads(
         all_source_lines[ct.name] = info.source_lines
         kernel_line_offsets[ct.name] = info.line_offset
     return all_source_files, all_source_lines, kernel_line_offsets
+
+
+# -----------------------------------------------------------------------------
+# Compile layer: KernelCompileRequest -> (threads, module) -> TTNNKernelCompileRequest
+# -> CompiledTTNNKernel. One focus: spec to compilation artifacts.
+# -----------------------------------------------------------------------------
 
 
 def _compile_kernel(
@@ -1281,6 +1293,12 @@ OBJECTIVE_VALUES = ("latency", "throughput", "balanced")
 PLACEMENT_VALUES = ("auto", "manual")
 
 
+# -----------------------------------------------------------------------------
+# Program layer: user intent -> ProgramSpec / KernelCompileRequest.
+# One focus: grid, options, indexing; no MLIR, no descriptors.
+# -----------------------------------------------------------------------------
+
+
 class ProgramOptions(BaseModel):
     """Validated options for @ttl.program decorator. Replaces manual if/raise checks."""
 
@@ -1334,6 +1352,70 @@ class KernelCompileRequest(BaseModel):
     )
     iterator_types: list[str] = Field(default_factory=list, description="Iterator type strings")
     options: ProgramOptions = Field(..., description="Decorator-level options (num_outs, memory_space, tiled, etc.)")
+
+
+class ProgramSpec(BaseModel):
+    """Spec for ideal UX: program + grid + options. Used by run(spec, *args)."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    program: Callable[..., object] = Field(..., description="Kernel function (typically @ttl.program-decorated)")
+    grid: tuple[int, ...] | list[int] | Callable[..., object] = Field(
+        ...,
+        description="Grid dimensions or callable to resolve from args",
+    )
+    options: ProgramOptions = Field(..., description="Program options (memory_space, tiled, etc.)")
+    indexing_maps: list[Callable[..., object]] = Field(
+        default_factory=list,
+        description="Indexing maps for the kernel",
+    )
+    iterator_types: list[str] = Field(default_factory=list, description="Iterator types")
+
+    def to_compile_request(
+        self,
+        args: tuple,
+        kwargs: dict,
+        program_hash: int,
+    ) -> KernelCompileRequest:
+        """Build KernelCompileRequest for this spec and invocation."""
+        grid = _resolve_grid(self.grid, args, kwargs)
+        return KernelCompileRequest(
+            grid=grid,
+            program_hash=program_hash,
+            indexing_maps=self.indexing_maps,
+            iterator_types=self.iterator_types,
+            options=self.options,
+        )
+
+
+# -----------------------------------------------------------------------------
+# Runtime entry: ProgramSpec + args -> compile -> run_kernel_on_device (kernel_runner).
+# One focus: artifacts -> descriptors -> device; see kernel_runner for Runtime layer.
+# -----------------------------------------------------------------------------
+
+
+def run(spec: ProgramSpec, *args: object, **kwargs: object) -> object | None:
+    """
+    Facade: compile and run kernel from a spec. Ideal UX entry point.
+
+    User thinks only "what to compute" and "run params"; this builds
+    KernelCompileRequest, compiles, and runs. See 18_ideal_ux_and_layer_responsibilities.md.
+    """
+    if spec.options.num_outs != 1:
+        raise ValueError(f"num_outs must be 1, got {spec.options.num_outs}")
+    cache_key = _make_cache_key(
+        args,
+        fp32_dest_acc_en=spec.options.fp32_dest_acc_en,
+        dst_full_sync_en=spec.options.dst_full_sync_en,
+    )
+    program_hash = hash((id(spec.program), cache_key))
+    request = spec.to_compile_request(args, kwargs, program_hash)
+    compiled = _compile_kernel(spec.program, args, dict(kwargs), request)
+    if compiled is None:
+        return None
+    if _should_execute():
+        return compiled(*args)
+    return None
 
 
 def pykernel_gen(

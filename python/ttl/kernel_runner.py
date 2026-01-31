@@ -3,18 +3,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Shared kernel execution logic for tt-lang.
+Shared kernel execution logic for tt-lang (Runtime layer).
 
-Provides functions for building kernel descriptors, CB descriptors, and
-executing kernels on device via ttnn.generic_op. Used by both the Python
-DSL (CompiledTTNNKernel) and ME2E tests.
-
-All public build/run APIs accept Pydantic request models (Runtime dialect).
+Runtime layer: compilation artifacts -> descriptors -> run_kernel_on_device.
+One focus: KernelSpec, CB configs, CoreRangeSet -> ttnn descriptors -> execution.
+Used by CompiledTTNNKernel and ME2E tests. All public build/run APIs accept
+Pydantic request models (KernelDescriptorBuildRequest, CBDescriptorBuildRequest,
+RunKernelRequest).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 try:
@@ -27,8 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .dtype_utils import TensorDtype
 
 
-@dataclass
-class KernelSpec:
+class KernelSpec(BaseModel):
     """Specification for a single kernel to execute.
 
     Attributes:
@@ -41,10 +39,12 @@ class KernelSpec:
             ReaderConfigDescriptor, WriterConfigDescriptor, or EthernetConfigDescriptor).
     """
 
-    path: str
-    thread_type: str
-    tensor_indices: list[int]
-    config: Any
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    path: str = Field(..., description="Path to kernel C++ source file")
+    thread_type: str = Field(..., description="compute | noc | ethernet")
+    tensor_indices: list[int] = Field(..., description="Global tensor indices this kernel accesses")
+    config: Any = Field(..., description="Kernel config descriptor (ttnn)")
 
 
 # -----------------------------------------------------------------------------

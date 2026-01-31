@@ -4,7 +4,6 @@
 
 import ast
 import inspect
-from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -94,13 +93,14 @@ def _build_tensor_type(ctx, tensor, grid, tiled, memory_space):
     return RankedTensorType.get(device_shape, element_type, layout)
 
 
-@dataclass(frozen=True)
-class CompilerContext:
+class CompilerContext(BaseModel):
     """Immutable compilation context for TTL kernels."""
 
-    grid: list[int]
-    memory_space: str
-    tiled: bool
+    model_config = ConfigDict(frozen=True)
+
+    grid: list[int] = Field(..., description="Grid dimensions (cols, rows)")
+    memory_space: str = Field(..., description="L1 or DRAM")
+    tiled: bool = Field(..., description="Whether to use tiled layout")
 
 
 class TTLCompilerConfig(BaseModel):
