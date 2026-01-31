@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from typing import List, Optional, Tuple
 
-from .settings import get_settings
+from .settings import settings_ttlang
 
 
 def find_variable_assignment(
@@ -39,7 +39,7 @@ def find_variable_assignment(
 
 def _verbose_errors_enabled() -> bool:
     """Check if verbose MLIR error output is enabled."""
-    return get_settings().verbose_errors
+    return settings_ttlang.verbose_errors
 
 
 class SourceDiagnostic:

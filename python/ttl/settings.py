@@ -10,13 +10,11 @@ Replaces scattered os.environ reads in ttl_api.py and diagnostics.py (doc 09).
 
 from __future__ import annotations
 
-from functools import lru_cache
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class TTLangSettings(BaseSettings):
+class SettingsTTLang(BaseSettings):
     """Centralized TTLANG_* and related env vars. Defaults preserve existing semantics."""
 
     model_config = SettingsConfigDict(
@@ -40,7 +38,5 @@ class TTLangSettings(BaseSettings):
     user: str = Field(default="default", validation_alias="USER")
 
 
-@lru_cache(maxsize=1)
-def get_settings() -> TTLangSettings:
-    """Return cached TTLangSettings built from environment."""
-    return TTLangSettings()
+# Single instance per process; load at first import of ttl.settings.
+settings_ttlang = SettingsTTLang()

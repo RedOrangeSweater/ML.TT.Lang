@@ -18,10 +18,9 @@ import inspect
 import os
 import random
 import uuid
-from contextlib import contextmanager
 from pathlib import Path
 from types import CellType
-from typing import TYPE_CHECKING, Callable, Generator, Literal
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from .scheduler import AbstractEngineConfig
@@ -97,8 +96,8 @@ from .descriptor_options import (
     TTNNKernelCompileOptions,
     TTNNKernelCompileRequest,
 )
-from .settings import get_settings
-from .ttl_utils import get_thread_type_string
+from .settings import settings_ttlang
+from .ttl_utils import get_thread_type_string, tmp_dir
 from .verbose_context import verbose_compilation, verbose_print
 from .config import HAS_TT_DEVICE
 
@@ -165,7 +164,7 @@ def _make_cache_key(
 
 def _should_execute() -> bool:
     """Check if kernel execution should proceed (not compile-only mode)."""
-    return not get_settings().compile_only
+    return not settings_ttlang.compile_only
 
 
 def _run_profiling_pipeline(
@@ -212,7 +211,7 @@ def _run_profiling_pipeline(
         return
 
     # Find the profile CSV - default location is $TT_METAL_HOME/generated/profiler/.logs/
-    settings = get_settings()
+    settings = settings_ttlang
     if settings.profile_csv:
         csv_path = Path(settings.profile_csv)
     else:
@@ -528,25 +527,6 @@ def _build_config_for_thread(request: ThreadConfigBuildRequest) -> tuple:
     return request.build_config_and_entries()
 
 
-@contextmanager
-def tmp_kernel_dir() -> Generator[Path, None, None]:
-    """
-    Context manager: create a dedicated directory for kernel sources for this compilation.
-
-    Yields the directory path. Does not delete on exit so CompiledTTNNKernel paths
-    remain valid. Use for grouping kernel files under one dir instead of /tmp/{user}/.
-    """
-    user = get_settings().user
-    base = Path(f"/tmp/{user}")
-    base.mkdir(parents=True, exist_ok=True)
-    dir_path = base / f"ttlang_kernels_{uuid.uuid4().hex[:12]}"
-    dir_path.mkdir(parents=False, exist_ok=False)
-    try:
-        yield dir_path
-    finally:
-        pass  # Keep dir so kernel paths in CompiledTTNNKernel remain valid
-
-
 def _write_kernel_to_tmp(req: KernelWriteRequest) -> str:
     """Write kernel source to req.base_dir or /tmp/{user} and return the file path."""
     import hashlib
@@ -557,7 +537,7 @@ def _write_kernel_to_tmp(req: KernelWriteRequest) -> str:
         req.base_dir.mkdir(parents=True, exist_ok=True)
         path = req.base_dir / f"ttlang_kernel_{req.name}_{content_hash}.cpp"
     else:
-        user = get_settings().user
+        user = settings_ttlang.user
         path = Path(f"/tmp/{user}/ttlang_kernel_{req.name}_{content_hash}.cpp")
         os.makedirs(f"/tmp/{user}", exist_ok=True)
     with path.open("w") as f:
@@ -601,7 +581,9 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest):
     has_f32 = _has_float32_args(req.args)
     thread_to_kernel: dict[str, str] = {}
 
-    with tmp_kernel_dir() as base_dir:
+    base = Path(f"/tmp/{settings_ttlang.user}")
+    base.mkdir(parents=True, exist_ok=True)
+    with tmp_dir(base, lambda: f"ttlang_kernels_{uuid.uuid4().hex[:12]}") as base_dir:
         for name, thread_type in kernel_info:
             cpp_source = ttkernel_to_cpp_by_name(req.module, name)
             kernel_path = _write_kernel_to_tmp(
@@ -1008,7 +990,7 @@ def _compile_kernel(
 
     # Always generate source locations for error messages
     # TTLANG_DEBUG_LOCATIONS only controls whether locations are printed in MLIR output
-    print_debug_locations = get_settings().debug_locations
+    print_debug_locations = settings_ttlang.debug_locations
 
     ctx = Context()
     loc = Location.unknown(ctx)
@@ -1051,7 +1033,7 @@ def _compile_kernel(
         )
 
         # Optional: build op graph and run scheduler stub (Phase 3-4)
-        if get_settings().use_scheduler:
+        if settings_ttlang.use_scheduler:
             from .scheduler import (
                 build_op_graph_from_threads,
                 build_topology_from_grid,
@@ -1109,7 +1091,7 @@ def _compile_kernel(
                 ct.func_entry.operation.detach_from_parent()
                 module.body.append(ct.func_entry)
 
-        initial_mlir_path = get_settings().initial_mlir
+        initial_mlir_path = settings_ttlang.initial_mlir
         if initial_mlir_path:
             with open(initial_mlir_path, "w") as fd:
                 module.operation.print(
@@ -1150,7 +1132,7 @@ def _compile_kernel(
 
         # Add auto-profiling passes if enabled
         if is_auto_profile_enabled():
-            st = get_settings()
+            st = settings_ttlang
             if st.profile_csv:
                 cb_flow_json = str(Path(st.profile_csv).parent / "cb_flow_graph.json")
             else:
@@ -1193,7 +1175,7 @@ def _compile_kernel(
             # Pretty stack traces are optional, silently continue if unavailable
             pass
 
-        if get_settings().verbose_passes:
+        if settings_ttlang.verbose_passes:
             print("Running custom pipeline:", pm)
             ctx.enable_multithreading(False)
             pm.enable_ir_printing(
@@ -1219,7 +1201,7 @@ def _compile_kernel(
             formatted = format_mlir_error(error_msg, source_lines, source_file)
             raise RuntimeError(formatted) from None
 
-        final_mlir_path = get_settings().final_mlir
+        final_mlir_path = settings_ttlang.final_mlir
         if final_mlir_path:
             with open(final_mlir_path, "w") as fd:
                 module.operation.print(
