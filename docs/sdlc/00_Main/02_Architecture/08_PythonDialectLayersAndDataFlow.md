@@ -93,6 +93,8 @@ flowchart LR
 
 Реестр исполнительных Python-диалектов ведётся отдельно от документационного пайплайна (Doc–MLIR–GraphDB, диалект ttm.sdlc_doc). Регистрация: в этом документе и при необходимости в `.cursor/artifacts_mlir_graphdb` или `docs/sdlc/_KG_MLIR` для прослеживаемости.
 
+**Иерархия Pydantic-моделей (категории в подмоделях):** длинные списки параметров заменены на вложенные модели по смыслу. **CompiledTTNNKernel** — три поля: `artifacts: CompiledKernelArtifacts` (kernel_paths, kernel_configs, kernel_arg_specs, kernel_tensor_indices, thread_to_kernel, thread_names), `runtime: CompiledRuntimeContext` (num_tensors, core_ranges, cb_configs, program_hash, program_config), `profiling: CompiledProfilingSource | None` (source_lines, all_source_lines, kernel_line_offsets). **TTNNKernelCompileRequest** — четыре поля: `input: TTNNCompileInput` (module, args, grid, num_outs, thread_tensor_indices), `compile_options: TTNNKernelCompileOptions | None`, `cache_and_cb: TTNNCompileCacheAndCb | None` (cb_configs, program_hash), `profiling: TTNNProfilingInput | None` (source_lines, all_source_lines, kernel_line_offsets). Вызовы строят вложенные объекты и передают один корневой request/result; обратная совместимость чтения полей — через property-алиасы на корне CompiledTTNNKernel.
+
 ## 6. Целевое направление (proxy / ttnn boundary)
 
 Для каждой примитивной сущности, которую tt-lang передаёт в ttnn (DataType, дескрипторы, CoreRange и т.д.), целевая модель: **Pydantic-прокси или обёртка с методом `.to_ttnn()`**, разрешающая тип на границе вызова. Валидация и сериализация — в Pydantic; флаги дескрипторов (например `fp32_dest_acc_en`) задаются через post-validation или фабричные методы, без ручного перечисления в вызывающем коде.

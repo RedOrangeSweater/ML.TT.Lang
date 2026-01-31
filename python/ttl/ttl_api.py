@@ -86,6 +86,9 @@ from .program import (
     _resolve_grid,
 )
 from .descriptor_options import (
+    CompiledKernelArtifacts,
+    CompiledProfilingSource,
+    CompiledRuntimeContext,
     CoreRangeSetOptions,
     KernelWriteRequest,
     NocConfigOptions,
@@ -93,8 +96,11 @@ from .descriptor_options import (
     ProgramRunConfig,
     ReaderConfigOptions,
     ThreadConfigBuildRequest,
+    TTNNCompileCacheAndCb,
+    TTNNCompileInput,
     TTNNKernelCompileOptions,
     TTNNKernelCompileRequest,
+    TTNNProfilingInput,
 )
 from .settings import settings_ttlang
 from .ttl_utils import get_thread_type_string, tmp_dir
@@ -386,76 +392,78 @@ class CompiledTTNNKernel(BaseModel):
 
     Caches compilation artifacts (kernel paths, CB descriptors) so the kernel
     can be executed multiple times with different tensors without recompiling.
+    Structured as artifacts (per-kernel output), runtime (execution context),
+    and optional profiling (source lines).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    kernel_paths: list[tuple[str, str]] = Field(
-        ...,
-        description="List of (path, thread_type) tuples for each kernel",
+    artifacts: CompiledKernelArtifacts = Field(
+        ..., description="Per-kernel compilation output (paths, configs, thread mapping)"
     )
-    kernel_configs: list[object] = Field(
-        ...,
-        description="List of config descriptors matching kernel_paths",
+    runtime: CompiledRuntimeContext = Field(
+        ..., description="Execution context (num_tensors, core_ranges, cb_configs, etc.)"
     )
-    kernel_arg_specs: list[object] = Field(
-        ...,
-        description="List of arg specs (rt_args list) for each kernel",
-    )
-    num_tensors: int = Field(..., ge=0, description="Number of input/output tensors")
-    core_ranges: object = Field(..., description="CoreRangeSet for kernel execution")
-    kernel_tensor_indices: list[list[int]] = Field(
-        ...,
-        description="List of global tensor indices used by each kernel",
-    )
-    cb_configs: list[object] = Field(
-        default_factory=list,
-        description="CircularBuffer configs per CB index",
-    )
-    program_hash: object | None = Field(
-        default=None, description="Hash for tt-metal program cache"
-    )
-    source_lines: object | None = Field(
-        default=None, description="Source lines (deprecated)"
-    )
-    all_source_lines: dict[str, object] = Field(
-        default_factory=dict,
-        description="Dict mapping kernel name to source lines",
-    )
-    thread_to_kernel: dict[str, str] = Field(
-        default_factory=dict,
-        description="Dict mapping RISC thread name to kernel name",
-    )
-    kernel_line_offsets: dict[str, object] = Field(
-        default_factory=dict,
-        description="Dict mapping kernel name to line offset",
-    )
-    program_config: dict[str, object] = Field(
-        default_factory=dict,
-        description="Grid, objective, placement, etc.",
-    )
-    thread_names: list[str] = Field(
-        default_factory=list,
-        description="Thread names in same order as kernel_paths (for scheduler export)",
+    profiling: CompiledProfilingSource | None = Field(
+        default=None, description="Source lines for profiling/debugging"
     )
 
-    @field_validator("cb_configs", "thread_names", mode="before")
-    @classmethod
-    def _none_to_list(cls, v: object) -> object:
-        """Coerce None to [] for optional list fields (call site may pass None)."""
-        return v if v is not None else []
+    # Backward-compatibility aliases (read from nested models).
+    @property
+    def kernel_paths(self) -> list[tuple[str, str]]:
+        return self.artifacts.kernel_paths
 
-    @field_validator(
-        "all_source_lines",
-        "thread_to_kernel",
-        "kernel_line_offsets",
-        "program_config",
-        mode="before",
-    )
-    @classmethod
-    def _none_to_dict(cls, v: object) -> object:
-        """Coerce None to {} for optional dict fields (call site may pass None)."""
-        return v if v is not None else {}
+    @property
+    def kernel_configs(self) -> list[object]:
+        return self.artifacts.kernel_configs
+
+    @property
+    def kernel_arg_specs(self) -> list[object]:
+        return self.artifacts.kernel_arg_specs
+
+    @property
+    def kernel_tensor_indices(self) -> list[list[int]]:
+        return self.artifacts.kernel_tensor_indices
+
+    @property
+    def thread_to_kernel(self) -> dict[str, str]:
+        return self.artifacts.thread_to_kernel
+
+    @property
+    def thread_names(self) -> list[str]:
+        return self.artifacts.thread_names
+
+    @property
+    def num_tensors(self) -> int:
+        return self.runtime.num_tensors
+
+    @property
+    def core_ranges(self) -> object:
+        return self.runtime.core_ranges
+
+    @property
+    def cb_configs(self) -> list[object]:
+        return self.runtime.cb_configs
+
+    @property
+    def program_hash(self) -> object | None:
+        return self.runtime.program_hash
+
+    @property
+    def program_config(self) -> dict[str, object]:
+        return self.runtime.program_config
+
+    @property
+    def source_lines(self) -> object | None:
+        return self.profiling.source_lines if self.profiling else None
+
+    @property
+    def all_source_lines(self) -> dict[str, object]:
+        return self.profiling.all_source_lines if self.profiling else {}
+
+    @property
+    def kernel_line_offsets(self) -> dict[str, object]:
+        return self.profiling.kernel_line_offsets if self.profiling else {}
 
     def __call__(self, *args: object) -> object:
         """Execute the kernel with the given tensors."""
@@ -553,8 +561,9 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest):
     Compile kernel to CompiledTTNNKernel for execution via ttnn.generic_op.
 
     Builds kernel paths, configs, and CB descriptors from compiled MLIR module.
-    All inputs are carried by the single Pydantic request object.
+    All inputs are carried by the single Pydantic request object (input, compile_options, cache_and_cb, profiling).
     """
+    kernel_info = get_ttkernel_names(req.input.module)
     opts = req.compile_options or TTNNKernelCompileOptions()
     # Validation runs in TTNNKernelCompileRequest model_validator (Pydantic).
 
@@ -570,7 +579,7 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest):
         print("\nttnn not available - cannot compile for ttnn.generic_op")
         return None
 
-    core_ranges = CoreRangeSetOptions(grid=req.grid).build_ttnn_core_range_set()
+    core_ranges = CoreRangeSetOptions(grid=req.input.grid).build_ttnn_core_range_set()
     if opts.verbose:
         print(f"\nCore range: {core_ranges}")
 
@@ -578,14 +587,14 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest):
     kernel_configs = []
     kernel_arg_specs = []
     noc_kernel_idx = 0
-    has_f32 = _has_float32_args(req.args)
+    has_f32 = _has_float32_args(req.input.args)
     thread_to_kernel: dict[str, str] = {}
 
     base = Path(f"/tmp/{settings_ttlang.user}")
     base.mkdir(parents=True, exist_ok=True)
     with tmp_dir(base, lambda: f"ttlang_kernels_{uuid.uuid4().hex[:12]}") as base_dir:
         for name, thread_type in kernel_info:
-            cpp_source = ttkernel_to_cpp_by_name(req.module, name)
+            cpp_source = ttkernel_to_cpp_by_name(req.input.module, name)
             kernel_path = _write_kernel_to_tmp(
                 KernelWriteRequest(name=name, source=cpp_source, base_dir=base_dir)
             )
@@ -605,7 +614,7 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest):
             if thread_type == "noc":
                 noc_kernel_idx += 1
 
-            arg_spec = get_ttkernel_arg_spec(req.module, name)
+            arg_spec = get_ttkernel_arg_spec(req.input.module, name)
             if arg_spec is not None:
                 arg_spec = ttkernel.ir.ArgSpecAttr.maybe_downcast(arg_spec)
                 kernel_arg_specs.append(arg_spec.rt_args if arg_spec else [])
@@ -618,23 +627,32 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest):
         cfg = raw_cfg.to_dict()
     else:
         cfg = dict(raw_cfg or {})
-    cfg.setdefault("grid", req.grid)
-    compiled_kernel = CompiledTTNNKernel(
+    cfg.setdefault("grid", req.input.grid)
+    cb = req.cache_and_cb
+    prof = req.profiling
+    artifacts = CompiledKernelArtifacts(
         kernel_paths=kernel_paths,
         kernel_configs=kernel_configs,
         kernel_arg_specs=kernel_arg_specs,
-        num_tensors=len(req.args),
-        core_ranges=core_ranges,
-        kernel_tensor_indices=req.thread_tensor_indices,
-        cb_configs=req.cb_configs,
-        program_hash=req.program_hash,
-        source_lines=req.source_lines,
-        all_source_lines=req.all_source_lines,
+        kernel_tensor_indices=req.input.thread_tensor_indices,
         thread_to_kernel=thread_to_kernel,
-        kernel_line_offsets=req.kernel_line_offsets,
-        program_config=cfg,
         thread_names=thread_names,
     )
+    runtime = CompiledRuntimeContext(
+        num_tensors=len(req.input.args),
+        core_ranges=core_ranges,
+        cb_configs=cb.cb_configs if cb is not None else [],
+        program_hash=cb.program_hash if cb is not None else None,
+        program_config=cfg,
+    )
+    profiling = None
+    if prof and (prof.source_lines is not None or prof.all_source_lines or prof.kernel_line_offsets):
+        profiling = CompiledProfilingSource(
+            source_lines=prof.source_lines,
+            all_source_lines=prof.all_source_lines or {},
+            kernel_line_offsets=prof.kernel_line_offsets or {},
+        )
+    compiled_kernel = CompiledTTNNKernel(artifacts=artifacts, runtime=runtime, profiling=profiling)
 
     if opts.verbose:
         print(f"\nCompiled kernel ready (compiled {len(kernel_paths)} threads)")
@@ -1218,22 +1236,28 @@ def _compile_kernel(
             profile_source_lines = all_source_lines[first_thread]
 
         # Compile to CompiledTTNNKernel for ttnn.generic_op
-        compile_req = TTNNKernelCompileRequest(
+        compile_input = TTNNCompileInput(
             module=module,
             args=args,
             grid=grid,
             num_outs=num_outs,
             thread_tensor_indices=thread_tensor_indices,
-            cb_configs=cb_configs,
-            program_hash=program_hash,
+        )
+        cache_and_cb = TTNNCompileCacheAndCb(cb_configs=cb_configs, program_hash=program_hash)
+        profiling_input = TTNNProfilingInput(
+            source_lines=profile_source_lines,
+            all_source_lines=all_source_lines or None,
+            kernel_line_offsets=kernel_line_offsets or None,
+        )
+        compile_req = TTNNKernelCompileRequest(
+            input=compile_input,
             compile_options=TTNNKernelCompileOptions(
                 fp32_dest_acc_en=fp32_dest_acc_en,
                 dst_full_sync_en=dst_full_sync_en,
                 program_config=program_config,
             ),
-            source_lines=profile_source_lines,
-            all_source_lines=all_source_lines,
-            kernel_line_offsets=kernel_line_offsets,
+            cache_and_cb=cache_and_cb,
+            profiling=profiling_input,
         )
         compiled_kernel = _compile_ttnn_kernel(compile_req)
         return compiled_kernel

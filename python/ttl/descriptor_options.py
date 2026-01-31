@@ -174,6 +174,100 @@ class TTNNKernelCompileOptions(BaseModel):
         )
 
 
+class CompiledKernelArtifacts(BaseModel):
+    """Output of compilation per kernel: paths, configs, arg specs, tensor indices, thread mapping."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    kernel_paths: list[tuple[str, str]] = Field(
+        ...,
+        description="List of (path, thread_type) tuples for each kernel",
+    )
+    kernel_configs: list[object] = Field(
+        ...,
+        description="List of config descriptors matching kernel_paths",
+    )
+    kernel_arg_specs: list[object] = Field(
+        ...,
+        description="List of arg specs (rt_args list) for each kernel",
+    )
+    kernel_tensor_indices: list[list[int]] = Field(
+        ...,
+        description="List of global tensor indices used by each kernel",
+    )
+    thread_to_kernel: dict[str, str] = Field(
+        default_factory=dict,
+        description="Dict mapping RISC thread name to kernel name",
+    )
+    thread_names: list[str] = Field(
+        default_factory=list,
+        description="Thread names in same order as kernel_paths (for scheduler export)",
+    )
+
+    @field_validator("thread_names", mode="before")
+    @classmethod
+    def _none_to_list(cls, v: object) -> object:
+        return v if v is not None else []
+
+    @field_validator("thread_to_kernel", mode="before")
+    @classmethod
+    def _none_to_dict(cls, v: object) -> object:
+        return v if v is not None else {}
+
+
+class CompiledRuntimeContext(BaseModel):
+    """What runtime needs to execute: tensors count, core ranges, CB configs, program hash, program config."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    num_tensors: int = Field(..., ge=0, description="Number of input/output tensors")
+    core_ranges: object = Field(..., description="CoreRangeSet for kernel execution")
+    cb_configs: list[object] = Field(
+        default_factory=list,
+        description="CircularBuffer configs per CB index",
+    )
+    program_hash: object | None = Field(
+        default=None, description="Hash for tt-metal program cache"
+    )
+    program_config: dict[str, object] = Field(
+        default_factory=dict,
+        description="Grid, objective, placement, etc.",
+    )
+
+    @field_validator("cb_configs", mode="before")
+    @classmethod
+    def _cb_none_to_list(cls, v: object) -> object:
+        return v if v is not None else []
+
+    @field_validator("program_config", mode="before")
+    @classmethod
+    def _program_config_none_to_dict(cls, v: object) -> object:
+        return v if v is not None else {}
+
+
+class CompiledProfilingSource(BaseModel):
+    """Source lines for profiling and debugging (deprecated source_lines, all_source_lines, kernel_line_offsets)."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    source_lines: object | None = Field(
+        default=None, description="Source lines (deprecated)"
+    )
+    all_source_lines: dict[str, object] = Field(
+        default_factory=dict,
+        description="Dict mapping kernel name to source lines",
+    )
+    kernel_line_offsets: dict[str, object] = Field(
+        default_factory=dict,
+        description="Dict mapping kernel name to line offset",
+    )
+
+    @field_validator("all_source_lines", "kernel_line_offsets", mode="before")
+    @classmethod
+    def _none_to_dict(cls, v: object) -> object:
+        return v if v is not None else {}
+
+
 class KernelWriteRequest(BaseModel):
     """Request for writing kernel source to a path. Replaces (name, source, base_dir) parameters."""
 
@@ -182,8 +276,8 @@ class KernelWriteRequest(BaseModel):
     base_dir: Path | None = Field(default=None, description="Output directory or None for /tmp/{user}")
 
 
-class TTNNKernelCompileRequest(BaseModel):
-    """Single request object for _compile_ttnn_kernel. Replaces 11 positional/keyword parameters."""
+class TTNNCompileInput(BaseModel):
+    """Input to TTNN kernel compilation: module, tensors, grid, num_outs, thread tensor indices."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -192,14 +286,42 @@ class TTNNKernelCompileRequest(BaseModel):
     grid: tuple[int, int] = Field(..., description="(cols, rows)")
     num_outs: int = Field(..., description="Number of output tensors")
     thread_tensor_indices: Any = Field(..., description="Tensor indices per thread")
+
+
+class TTNNCompileCacheAndCb(BaseModel):
+    """Cache and circular buffer configs for TTNN compile request."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     cb_configs: Any = Field(default=None, description="Circular buffer configs")
     program_hash: Any = Field(default=None, description="Program cache hash")
-    compile_options: TTNNKernelCompileOptions | None = Field(
-        default=None, description="fp32/verbose/program_config options"
-    )
+
+
+class TTNNProfilingInput(BaseModel):
+    """Profiling/debug input: source lines and kernel line offsets."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     source_lines: Any = Field(default=None, description="Source lines for profiling")
     all_source_lines: Any = Field(default=None, description="All thread source lines")
     kernel_line_offsets: Any = Field(default=None, description="Line offsets per kernel")
+
+
+class TTNNKernelCompileRequest(BaseModel):
+    """Single request object for _compile_ttnn_kernel. Structured as input, options, cache_and_cb, profiling."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    input: TTNNCompileInput = Field(..., description="Compilation input (module, args, grid, num_outs, thread_tensor_indices)")
+    compile_options: TTNNKernelCompileOptions | None = Field(
+        default=None, description="fp32/verbose/program_config options"
+    )
+    cache_and_cb: TTNNCompileCacheAndCb | None = Field(
+        default=None, description="CB configs and program cache hash"
+    )
+    profiling: TTNNProfilingInput | None = Field(
+        default=None, description="Source lines for profiling"
+    )
 
     @model_validator(mode="after")
     def validate_ttnn_interop(self) -> Self:
@@ -209,8 +331,9 @@ class TTNNKernelCompileRequest(BaseModel):
             validate_ttnn_tensors_for_request,
         )
 
+        args = self.input.args
         validate_ttnn_tensors_for_request(
-            self.args if isinstance(self.args, tuple) else tuple()
+            args if isinstance(args, tuple) else tuple()
         )
-        validate_kernel_count_for_request(self.module)
+        validate_kernel_count_for_request(self.input.module)
         return self
