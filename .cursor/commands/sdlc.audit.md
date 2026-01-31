@@ -13,6 +13,7 @@
 
 ### Чеклист (по умолчанию)
 
+- **Direction + entrypoints**: канон направления — `docs/sdlc/00_Main/00_Status/Direction.md` (предпочтительно) или `docs/Direction.md`; затем `docs/README.md`, `README.md` (что это, куда движемся, где начать).
 - SoT + start here: `docs/README.md` → `docs/sdlc/00_Main/00_Status/00_projects_graph.md`.
 - Статус: `00_projects_graph.md`, `01_Kanban.md` — валидны, без битых путей.
 - Run configs: доки «как запускать» ↔ `.vscode/{launch.json,tasks.json}`.

@@ -22,6 +22,7 @@
 - **Top priorities**: 3 пункта.
 - **Where to put new info**: Idea → `docs/sdlc/01_GameIdeas/inbox/` (/ttl-idea); Bug → `02_Problems_Log.md`; Execution → `TASK_*`.
 - **Consistency hint**: при расхождении — обновить `docs/sdlc/00_Main/00_Status/*` и/или `/sdlc.audit`.
+- Если direction не задан: написать «направление явно не зафиксировано» и предложить закрепить в `docs/sdlc/00_Main/00_Status/Direction.md` (или `docs/Direction.md`).
 
 ### Constraints
 

@@ -10,6 +10,6 @@ alwaysApply: true
 
 ## Language rules
 
-- Docs under `ideas/` and numbered SDLC folders (e.g. `docs/01_Architecture/`, `docs/03_BA/`, ...) are in Russian.
+- **Documentation is in Russian** unless explicitly stated otherwise: ideas/, numbered SDLC folders (e.g. `docs/01_Architecture/`, `docs/sdlc/00_Main/`), README, status, specs, BA, architecture, QA, runbooks.
 - Code comments are in English.
 
