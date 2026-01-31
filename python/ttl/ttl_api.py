@@ -64,8 +64,10 @@ from .kernel_runner import (
     run_kernel_on_device,
 )
 from .operators import CopyTransferHandler, TensorBlock, copy
+from .settings import get_settings
 from .ttl_utils import get_thread_type_string
 from .config import HAS_TT_DEVICE
+
 
 # For kernel body: TensorAccessor and dma (alias for copy) used in examples
 # TensorAccessor(tensor) returns the tensor so it is captured; compiler treats
@@ -124,7 +126,7 @@ def _make_cache_key(
 
 def _should_execute() -> bool:
     """Check if kernel execution should proceed (not compile-only mode)."""
-    return os.environ.get("TTLANG_COMPILE_ONLY", "0") != "1"
+    return not get_settings().compile_only
 
 
 def _run_profiling_pipeline(
@@ -171,10 +173,11 @@ def _run_profiling_pipeline(
         return
 
     # Find the profile CSV - default location is $TT_METAL_HOME/generated/profiler/.logs/
-    if "TTLANG_PROFILE_CSV" in os.environ:
-        csv_path = Path(os.environ["TTLANG_PROFILE_CSV"])
+    settings = get_settings()
+    if settings.profile_csv:
+        csv_path = Path(settings.profile_csv)
     else:
-        tt_metal_home = os.environ.get("TT_METAL_HOME", "")
+        tt_metal_home = settings.tt_metal_home
         if not tt_metal_home:
             print("[Auto-profile] TT_METAL_HOME not set, cannot find profile CSV")
             return
@@ -363,6 +366,7 @@ class CompiledTTNNKernel:
         thread_to_kernel=None,
         kernel_line_offsets=None,
         program_config=None,
+        thread_names=None,
     ):
         """
         Initialize with pre-compiled kernel artifacts.
@@ -380,6 +384,8 @@ class CompiledTTNNKernel:
             all_source_lines: Dict mapping kernel name to source lines
             thread_to_kernel: Dict mapping RISC thread name to kernel name
             kernel_line_offsets: Dict mapping kernel name to line offset
+            program_config: Dict with grid, objective, placement, etc.
+            thread_names: List of thread names in same order as kernel_paths (for scheduler export)
         """
         self.kernel_paths = kernel_paths
         self.kernel_configs = kernel_configs
@@ -394,6 +400,7 @@ class CompiledTTNNKernel:
         self.thread_to_kernel = thread_to_kernel or {}
         self.kernel_line_offsets = kernel_line_offsets or {}
         self.program_config = program_config or {}
+        self.thread_names = thread_names or []
 
     def __call__(self, *args):
         """Execute the kernel with the given tensors."""
@@ -433,6 +440,125 @@ class CompiledTTNNKernel:
             program_hash=self.program_hash,
         )
 
+    def get_scheduler_input(self) -> dict:
+        """
+        Return scheduler input (op_graph, topology, plan) for use by scheduler-viz.
+
+        Requires thread_names to have been set at construction (newer kernels).
+        Grid is taken from program_config or derived from core_ranges.
+        """
+        from .scheduler import export_scheduler_input
+
+        if not self.thread_names or len(self.thread_names) != len(self.kernel_paths):
+            raise ValueError(
+                "get_scheduler_input requires thread_names (same length as kernel_paths). "
+                "Recompile the kernel to get scheduler export support."
+            )
+        grid = self.program_config.get("grid")
+        if grid is None and self.core_ranges is not None:
+            box = self.core_ranges.bounding_box()
+            g = box.grid_size()
+            grid = (g.x, g.y)
+        if grid is None:
+            raise ValueError(
+                "Cannot derive grid for scheduler input (no program_config.grid or core_ranges)."
+            )
+        thread_infos = list(zip(self.thread_names, [ty for _, ty in self.kernel_paths]))
+        return export_scheduler_input(thread_infos, grid, self.program_config)
+
+
+def validate_ttnn_tensors(args: tuple) -> None:
+    """Validate tensor types and TTNN tensor properties. Raises ValueError on invalid."""
+    ttnn_count = sum(1 for arg in args if is_ttnn_tensor(arg))
+    if ttnn_count > 0 and ttnn_count < len(args):
+        raise ValueError(
+            f"TTNN interop requires all tensors to be the same type. "
+            f"Got {ttnn_count} TTNN tensors and {len(args) - ttnn_count} host tensors. "
+            f"Mixed tensor types would generate extra bounce kernels."
+        )
+    for i, arg in enumerate(args):
+        if not is_ttnn_tensor(arg):
+            continue
+        mem_space = _detect_memory_space_from_tensor(arg, "unknown")
+        if mem_space not in ("L1", "DRAM"):
+            raise ValueError(
+                f"TTNN interop requires L1 or DRAM memory space, but tensor {i} is in {mem_space}."
+            )
+        if not _is_interleaved_tensor(arg):
+            raise ValueError(
+                f"TTNN interop requires interleaved tensors, but tensor {i} is not. "
+                f"Use ttnn.DRAM_MEMORY_CONFIG or ttnn.L1_MEMORY_CONFIG for interleaved tensors."
+            )
+        if hasattr(arg, "layout") and "TILE" not in str(arg.layout):
+            raise ValueError(
+                f"TTNN interop requires tilized tensors, but tensor {i} has layout {arg.layout}. "
+                f"Use ttnn.to_layout(tensor, ttnn.TILE_LAYOUT) to convert."
+            )
+
+
+def validate_kernel_count(kernel_info: list) -> None:
+    """Validate kernel count (exactly 3: 1 compute + 2 data movement). Raises ValueError if not."""
+    if len(kernel_info) != 3:
+        compute_count = sum(1 for _, t in kernel_info if t == "compute")
+        dm_count = sum(1 for _, t in kernel_info if t == "noc")
+        raise ValueError(
+            f"TTNN interop requires exactly 3 kernels (1 compute + 2 data movement), "
+            f"got {len(kernel_info)} kernels ({compute_count} compute, {dm_count} data movement). "
+            f"Each core has only 2 NOCs, so more than 2 DM kernels causes NOC conflicts."
+        )
+
+
+def _build_compute_config(
+    fp32_dest_acc_en: Optional[bool],
+    dst_full_sync_en: Optional[bool],
+    has_f32: bool,
+    name: str,
+    verbose: bool,
+) -> tuple:
+    """Build ComputeConfigDescriptor and thread_to_kernel entries for a compute kernel."""
+    config = ttnn.ComputeConfigDescriptor()
+    if fp32_dest_acc_en is not None:
+        config.fp32_dest_acc_en = fp32_dest_acc_en
+    if dst_full_sync_en is not None:
+        config.dst_full_sync_en = dst_full_sync_en
+    if fp32_dest_acc_en is None and has_f32:
+        config.fp32_dest_acc_en = True
+        if verbose:
+            print("  [fp32 detected] Enabling fp32_dest_acc_en for compute kernel")
+    entries = {"TRISC_0": name, "TRISC_1": name, "TRISC_2": name}
+    return config, entries
+
+
+def _build_noc_config(noc_kernel_idx: int, name: str) -> tuple:
+    """Build Reader/Writer config and thread_to_kernel entries for a NOC kernel."""
+    if noc_kernel_idx == 0:
+        config = ttnn.ReaderConfigDescriptor()
+        entries = {"NCRISC": name}
+    else:
+        config = ttnn.WriterConfigDescriptor()
+        entries = {"BRISC": name}
+    return config, entries
+
+
+def _build_config_for_thread(
+    thread_type: str,
+    name: str,
+    noc_kernel_idx: int,
+    fp32_dest_acc_en: Optional[bool],
+    dst_full_sync_en: Optional[bool],
+    has_f32: bool,
+    verbose: bool,
+) -> tuple:
+    """Registry: thread_type -> (config, thread_to_kernel_entries)."""
+    if thread_type == "compute":
+        return _build_compute_config(
+            fp32_dest_acc_en, dst_full_sync_en, has_f32, name, verbose
+        )
+    if thread_type == "noc":
+        return _build_noc_config(noc_kernel_idx, name)
+    config = ttnn.ReaderConfigDescriptor()
+    return config, {}
+
 
 def _write_kernel_to_tmp(name: str, source: str) -> str:
     """Write kernel source to /tmp and return the file path."""
@@ -441,7 +567,7 @@ def _write_kernel_to_tmp(name: str, source: str) -> str:
     import os
 
     content_hash = hashlib.md5(source.encode()).hexdigest()[:8]
-    user = os.environ.get("USER", "default")
+    user = get_settings().user
     path = f"/tmp/{user}/ttlang_kernel_{name}_{content_hash}.cpp"
     os.makedirs(f"/tmp/{user}", exist_ok=True)
     with open(path, "w") as f:
@@ -466,6 +592,7 @@ def _compile_ttnn_kernel(
     source_lines=None,
     all_source_lines=None,
     kernel_line_offsets=None,
+    program_config: Optional[dict] = None,
 ):
     """
     Compile kernel to CompiledTTNNKernel for execution via ttnn.generic_op.
@@ -484,50 +611,9 @@ def _compile_ttnn_kernel(
     Returns:
         CompiledTTNNKernel ready for execution
     """
-    # Get kernel info from module
     kernel_info = get_ttkernel_names(module)
-
-    # Validate tensor types: must be all TTNN or all torch, not mixed.
-    # Mixed tensors would generate ToLayoutOps for host tensors, creating extra
-    # bounce kernels that exceed the expected kernel count for core assignment.
-    ttnn_count = sum(1 for arg in args if is_ttnn_tensor(arg))
-    if ttnn_count > 0 and ttnn_count < len(args):
-        raise ValueError(
-            f"TTNN interop requires all tensors to be the same type. "
-            f"Got {ttnn_count} TTNN tensors and {len(args) - ttnn_count} host tensors. "
-            f"Mixed tensor types would generate extra bounce kernels."
-        )
-
-    # Validate TTNN tensors - must be interleaved (L1 or DRAM) and tilized
-    for i, arg in enumerate(args):
-        if is_ttnn_tensor(arg):
-            mem_space = _detect_memory_space_from_tensor(arg, "unknown")
-            if mem_space not in ("L1", "DRAM"):
-                raise ValueError(
-                    f"TTNN interop requires L1 or DRAM memory space, but tensor {i} is in {mem_space}."
-                )
-            if not _is_interleaved_tensor(arg):
-                raise ValueError(
-                    f"TTNN interop requires interleaved tensors, but tensor {i} is not. "
-                    f"Use ttnn.DRAM_MEMORY_CONFIG or ttnn.L1_MEMORY_CONFIG for interleaved tensors."
-                )
-            if hasattr(arg, "layout") and "TILE" not in str(arg.layout):
-                raise ValueError(
-                    f"TTNN interop requires tilized tensors, but tensor {i} has layout {arg.layout}. "
-                    f"Use ttnn.to_layout(tensor, ttnn.TILE_LAYOUT) to convert."
-                )
-
-    # Validate kernel count: for now we must have exactly 3 kernels (1 compute + 2 data movement).
-    # Each core has only 2 NOCs, so more than 2 DM kernels causes NOC conflicts.
-    # TODO: in the future we should figure out how to map arbitrary kernels.
-    if len(kernel_info) != 3:
-        compute_count = sum(1 for _, t in kernel_info if t == "compute")
-        dm_count = sum(1 for _, t in kernel_info if t == "noc")
-        raise ValueError(
-            f"TTNN interop requires exactly 3 kernels (1 compute + 2 data movement), "
-            f"got {len(kernel_info)} kernels ({compute_count} compute, {dm_count} data movement). "
-            f"Each core has only 2 NOCs, so more than 2 DM kernels causes NOC conflicts."
-        )
+    validate_ttnn_tensors(args)
+    validate_kernel_count(kernel_info)
 
     if verbose:
         print("=" * 60)
@@ -557,48 +643,28 @@ def _compile_ttnn_kernel(
     kernel_configs = []
     kernel_arg_specs = []
     noc_kernel_idx = 0
-
-    # Check if input args use f32 to auto-configure compute kernels
     has_f32 = _has_float32_args(args)
-
-    # Build thread-to-kernel mapping for profiling
-    # Maps RISC thread names to kernel names
-    thread_to_kernel = {}
+    thread_to_kernel: Dict[str, str] = {}
 
     for name, thread_type in kernel_info:
         cpp_source = ttkernel_to_cpp_by_name(module, name)
         kernel_path = _write_kernel_to_tmp(name, cpp_source)
         kernel_paths.append((kernel_path, thread_type))
 
-        if thread_type == "compute":
-            config = ttnn.ComputeConfigDescriptor()
-            if fp32_dest_acc_en is not None:
-                config.fp32_dest_acc_en = fp32_dest_acc_en
-            if dst_full_sync_en is not None:
-                config.dst_full_sync_en = dst_full_sync_en
-            if fp32_dest_acc_en is None and has_f32:
-                config.fp32_dest_acc_en = True
-                if verbose:
-                    print(
-                        "  [fp32 detected] Enabling fp32_dest_acc_en for compute kernel"
-                    )
-            # Compute kernels run on TRISC threads
-            thread_to_kernel["TRISC_0"] = name
-            thread_to_kernel["TRISC_1"] = name
-            thread_to_kernel["TRISC_2"] = name
-        elif thread_type == "noc":
-            if noc_kernel_idx == 0:
-                config = ttnn.ReaderConfigDescriptor()
-                thread_to_kernel["NCRISC"] = name  # Reader
-            else:
-                config = ttnn.WriterConfigDescriptor()
-                thread_to_kernel["BRISC"] = name  # Writer
-            noc_kernel_idx += 1
-        else:
-            config = ttnn.ReaderConfigDescriptor()
+        config, entries = _build_config_for_thread(
+            thread_type,
+            name,
+            noc_kernel_idx,
+            fp32_dest_acc_en,
+            dst_full_sync_en,
+            has_f32,
+            verbose,
+        )
         kernel_configs.append(config)
+        thread_to_kernel.update(entries)
+        if thread_type == "noc":
+            noc_kernel_idx += 1
 
-        # Extract runtime args from kernel's arg_spec attribute
         arg_spec = get_ttkernel_arg_spec(module, name)
         if arg_spec is not None:
             arg_spec = ttkernel.ir.ArgSpecAttr.maybe_downcast(arg_spec)
@@ -606,6 +672,9 @@ def _compile_ttnn_kernel(
         else:
             kernel_arg_specs.append([])
 
+    thread_names = [name for name, _ in kernel_info]
+    cfg = dict(program_config or {})
+    cfg.setdefault("grid", grid)
     compiled_kernel = CompiledTTNNKernel(
         kernel_paths=kernel_paths,
         kernel_configs=kernel_configs,
@@ -619,7 +688,8 @@ def _compile_ttnn_kernel(
         all_source_lines=all_source_lines,
         thread_to_kernel=thread_to_kernel,
         kernel_line_offsets=kernel_line_offsets,
-        program_config=program_config,
+        program_config=cfg,
+        thread_names=thread_names,
     )
 
     if verbose:
@@ -655,6 +725,14 @@ def _collect_captures(
         elif isinstance(val, CircularBuffer):
             return val
         else:
+            # Allow torch.Tensor for compile-only path (e.g. scheduler export fixtures)
+            try:
+                import torch
+
+                if isinstance(val, torch.Tensor):
+                    return val
+            except ImportError:
+                pass
             raise TypeError(f"Unhandled capture for vars of type({type(val)})")
 
     return {
@@ -935,7 +1013,7 @@ def _compile_kernel(
 
     # Always generate source locations for error messages
     # TTLANG_DEBUG_LOCATIONS only controls whether locations are printed in MLIR output
-    print_debug_locations = os.environ.get("TTLANG_DEBUG_LOCATIONS", "0") == "1"
+    print_debug_locations = get_settings().debug_locations
 
     ctx = Context()
     loc = Location.unknown(ctx)
@@ -988,21 +1066,26 @@ def _compile_kernel(
                 kernel_line_offsets[ct.name] = ct.line_offset
 
         # Optional: build op graph and run scheduler stub (Phase 3-4)
-        if os.environ.get("TTLANG_USE_SCHEDULER", "0") == "1":
+        if get_settings().use_scheduler:
             from .scheduler import (
                 build_op_graph_from_threads,
                 build_topology_from_grid,
                 schedule_stub,
             )
 
-            thread_infos = [(ct.name, getattr(ct, "kernel_type", "dm")) for ct in compiled_threads]
+            thread_infos = [
+                (ct.name, getattr(ct, "kernel_type", "dm")) for ct in compiled_threads
+            ]
             op_graph = build_op_graph_from_threads(thread_infos)
             topology = build_topology_from_grid(grid)
             plan = schedule_stub(op_graph, topology, program_config)
             # Verify plan matches current grid (stub assigns all to (0,0))
-            assert plan.grid_cols == topology.grid_cols and plan.grid_rows == topology.grid_rows
+            assert (
+                plan.grid_cols == topology.grid_cols
+                and plan.grid_rows == topology.grid_rows
+            )
             for nid in op_graph.node_ids_in_order():
-                assert plan.placement.get(nid) == (0, 0), f"stub plan mismatch for {nid}"
+                assert plan.core_for(nid) == (0, 0), f"stub plan mismatch for {nid}"
 
         module = Module.create(loc)
 
@@ -1012,7 +1095,7 @@ def _compile_kernel(
                 ct.func_entry.operation.detach_from_parent()
                 module.body.append(ct.func_entry)
 
-        initial_mlir_path = os.environ.get("TTLANG_INITIAL_MLIR")
+        initial_mlir_path = get_settings().initial_mlir
         if initial_mlir_path:
             with open(initial_mlir_path, "w") as fd:
                 module.operation.print(
@@ -1053,10 +1136,11 @@ def _compile_kernel(
 
         # Add auto-profiling passes if enabled
         if is_auto_profile_enabled():
-            if "TTLANG_PROFILE_CSV" in os.environ:
-                cb_flow_json = str(Path(os.environ["TTLANG_PROFILE_CSV"]).parent / "cb_flow_graph.json")
+            st = get_settings()
+            if st.profile_csv:
+                cb_flow_json = str(Path(st.profile_csv).parent / "cb_flow_graph.json")
             else:
-                tt_metal_home = os.environ.get("TT_METAL_HOME", "")
+                tt_metal_home = st.tt_metal_home
                 if not tt_metal_home:
                     raise ValueError("TTLANG_AUTO_PROFILE=1 requires TT_METAL_HOME or TTLANG_PROFILE_CSV to be set")
                 cb_flow_json = f"{tt_metal_home}/generated/profiler/.logs/cb_flow_graph.json"
@@ -1095,7 +1179,7 @@ def _compile_kernel(
             # Pretty stack traces are optional, silently continue if unavailable
             pass
 
-        if os.environ.get("TTLANG_VERBOSE_PASSES"):
+        if get_settings().verbose_passes:
             print("Running custom pipeline:", pm)
             ctx.enable_multithreading(False)
             pm.enable_ir_printing(
@@ -1121,7 +1205,7 @@ def _compile_kernel(
             formatted = format_mlir_error(error_msg, source_lines, source_file)
             raise RuntimeError(formatted) from None
 
-        final_mlir_path = os.environ.get("TTLANG_FINAL_MLIR")
+        final_mlir_path = get_settings().final_mlir
         if final_mlir_path:
             with open(final_mlir_path, "w") as fd:
                 module.operation.print(
@@ -1151,6 +1235,7 @@ def _compile_kernel(
             source_lines=profile_source_lines,
             all_source_lines=all_source_lines,
             kernel_line_offsets=kernel_line_offsets,
+            program_config=program_config,
         )
         return compiled_kernel
 
@@ -1280,6 +1365,9 @@ def pykernel_gen(
 
                 if compiled_kernel is not None:
                     cache[cache_key] = compiled_kernel
+
+            # Expose last compiled kernel for scheduler export (e.g. get_scheduler_input)
+            _wrapper._last_compiled_kernel = compiled_kernel
 
             # Execute (unless compile-only mode)
             if compiled_kernel is not None and _should_execute():

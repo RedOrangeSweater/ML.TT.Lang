@@ -60,9 +60,7 @@ def test_scheduler_path_compiles():
         add_with_scheduler(lhs, rhs, out)
     except TypeError as e:
         if "Unhandled capture" in str(e) or "torch.Tensor" in str(e):
-            pytest.skip(
-                "compile-only with torch tensors not supported in this env"
-            )
+            pytest.skip("compile-only with torch tensors not supported in this env")
         raise
     assert out.sum().item() == 0.0
 
@@ -125,6 +123,38 @@ def test_export_scheduler_input():
         export_scheduler_input_to_json(thread_infos, (1, 1), path)
         with open(path) as fp:
             file_data = json.load(fp)
-        assert file_data["op_graph"]["nodes"][0]["op_type"] in ("load", "store", "elementwise")
+        assert file_data["op_graph"]["nodes"][0]["op_type"] in (
+            "load",
+            "store",
+            "elementwise",
+        )
     finally:
         os.unlink(path)
+
+
+def test_program_style_scheduler_input():
+    """Program-style (toy_program_add) yields scheduler input with same structure as stub (doc 16)."""
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    from examples.toy_program_add import simple_add
+
+    lhs = torch.full((32, 32), 2.0, dtype=torch.bfloat16)
+    rhs = torch.full((32, 32), 3.0, dtype=torch.bfloat16)
+    out = torch.zeros((32, 32), dtype=torch.bfloat16)
+    simple_add(lhs, rhs, out)
+    kernel = getattr(simple_add, "_last_compiled_kernel", None)
+    if kernel is None:
+        pytest.skip("_last_compiled_kernel not set (compile path)")
+    data = kernel.get_scheduler_input()
+    assert "op_graph" in data and "topology" in data and "plan" in data
+    assert len(data["op_graph"]["nodes"]) == 3
+    assert data["topology"]["grid_cols"] == 1 and data["topology"]["grid_rows"] == 1
+    # Thread names from program: add_compute, dm_read, dm_write
+    node_ids = [n["id"] for n in data["op_graph"]["nodes"]]
+    assert "add_compute" in node_ids
+    assert "dm_read" in node_ids
+    assert "dm_write" in node_ids
