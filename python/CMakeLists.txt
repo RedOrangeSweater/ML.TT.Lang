@@ -113,6 +113,7 @@ declare_mlir_python_sources(TTLangPythonCommon.Main
     constants.py
     descriptor_options.py
     ttnn_proxy.py
+    runtime_tensor.py
     diagnostics.py
     kernel_runner.py
     layers.py

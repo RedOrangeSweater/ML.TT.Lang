@@ -68,12 +68,13 @@ for tc, name, tb in _DTYPE_TABLE:
 
 
 def is_ttnn_tensor(tensor: object) -> bool:
-    """Check if tensor is a ttnn.Tensor (lazy ttnn import; returns False if ttnn not available)."""
-    try:
-        import ttnn  # type: ignore[import-untyped]
-        return isinstance(tensor, ttnn.Tensor)
-    except (ModuleNotFoundError, ImportError):
-        return False
+    """Check if tensor is a runtime tensor (e.g. ttnn.Tensor when ttnn is installed).
+
+    Uses runtime_tensor layer: types are proxied there; validation only at init.
+    When ttnn is not installed, returns False. See docs/sdlc/00_Main/00_Ideas/21_ttnn_tensor_proxy_layer.md.
+    """
+    from .runtime_tensor import is_runtime_tensor
+    return is_runtime_tensor(tensor)
 
 
 def detect_memory_space_from_tensor(tensor: object, default: str) -> str:
