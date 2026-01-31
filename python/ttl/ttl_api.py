@@ -13,8 +13,10 @@ import os
 import random
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Generator, List, Literal, Optional, Union
+from types import CellType
+from typing import Callable, Generator, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -81,6 +83,7 @@ from .descriptor_options import (
 )
 from .settings import get_settings
 from .ttl_utils import get_thread_type_string
+from .verbose_context import verbose_compilation, verbose_print
 from .config import HAS_TT_DEVICE
 
 
@@ -95,7 +98,7 @@ def TensorAccessor(tensor):
 dma = copy  # Alias used in examples (DMA = copy for data movement)
 
 # Thread registry for automatic collection of @compute and @datamovement threads
-_thread_registry: List[Callable] = []
+_thread_registry: list[Callable[..., object]] = []
 
 
 def _register_thread(thread_fn: Callable) -> None:
@@ -108,7 +111,7 @@ def _clear_thread_registry() -> None:
     _thread_registry.clear()
 
 
-def _get_registered_threads() -> List[Callable]:
+def _get_registered_threads() -> list[Callable[..., object]]:
     """Get all registered threads and clear the registry."""
     threads = list(_thread_registry)
     _thread_registry.clear()
@@ -129,8 +132,8 @@ def _get_tensor_cache_info(tensor) -> tuple:
 
 def _make_cache_key(
     args: tuple,
-    fp32_dest_acc_en: Optional[bool],
-    dst_full_sync_en: Optional[bool],
+    fp32_dest_acc_en: bool | None,
+    dst_full_sync_en: bool | None,
 ) -> tuple:
     """Create cache key from tensor properties and runtime compute config parameters."""
     tensor_key = tuple(
@@ -146,9 +149,9 @@ def _should_execute() -> bool:
 
 def _run_profiling_pipeline(
     tensors: tuple,
-    all_source_lines: Dict[str, List[str]],
-    thread_to_kernel: Dict[str, str],
-    kernel_line_offsets: Optional[Dict[str, int]] = None,
+    all_source_lines: dict[str, list[str]],
+    thread_to_kernel: dict[str, str],
+    kernel_line_offsets: dict[str, int] | None = None,
 ):
     """
     Read device profiler data and display profile report.
@@ -326,6 +329,51 @@ def _get_source_line_offset(f) -> int:
         return 0
 
 
+class CompilationSourceContext(BaseModel):
+    """Pydantic context for a single kernel compilation: source file, lines, and debug flags.
+
+    Built once from the decorated function so call sites do not manually pass
+    _source_file, _source_lines, _line_offset, debug_locations through kwargs.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    source_file: str = "<unknown>"
+    source_lines: list[str] = Field(default_factory=list)
+    line_offset: int = 0
+    debug_locations: bool = True
+    verbose: bool = False
+    source_code: str = ""
+
+    @classmethod
+    def from_function(cls, f, *, verbose: bool = False) -> "CompilationSourceContext":
+        """Build context from a decorated function (captures file, source, line offset)."""
+        try:
+            source_file = inspect.getfile(f)
+        except (TypeError, OSError):
+            source_file = "<unknown>"
+        source_code = _cleanup_source_code(f)
+        source_lines = source_code.splitlines()
+        line_offset = _get_source_line_offset(f)
+        return cls(
+            source_file=source_file,
+            source_lines=source_lines,
+            line_offset=line_offset,
+            debug_locations=True,
+            verbose=verbose,
+            source_code=source_code,
+        )
+
+    def to_compiler_kwargs(self) -> dict[str, object]:
+        """Kwargs to pass to TTLGenericCompiler (same shape as previous manual kwargs)."""
+        return {
+            "_source_file": self.source_file,
+            "_source_lines": self.source_lines,
+            "_line_offset": self.line_offset,
+            "debug_locations": self.debug_locations,
+        }
+
+
 def _track_tensor_sources(f_params, args, source_file: str) -> None:
     """Track source locations for tensor arguments.
 
@@ -368,47 +416,51 @@ class CompiledTTNNKernel(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    kernel_paths: List[tuple[str, str]] = Field(
+    kernel_paths: list[tuple[str, str]] = Field(
         ...,
         description="List of (path, thread_type) tuples for each kernel",
     )
-    kernel_configs: List[object] = Field(
+    kernel_configs: list[object] = Field(
         ...,
         description="List of config descriptors matching kernel_paths",
     )
-    kernel_arg_specs: List[object] = Field(
+    kernel_arg_specs: list[object] = Field(
         ...,
         description="List of arg specs (rt_args list) for each kernel",
     )
     num_tensors: int = Field(..., ge=0, description="Number of input/output tensors")
     core_ranges: object = Field(..., description="CoreRangeSet for kernel execution")
-    kernel_tensor_indices: List[List[int]] = Field(
+    kernel_tensor_indices: list[list[int]] = Field(
         ...,
         description="List of global tensor indices used by each kernel",
     )
-    cb_configs: List[object] = Field(
+    cb_configs: list[object] = Field(
         default_factory=list,
         description="CircularBuffer configs per CB index",
     )
-    program_hash: Optional[object] = Field(default=None, description="Hash for tt-metal program cache")
-    source_lines: Optional[object] = Field(default=None, description="Source lines (deprecated)")
-    all_source_lines: Dict[str, object] = Field(
+    program_hash: object | None = Field(
+        default=None, description="Hash for tt-metal program cache"
+    )
+    source_lines: object | None = Field(
+        default=None, description="Source lines (deprecated)"
+    )
+    all_source_lines: dict[str, object] = Field(
         default_factory=dict,
         description="Dict mapping kernel name to source lines",
     )
-    thread_to_kernel: Dict[str, str] = Field(
+    thread_to_kernel: dict[str, str] = Field(
         default_factory=dict,
         description="Dict mapping RISC thread name to kernel name",
     )
-    kernel_line_offsets: Dict[str, object] = Field(
+    kernel_line_offsets: dict[str, object] = Field(
         default_factory=dict,
         description="Dict mapping kernel name to line offset",
     )
-    program_config: Dict[str, object] = Field(
+    program_config: dict[str, object] = Field(
         default_factory=dict,
         description="Grid, objective, placement, etc.",
     )
-    thread_names: List[str] = Field(
+    thread_names: list[str] = Field(
         default_factory=list,
         description="Thread names in same order as kernel_paths (for scheduler export)",
     )
@@ -613,7 +665,7 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest):
     kernel_arg_specs = []
     noc_kernel_idx = 0
     has_f32 = _has_float32_args(req.args)
-    thread_to_kernel: Dict[str, str] = {}
+    thread_to_kernel: dict[str, str] = {}
 
     with tmp_kernel_dir() as base_dir:
         for name, thread_type in kernel_info:
@@ -677,7 +729,7 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest):
 
 def _collect_captures(
     f: Callable,
-) -> Dict[str, Union[int, CircularBuffer]]:
+) -> dict[str, int | CircularBuffer]:
     """
     Collect and convert captured variables from function closure.
 
@@ -717,19 +769,43 @@ def _collect_captures(
     }
 
 
-def _collect_cb_configs(threads):
+@dataclass(frozen=True)
+class ThreadWrapperView:
+    """Typed view of a decorated thread: wrapped callable and its closure.
+
+    Built from a callable so getattr for __wrapped__ and __closure__ is done
+    once in from_callable(); call sites work with this structure instead of
+    repeated getattr.
+    """
+
+    wrapped: Callable[..., object] | None
+    closure: tuple[CellType, ...] | None
+
+    @classmethod
+    def from_callable(cls, thread_fn: Callable[..., object]) -> "ThreadWrapperView":
+        wrapped = getattr(thread_fn, "__wrapped__", None)
+        closure: tuple[CellType, ...] | None = (
+            getattr(wrapped, "__closure__", None) if wrapped else None
+        )
+        if closure is not None:
+            closure = tuple(closure)
+        return cls(wrapped=wrapped, closure=closure)
+
+
+def _collect_cb_configs(
+    threads: list[Callable[..., object]],
+) -> list[CircularBuffer | None]:
     """Extract CircularBuffer objects from thread closures, indexed by cb_index.
 
     Returns a list of CircularBuffer objects indexed by cb_index. Each CB has
     shape, buffer_factor, tensor (for dtype), and _cb_index attributes.
     """
-    cb_configs_dict = {}
+    cb_configs_dict: dict[int, CircularBuffer] = {}
     for thread_fn in threads:
-        wrapped = getattr(thread_fn, "__wrapped__", None)
-        closure = getattr(wrapped, "__closure__", None) if wrapped else None
-        if not closure:
+        view = ThreadWrapperView.from_callable(thread_fn)
+        if not view.closure:
             continue
-        for cell in closure:
+        for cell in view.closure:
             val = cell.cell_contents
             if isinstance(val, CircularBuffer):
                 cb_configs_dict[val._cb_index] = val
@@ -741,9 +817,9 @@ def _collect_cb_configs(threads):
 
 
 def _compile(
-    kernel_type: Optional[str] = None,
+    kernel_type: str | None = None,
     verbose: bool = False,
-) -> Callable:
+) -> Callable[..., object]:
     """
     Internal decorator for compiling kernel threads.
 
@@ -764,21 +840,10 @@ def _compile(
 
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
-            source_code = _cleanup_source_code(f)
-            source_lines = source_code.splitlines()
+            ctx = CompilationSourceContext.from_function(f, verbose=verbose)
+            kwargs.update(ctx.to_compiler_kwargs())
 
-            if verbose:
-                kwargs["_source_code"] = source_lines
-                kwargs["_verbose"] = True
-
-            # Pass source info for debug locations (always enabled for error messages)
-            kwargs["_source_file"] = source_file
-            kwargs["_source_lines"] = source_lines
-            kwargs["_line_offset"] = _get_source_line_offset(f)
-            kwargs["debug_locations"] = True
-
-            m = ast.parse(source_code)
-            line_offset = kwargs.get("_line_offset", 0)
+            m = ast.parse(ctx.source_code)
 
             b = TTLGenericCompiler(
                 f.__name__,
@@ -789,18 +854,15 @@ def _compile(
                 **kwargs,
             )
 
-            if verbose:
-                print(ast.dump(m, indent=4) + "\n")
-
-            b.visit(m)
-
-            if verbose:
-                print(b.module)
+            with verbose_compilation(ctx.verbose):
+                verbose_print(ast.dump(m, indent=4) + "\n")
+                b.visit(m)
+                verbose_print(b.module)
 
             try:
                 b.module.operation.verify()
             except Exception as e:
-                formatted = format_mlir_error(str(e), source_lines, source_file)
+                formatted = format_mlir_error(str(e), ctx.source_lines, ctx.source_file)
                 raise RuntimeError(formatted) from None
 
             return b
@@ -886,17 +948,17 @@ def _compile_kernel(
     f: Callable,
     args: tuple,
     kwargs: dict,
-    grid: Union[tuple, List[int]],
-    indexing_maps: List[Callable],
-    iterator_types: List[str],
+    grid: tuple[int, ...] | list[int],
+    indexing_maps: list[Callable[..., object]],
+    iterator_types: list[str],
     num_outs: int,
     memory_space: str,
     tiled: bool,
     program_hash: int,
-    fp32_dest_acc_en: Optional[bool] = None,
-    dst_full_sync_en: Optional[bool] = None,
-    program_config: Optional[dict] = None,
-) -> Optional[CompiledTTNNKernel]:
+    fp32_dest_acc_en: bool | None = None,
+    dst_full_sync_en: bool | None = None,
+    program_config: dict[str, object] | None = None,
+) -> CompiledTTNNKernel | None:
     """
     Compile kernel function to MLIR and return CompiledTTNNKernel.
 
@@ -994,9 +1056,9 @@ def _compile_kernel(
     ctx = Context()
     loc = Location.unknown(ctx)
     with ctx, loc:
-        compiled_threads = []
+        compiled_threads: list[TTLGenericCompiler] = []
         # Track which global tensor indices each thread uses (for building common_runtime_args)
-        thread_tensor_indices = []
+        thread_tensor_indices: list[list[int]] = []
         # Collect source info for error formatting
         all_source_lines = {}
         all_source_files = {}
@@ -1049,8 +1111,8 @@ def _compile_kernel(
                 schedule_stub,
             )
 
-            thread_infos = [
-                (ct.name, getattr(ct, "kernel_type", "dm")) for ct in compiled_threads
+            thread_infos: list[tuple[str, str]] = [
+                (ct.name, ct.kernel_type or "dm") for ct in compiled_threads
             ]
             op_graph = build_op_graph_from_threads(thread_infos)
             topology = build_topology_from_grid(grid)
@@ -1229,18 +1291,16 @@ class ProgramOptions(BaseModel):
     num_outs: int = Field(1, ge=1)
     memory_space: Literal["L1", "DRAM"] = "L1"
     tiled: bool = True
-    fp32_dest_acc_en: Optional[bool] = None
-    dst_full_sync_en: Optional[bool] = None
-    objective: Optional[Literal["latency", "throughput", "balanced"]] = None
-    placement: Optional[Literal["auto", "manual"]] = None
+    fp32_dest_acc_en: bool | None = None
+    dst_full_sync_en: bool | None = None
+    objective: Literal["latency", "throughput", "balanced"] | None = None
+    placement: Literal["auto", "manual"] | None = None
 
-    def program_config_dict(self) -> Dict[str, Optional[str]]:
+    def program_config_dict(self) -> dict[str, str | None]:
         """Dict for program_config (objective, placement)."""
         return {"objective": self.objective, "placement": self.placement}
 
-    def to_program_config(
-        self, grid: Optional[tuple[int, int]] = None
-    ) -> ProgramConfig:
+    def to_program_config(self, grid: tuple[int, int] | None = None) -> ProgramConfig:
         """Build ProgramConfig from decorator options (objective, placement, optional grid)."""
         return ProgramConfig(
             grid=grid,
@@ -1266,16 +1326,16 @@ class ProgramOptions(BaseModel):
 
 
 def pykernel_gen(
-    grid: Optional[Union[tuple, Callable]] = None,
-    indexing_maps: Optional[List[Callable]] = None,
-    iterator_types: Optional[List[str]] = None,
+    grid: (tuple[int, ...] | Callable[..., object]) | None = None,
+    indexing_maps: list[Callable[..., object]] | None = None,
+    iterator_types: list[str] | None = None,
     num_outs: int = 1,
     memory_space: str = "L1",
     tiled: bool = True,
-    fp32_dest_acc_en: Optional[bool] = None,
-    dst_full_sync_en: Optional[bool] = None,
-    objective: Optional[str] = None,
-    placement: Optional[str] = None,
+    fp32_dest_acc_en: bool | None = None,
+    dst_full_sync_en: bool | None = None,
+    objective: str | None = None,
+    placement: str | None = None,
 ) -> Callable:
     """
     Decorator for generating TTL kernels from Python functions.
@@ -1343,7 +1403,7 @@ def pykernel_gen(
     def _decorator(f):
         # Per-kernel state: random ID and cache
         kernel_id = random.getrandbits(64)
-        cache: Dict[tuple, CompiledTTNNKernel] = {}
+        cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
 
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
