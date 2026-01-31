@@ -1,5 +1,7 @@
 .local
 **/build
+# Duplicate app fixtures (canonical: apps/scheduler-viz/fixtures/)
+apps/apps/
 third_party/tt-metal
 third_party/ttnn-python
 .DS_STORE
