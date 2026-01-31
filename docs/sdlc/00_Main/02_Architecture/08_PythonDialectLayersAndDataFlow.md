@@ -14,6 +14,8 @@
 
 **Один фокус при чтении:** в пользовательском коде — только kernel и run; в слое Program — только grid и опции; в Compile — только spec → артефакты; в Runtime — только артефакты → запуск. Границы между слоями — только Pydantic-типы (request/response).
 
+**Валидация только в Pydantic:** проверки входов/выходов слоёв выполняются **только в Pydantic-моделях** (field_validator, model_validator). В бизнес-логике (ttl_api, kernel_runner, _compile_ttnn_kernel и т.п.) не вызывают отдельные функции validate_*; контракты обеспечиваются при построении/валидации request/response моделей.
+
 **Reader/Compute/Writer** — один из паттернов размещения внутри движка (Compile/Runtime), а не ось слоёв API; пользователь не обязан знать типы тредов. Лучшие раскладки вычислений могут быть другими.
 
 Нижний компиляционный пайплайн (Python DSL → TTL IR → passes → TTKernel → EmitC → C++) описан в [02_LLD_CompilerPipeline.md](02_LLD_CompilerPipeline.md). Здесь — уровень Python-объектов до и после вызова этого пайплайна.
@@ -74,7 +76,7 @@ flowchart LR
 | (internal) compiled_threads | all_source_files / all_source_lines / kernel_line_offsets | `_collect_source_info_from_threads(threads)` — по `ct.name` и `ct.source_info` (ThreadSourceInfo). |
 | ProgramOptions / module path | TTNNKernelCompileRequest | pykernel_gen → module, затем сборка compile_req в ttl_api. |
 | (OpGraph) SchedulePlan | grid / program_config | Планировщик (заглушка) → grid, placement. |
-| TTNNKernelCompileRequest | CompiledTTNNKernel | `_compile_ttnn_kernel(req)`. |
+| TTNNKernelCompileRequest | CompiledTTNNKernel | Валидация request (тензоры TTNN, число ядер) — в TTNNKernelCompileRequest (model_validator). `_compile_ttnn_kernel(req)`. |
 | ThreadConfigBuildRequest | (config, entries) | `_build_config_for_thread(request)` → descriptor_options + ttnn_proxy. |
 | CompiledTTNNKernel + tensors | run | `kernel_runner.build_*_descriptors`, `run_kernel_on_device`. |
 
