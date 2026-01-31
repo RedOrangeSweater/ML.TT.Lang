@@ -11,6 +11,7 @@ that the output indicates success.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -52,9 +53,18 @@ LAUNCHER_MODULE = [PYTHON, "-m", "sim.ttlang_sim"]
 
 def run_ttlang_sim_and_capture(script_path: Path) -> tuple[int, str]:
     """Run ttlang-sim against the provided example script and return (code, output)."""
+    env = os.environ.copy()
+    python_dir = REPO_ROOT / "python"
+    build_pkg = REPO_ROOT / "build" / "python_packages"
+    # python first so "ttl" is the package (ttl.settings etc); build_pkg for native .so in sim
+    path_parts = [str(python_dir)]
+    if build_pkg.exists():
+        path_parts.append(str(build_pkg))
+    env["PYTHONPATH"] = os.pathsep.join(path_parts + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
     proc = subprocess.run(
         LAUNCHER_MODULE + [str(script_path)],
         cwd=REPO_ROOT,
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

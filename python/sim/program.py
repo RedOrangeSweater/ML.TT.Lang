@@ -33,16 +33,47 @@ def _get_ttlang_compile_error():
     import sys
     from pathlib import Path
 
-    # Direct import of diagnostics module without going through ttl package
-    # This avoids importing the full compiler infrastructure
-    diagnostics_path = Path(__file__).parent.parent / "ttl" / "diagnostics.py"
-    spec = importlib.util.spec_from_file_location("ttl.diagnostics", diagnostics_path)
-    if spec and spec.loader:
-        diagnostics = importlib.util.module_from_spec(spec)
-        sys.modules["ttl.diagnostics"] = diagnostics
-        spec.loader.exec_module(diagnostics)
-        return diagnostics.TTLangCompileError
-    raise ImportError("Could not load ttl.diagnostics")
+    ttl_dir = Path(__file__).parent.parent / "ttl"
+    # When running under ttlang-sim, sys.modules["ttl"] is the sim's ttl, so
+    # "import ttl.settings" would fail. Load real ttl.settings and ttl.diagnostics
+    # from the filesystem and temporarily register them.
+    saved_ttl = sys.modules.get("ttl")
+    saved_ttl_settings = sys.modules.get("ttl.settings")
+    saved_ttl_diagnostics = sys.modules.get("ttl.diagnostics")
+    try:
+        # Create a minimal ttl package so "from .settings" works in diagnostics
+        ttl_pkg = types.ModuleType("ttl")
+        ttl_pkg.__path__ = [str(ttl_dir)]
+        ttl_pkg.__package__ = "ttl"
+        sys.modules["ttl"] = ttl_pkg
+        settings_path = ttl_dir / "settings.py"
+        if settings_path.exists():
+            spec_s = importlib.util.spec_from_file_location("ttl.settings", settings_path)
+            if spec_s and spec_s.loader:
+                mod_s = importlib.util.module_from_spec(spec_s)
+                sys.modules["ttl.settings"] = mod_s
+                spec_s.loader.exec_module(mod_s)
+        diagnostics_path = ttl_dir / "diagnostics.py"
+        spec = importlib.util.spec_from_file_location("ttl.diagnostics", diagnostics_path)
+        if spec and spec.loader:
+            diagnostics = importlib.util.module_from_spec(spec)
+            sys.modules["ttl.diagnostics"] = diagnostics
+            spec.loader.exec_module(diagnostics)
+            return diagnostics.TTLangCompileError
+        raise ImportError("Could not load ttl.diagnostics")
+    finally:
+        if saved_ttl is not None:
+            sys.modules["ttl"] = saved_ttl
+        elif "ttl" in sys.modules:
+            del sys.modules["ttl"]
+        if saved_ttl_settings is not None:
+            sys.modules["ttl.settings"] = saved_ttl_settings
+        elif "ttl.settings" in sys.modules:
+            del sys.modules["ttl.settings"]
+        if saved_ttl_diagnostics is not None:
+            sys.modules["ttl.diagnostics"] = saved_ttl_diagnostics
+        elif "ttl.diagnostics" in sys.modules:
+            del sys.modules["ttl.diagnostics"]
 
 
 # Protocol for templates that have a bind method
