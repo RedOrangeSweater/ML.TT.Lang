@@ -18,6 +18,6 @@ When the user says **“пуш” / “push”** the user is explicitly requesti
   - `git log` (to match commit message style)
 - Stage **only** files relevant to the requested change.
 - Use a commit message consistent with recent history.
-- **When work is complete and verified** (tests/lint OK for the task): perform commit and then push, unless the user has asked not to push. “Verified” means checks relevant to the change have passed (e.g. cmake/build, linter, tests).
+- **After each logically complete step** (DoD met, tests/lint OK for that step): create an atomic commit and **push immediately**, unless the user has asked not to push. “Verified” means checks relevant to the change have passed (e.g. cmake/build, linter, tests).
 - When the user explicitly says “commit” or “push”, perform that workflow; if they say “commit and push”, commit then push.
 - Never push without completing the commit workflow first; never push if the user has requested not to push.

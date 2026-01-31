@@ -17,8 +17,12 @@ alwaysApply: true
   - run project checks if configured (tests/linters/hooks). If no checks exist, proceed.
   - if checks fail, do **not** commit/push; fix and rerun checks
   - then create an atomic commit (single concern, minimal scope)
+  - then push (unless the user has asked not to push).
 
 ## Push policy
+
+- By default, after each atomic commit perform push.
+- Do not push only if the user has explicitly asked not to push.
 
 ## External repo propagation (portfolio workflow)
 
