@@ -12,7 +12,7 @@ alwaysApply: true
 ## Docs-first vs GitHub-first (choose one per project)
 
 - If SoT is docs-first: keep a numbered SDLC navigation under `docs/` and keep READMEs up to date.
-- If SoT is GitHub-first: use Issues/Discussions as the executable work surface and keep repo docs as curated “entrypoints”, not duplicated status.
+- If SoT is GitHub-first: use Issues/Discussions as the executable work surface and keep repo docs as curated "entrypoints", not duplicated status.
 
 ## Negative SDLC (pre-GraphDB) when modeling domains
 
@@ -34,7 +34,6 @@ For any non-trivial user request (feature, refactor, fix, or change affecting be
 3. **Plan**: Record required SDLC updates (Task, BA, Arch, Testing, Status) and the list of files/sections to change; plan is agreed before code.
 4. **Implementation** — last: code, tests, doc updates per plan; after each logical step — commit and push (per 15 + 02).
 
-Documentation is updated **during** the work (same commit or next atomic one), not “later”. When code and docs diverge, prefer updating docs from code (code is SoT), except for planned target specs/architecture.
+Documentation is updated **during** the work (same commit or next atomic one), not "later". When code and docs diverge, prefer updating docs from code (code is SoT), except for planned target specs/architecture.
 
 When changing code that touches entrypoints, SoT, Python layers (ttl_api, kernel_runner, descriptor_options), status, or run configs — check consistency against the checklist in `.cursor/commands/sdlc.audit.md`; for a full cycle or on request, run `/sdlc.audit` with no args (phase 0 + layers 1–6). Audit outputs **Next actions**; treat them as tasks and do them (docs, path fixes, Mermaid, run configs) in follow-up steps with commit+push after each logical block.
-

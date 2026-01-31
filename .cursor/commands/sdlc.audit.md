@@ -14,8 +14,7 @@
 ### Чеклист (по умолчанию)
 
 - **Direction + entrypoints**: канон направления — `docs/sdlc/00_Main/00_Status/Direction.md` (предпочтительно) или `docs/Direction.md`; затем `docs/README.md`, `README.md` (что это, куда движемся, где начать).
-- SoT + start here: `docs/README.md` → `docs/sdlc/00_Main/00_Status/00_Quickstart.md`, статус: `01_tt_metal/00_Status/00_projects_graph.md`.
-- **Python dialect layers (SoT)**: `docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md` — реестр слоёв Program/Graph/Compile/Runtime и трансформаций; при изменении кода (ttl_api, kernel_runner, descriptor_options) проверять согласованность с этим документом.
+- SoT + start here: `docs/README.md` → `docs/sdlc/00_Main/00_Status/00_projects_graph.md`.
 - Статус: `00_projects_graph.md`, `01_Kanban.md` — валидны, без битых путей.
 - Run configs: доки «как запускать» ↔ `.vscode/{launch.json,tasks.json}`.
 

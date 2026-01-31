@@ -8,7 +8,7 @@ alwaysApply: true
 - Before committing:
   - review `git status` and diffs
   - stage only files relevant to **one** logical change
-- If asked to “commit everything”, split into **atomic commits** by task/concern.
+- If asked to "commit everything", split into **atomic commits** by task/concern.
 - Never commit secrets (`.env`, keys, passwords) or dev-only backdoors.
 
 ## Commit-after-checks
@@ -31,4 +31,3 @@ When updating Cursor artifacts in external repos on disk (e.g. propagating `.cur
 - Do **not** block on a dirty working tree: you may still apply and commit **only** the Cursor artifact changes.
 - Stage and commit **only** the relevant paths (e.g. `.cursor/rules/**`, `.cursor/commands/**`) so you don't mix concerns.
 - If there is a risk of overwriting upstream-local rule changes, snapshot the current Cursor artifacts first (append-only, dated).
-
