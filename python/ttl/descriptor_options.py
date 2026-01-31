@@ -95,6 +95,21 @@ class CoreRangeSetOptions(BaseModel):
         return CoreRangeSetProxy(grid=self.grid).to_ttnn()
 
 
+class ProgramRunConfig(BaseModel):
+    """Pydantic config passed to each thread and stored in Program. Replaces injected_program_kwargs dict."""
+
+    grid: list[int] = Field(default_factory=lambda: [1, 1], description="Grid dimensions (cols, rows)")
+    memory_space: str = Field(default="L1", description="L1 or DRAM")
+    tiled: bool = Field(default=True, description="Whether to use tiled layout")
+    debug_locations: bool = Field(default=True, description="Generate source locations for error messages")
+
+    def inject_into_kwargs(self, kwargs: dict[str, Any], param_names: set[str]) -> None:
+        """Inject only the keys that the kernel function accepts (in-place)."""
+        for name in ("grid", "memory_space", "tiled"):
+            if name in param_names:
+                kwargs[name] = getattr(self, name)
+
+
 class ProgramConfig(BaseModel):
     """Pydantic model for program_config (grid, objective, placement). Replaces ad-hoc dict handling."""
 

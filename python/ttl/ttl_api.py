@@ -51,7 +51,7 @@ from ._src.tensor_registry import (
     register_tensor_name,
     register_tensor_source,
 )
-from ._src.ttl_ast import TTLGenericCompiler
+from ._src.ttl_ast import TTLCompilerConfig, TTLGenericCompiler
 from .circular_buffer import CircularBuffer, get_cb_count
 from .constants import SUPPORTED_MEMORY_SPACES
 from .diagnostics import (
@@ -76,6 +76,7 @@ from .descriptor_options import (
     KernelWriteRequest,
     NocConfigOptions,
     ProgramConfig,
+    ProgramRunConfig,
     ReaderConfigOptions,
     ThreadConfigBuildRequest,
     TTNNKernelCompileOptions,
@@ -364,15 +365,6 @@ class CompilationSourceContext(BaseModel):
             source_code=source_code,
         )
 
-    def to_compiler_kwargs(self) -> dict[str, object]:
-        """Kwargs to pass to TTLGenericCompiler (same shape as previous manual kwargs)."""
-        return {
-            "_source_file": self.source_file,
-            "_source_lines": self.source_lines,
-            "_line_offset": self.line_offset,
-            "debug_locations": self.debug_locations,
-        }
-
 
 def _track_tensor_sources(f_params, args, source_file: str) -> None:
     """Track source locations for tensor arguments.
@@ -482,6 +474,8 @@ class CompiledTTNNKernel(BaseModel):
     def _none_to_dict(cls, v: object) -> object:
         """Coerce None to {} for optional dict fields (call site may pass None)."""
         return v if v is not None else {}
+
+    def __call__(self, *args: object) -> object:
         """Execute the kernel with the given tensors."""
         if len(args) != self.num_tensors:
             raise ValueError(f"Expected {self.num_tensors} tensors, got {len(args)}")
@@ -841,7 +835,16 @@ def _compile(
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
             ctx = CompilationSourceContext.from_function(f, verbose=verbose)
-            kwargs.update(ctx.to_compiler_kwargs())
+            compiler_config = TTLCompilerConfig.model_validate(
+                {
+                    **kwargs,
+                    "_source_file": ctx.source_file,
+                    "_source_lines": ctx.source_lines,
+                    "_line_offset": ctx.line_offset,
+                    "debug_locations": ctx.debug_locations,
+                    "_globals": f.__globals__,
+                }
+            )
 
             m = ast.parse(ctx.source_code)
 
@@ -850,8 +853,7 @@ def _compile(
                 kernel_type,
                 _collect_captures(f),
                 *args,
-                _globals=f.__globals__,
-                **kwargs,
+                config=compiler_config,
             )
 
             with verbose_compilation(ctx.verbose):
@@ -923,10 +925,19 @@ class Program:
     fields should be treated as read-only.
     """
 
-    def __init__(self, *threads, args=(), kwargs=None):
+    def __init__(
+        self,
+        *threads,
+        args=(),
+        run_config: ProgramRunConfig | None = None,
+        kwargs: dict[str, object] | None = None,
+    ):
         self._threads = threads
         self._args = args
-        self._kwargs = kwargs if kwargs is not None else {}
+        if run_config is not None:
+            self._kwargs = run_config.model_dump()
+        else:
+            self._kwargs = kwargs if kwargs is not None else {}
 
     @property
     def threads(self) -> tuple:
@@ -937,27 +948,33 @@ class Program:
         return self._args
 
     @property
-    def kwargs(self) -> dict:
+    def kwargs(self) -> dict[str, object]:
         return self._kwargs
 
     def __call__(self, *args, **kwargs):
         return Program(*self.threads, args=args, kwargs={**self.kwargs, **kwargs})
 
 
+def _collect_source_info_from_threads(
+    threads: list[TTLGenericCompiler],
+) -> tuple[dict[str, str], dict[str, list[str]], dict[str, int]]:
+    """Build all_source_files, all_source_lines, kernel_line_offsets from compiled threads."""
+    all_source_files: dict[str, str] = {}
+    all_source_lines: dict[str, list[str]] = {}
+    kernel_line_offsets: dict[str, int] = {}
+    for ct in threads:
+        info = ct.source_info
+        all_source_files[ct.name] = info.source_file
+        all_source_lines[ct.name] = info.source_lines
+        kernel_line_offsets[ct.name] = info.line_offset
+    return all_source_files, all_source_lines, kernel_line_offsets
+
+
 def _compile_kernel(
     f: Callable,
     args: tuple,
     kwargs: dict,
-    grid: tuple[int, ...] | list[int],
-    indexing_maps: list[Callable[..., object]],
-    iterator_types: list[str],
-    num_outs: int,
-    memory_space: str,
-    tiled: bool,
-    program_hash: int,
-    fp32_dest_acc_en: bool | None = None,
-    dst_full_sync_en: bool | None = None,
-    program_config: dict[str, object] | None = None,
+    request: KernelCompileRequest,
 ) -> CompiledTTNNKernel | None:
     """
     Compile kernel function to MLIR and return CompiledTTNNKernel.
@@ -966,21 +983,21 @@ def _compile_kernel(
         f: User kernel function
         args: Positional arguments for the kernel
         kwargs: Keyword arguments for the kernel
-        grid: Grid dimensions
-        indexing_maps: List of lambda functions for indexing
-        iterator_types: List of iterator type strings
-        num_outs: Number of output arguments
-        memory_space: "L1" or "DRAM"
-        tiled: Whether to use tiled layout
-        program_hash: Hash for tt-metal program cache
-        fp32_dest_acc_en: Optional override for fp32_dest_acc_en
-        dst_full_sync_en: Optional override for dst_full_sync_en
-        program_config: Optional dict with objective/placement (stored, not used for decisions)
+        request: KernelCompileRequest with grid, program_hash, indexing_maps, iterator_types,
+            and nested options (ProgramOptions: num_outs, memory_space, tiled, fp32_dest_acc_en,
+            dst_full_sync_en, objective, placement). See KernelCompileRequest and ProgramOptions.
 
     Returns:
         CompiledTTNNKernel ready for execution
     """
-    program_config = program_config or {}
+    grid = request.grid
+    program_hash = request.program_hash
+    num_outs = request.options.num_outs
+    memory_space = request.options.memory_space
+    tiled = request.options.tiled
+    fp32_dest_acc_en = request.options.fp32_dest_acc_en
+    dst_full_sync_en = request.options.dst_full_sync_en
+    program_config = request.options.program_config_dict() or {}
     f_params = inspect.signature(f).parameters
 
     # Get kernel source location for error reporting
@@ -1010,14 +1027,13 @@ def _compile_kernel(
     # For pretty error printing only:
     _track_tensor_sources(f_params, args, kernel_source_file)
 
-    inject_kwargs = [
-        ("grid", grid),
-        ("memory_space", memory_space),
-        ("tiled", tiled),
-    ]
-    for injected_kwarg, val in inject_kwargs:
-        if injected_kwarg in f_params:
-            kwargs[injected_kwarg] = val
+    run_config = ProgramRunConfig(
+        grid=list(grid),
+        memory_space=memory_space,
+        tiled=tiled,
+        debug_locations=True,  # Always generate locations for error messages
+    )
+    run_config.inject_into_kwargs(kwargs, set(f_params))
 
     from .circular_buffer import _reset_cb_counter, CircularBuffer
     from .operators import _set_current_grid
@@ -1037,17 +1053,7 @@ def _compile_kernel(
 
     cb_configs = _collect_cb_configs(threads)
 
-    injected_program_kwargs = {
-        "grid": grid,
-        "memory_space": memory_space,
-        "tiled": tiled,
-        "debug_locations": True,  # Always generate locations for error messages
-    }
-    program = Program(
-        *threads,
-        args=args,
-        kwargs=injected_program_kwargs,
-    )
+    program = Program(*threads, args=args, run_config=run_config)
 
     # Always generate source locations for error messages
     # TTLANG_DEBUG_LOCATIONS only controls whether locations are printed in MLIR output
@@ -1059,12 +1065,6 @@ def _compile_kernel(
         compiled_threads: list[TTLGenericCompiler] = []
         # Track which global tensor indices each thread uses (for building common_runtime_args)
         thread_tensor_indices: list[list[int]] = []
-        # Collect source info for error formatting
-        all_source_lines = {}
-        all_source_files = {}
-
-        # Track per-kernel line offsets for correct display
-        kernel_line_offsets = {}
 
         for compile_thread in program.threads:
             try:
@@ -1095,13 +1095,9 @@ def _compile_kernel(
                 ctx,
             )
 
-            # Collect source info for error reporting
-            if hasattr(ct, "source_file") and hasattr(ct, "source_lines"):
-                all_source_files[ct.name] = ct.source_file
-                all_source_lines[ct.name] = ct.source_lines
-            # Track per-kernel line offset
-            if hasattr(ct, "line_offset"):
-                kernel_line_offsets[ct.name] = ct.line_offset
+        all_source_files, all_source_lines, kernel_line_offsets = (
+            _collect_source_info_from_threads(compiled_threads)
+        )
 
         # Optional: build op graph and run scheduler stub (Phase 3-4)
         if get_settings().use_scheduler:
@@ -1325,6 +1321,21 @@ class ProgramOptions(BaseModel):
         )
 
 
+class KernelCompileRequest(BaseModel):
+    """Hierarchical request for _compile_kernel. Per-invocation data at root; decorator options nested in options."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    grid: tuple[int, ...] | list[int] = Field(..., description="Grid dimensions (cols, rows)")
+    program_hash: int = Field(..., description="Hash for tt-metal program cache")
+    indexing_maps: list[Callable[..., object]] = Field(
+        default_factory=list,
+        description="Lambda functions for indexing",
+    )
+    iterator_types: list[str] = Field(default_factory=list, description="Iterator type strings")
+    options: ProgramOptions = Field(..., description="Decorator-level options (num_outs, memory_space, tiled, etc.)")
+
+
 def pykernel_gen(
     grid: (tuple[int, ...] | Callable[..., object]) | None = None,
     indexing_maps: list[Callable[..., object]] | None = None,
@@ -1383,8 +1394,6 @@ def pykernel_gen(
     if options.num_outs != 1:
         raise ValueError(f"num_outs must be 1, got {options.num_outs}")
 
-    program_config = options.program_config_dict()
-
     if indexing_maps is None:
         indexing_maps = []
 
@@ -1424,21 +1433,14 @@ def pykernel_gen(
                 program_hash = hash((kernel_id, cache_key))
 
                 # Compile kernel
-                compiled_kernel = _compile_kernel(
-                    f,
-                    args,
-                    kwargs,
-                    resolved_grid,
-                    indexing_maps,
-                    iterator_types,
-                    options.num_outs,
-                    options.memory_space,
-                    options.tiled,
-                    program_hash,
-                    fp32_dest_acc_en=options.fp32_dest_acc_en,
-                    dst_full_sync_en=options.dst_full_sync_en,
-                    program_config=program_config,
+                compile_request = KernelCompileRequest(
+                    grid=resolved_grid,
+                    program_hash=program_hash,
+                    indexing_maps=indexing_maps,
+                    iterator_types=iterator_types,
+                    options=options,
                 )
+                compiled_kernel = _compile_kernel(f, args, kwargs, compile_request)
 
                 if compiled_kernel is not None:
                     cache[cache_key] = compiled_kernel

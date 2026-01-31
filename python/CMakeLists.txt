@@ -120,6 +120,7 @@ declare_mlir_python_sources(TTLangPythonCommon.Main
     ttl_api.py
     ttl_math.py
     ttl_utils.py
+    verbose_context.py
     dtype_utils.py
     ir.py
     layouts.py

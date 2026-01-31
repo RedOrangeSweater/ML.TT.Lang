@@ -5,8 +5,9 @@
 import ast
 import inspect
 from dataclasses import dataclass
-from typing import List, Optional, Set
+from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
 from pykernel._src.kernel_ast import TTCompilerBase
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import *
@@ -97,9 +98,32 @@ def _build_tensor_type(ctx, tensor, grid, tiled, memory_space):
 class CompilerContext:
     """Immutable compilation context for TTL kernels."""
 
-    grid: List[int]
+    grid: list[int]
     memory_space: str
     tiled: bool
+
+
+class TTLCompilerConfig(BaseModel):
+    """Pydantic config for TTLGenericCompiler; built from kwargs to avoid long __init__."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    grid: list[int] = Field(default_factory=lambda: [1, 1])
+    memory_space: str = "L1"
+    tiled: bool = True
+    debug_locations: bool = False
+    source_file: str = Field("<unknown>", validation_alias="_source_file")
+    source_lines: list[str] = Field(default_factory=list, validation_alias="_source_lines")
+    line_offset: int = Field(0, validation_alias="_line_offset")
+    fn_globals: dict[str, Any] = Field(default_factory=dict, validation_alias="_globals")
+
+
+class ThreadSourceInfo(BaseModel):
+    """Structured source info for a compiled thread. Exposed via TTLGenericCompiler.source_info."""
+
+    source_file: str = "<unknown>"
+    source_lines: list[str] = Field(default_factory=list)
+    line_offset: int = 0
 
 
 class TTLGenericCompiler(TTCompilerBase):
@@ -107,42 +131,51 @@ class TTLGenericCompiler(TTCompilerBase):
 
     _syntax = {}
 
-    def __init__(self, name, kernel_type=None, captures={}, *args, **kwargs):
+    def __init__(
+        self,
+        name,
+        kernel_type=None,
+        captures=None,
+        *args,
+        config: TTLCompilerConfig | None = None,
+        **kwargs,
+    ):
         super().__init__(name, kernel_type, *args, **kwargs)
         self.loc = Location.name(self.name)
-        self.captures = captures
-        self.streams: Set[str] = set()
+        self.captures = captures if captures is not None else {}
+        self.streams = set()
         self.supported_nodes.append(ast.AsyncFunctionDef)
         self.supported_nodes.append(ast.With)
 
+        if config is None:
+            config = TTLCompilerConfig.model_validate(kwargs)
         self.context = CompilerContext(
-            grid=kwargs.get("grid", [1, 1]),
-            memory_space=kwargs.get("memory_space", "L1"),
-            tiled=kwargs.get("tiled", True),
+            grid=config.grid,
+            memory_space=config.memory_space,
+            tiled=config.tiled,
         )
+        self.debug_locations = config.debug_locations
+        self.source_file = config.source_file
+        self.source_lines = config.source_lines
+        self.line_offset = config.line_offset
+        self.fn_globals = config.fn_globals
 
-        # Debug location support
-        self.debug_locations = kwargs.get("debug_locations", False)
-        self.source_file = kwargs.get("_source_file", "<unknown>")
-        self.source_lines = kwargs.get("_source_lines", [])
-        self.line_offset = kwargs.get("_line_offset", 0)
-
-        # Function globals for resolving module-level constants
-        self.fn_globals = kwargs.get("_globals", {})
-
-        # Track CB info for binding inside function body
-        self._cb_info: List[dict] = []  # [{name, shape, element_type, cb_index}, ...]
-
-        # Auto-profiling support
+        self._cb_info: list[dict[str, Any]] = []
         self.auto_profile_enabled = is_auto_profile_enabled()
         self.line_mapper = get_line_mapper() if self.auto_profile_enabled else None
         if self.line_mapper:
             self.line_mapper.line_offset = self.line_offset
         self._current_signpost_line = None
+        self._fn_map = dict(TTLGenericCompiler._syntax)
 
-        self._fn_map = {}
-        for name, val in TTLGenericCompiler._syntax.items():
-            self._fn_map[name] = val
+    @property
+    def source_info(self) -> ThreadSourceInfo:
+        """Structured source info for error reporting and profiling."""
+        return ThreadSourceInfo(
+            source_file=self.source_file,
+            source_lines=self.source_lines,
+            line_offset=self.line_offset,
+        )
 
     def visit_Assign(self, node):
         """Handle tuple unpacking for TTL functions like core(dims=2)."""
