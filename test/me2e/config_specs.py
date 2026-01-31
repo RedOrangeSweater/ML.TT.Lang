@@ -141,9 +141,7 @@ CONFIGS = [
     # Single tile config.
     TestConfig(num_tiles=1, block_h=1, block_w=1),  # 1x1 grid (single tile)
     # Single tile with TRID barriers (runtime coverage for use-trid-barriers).
-    TestConfig(
-        num_tiles=1, block_h=1, block_w=1, use_trid_barriers=True
-    ),
+    TestConfig(num_tiles=1, block_h=1, block_w=1, use_trid_barriers=True),
     # Multi-tile configs with loop generation.
     TestConfig(num_tiles=4, block_h=2, block_w=2),  # 2x2 grid (4 tiles)
     # TODO(#123): Enable 8x8 config once tile index lowering is fixed.

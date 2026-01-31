@@ -23,6 +23,7 @@ from ttlang_test_utils import to_dram
 # Import shared kernel runner from ttl package.
 from ttl.kernel_runner import (
     KernelSpec as RunnerKernelSpec,
+    RunKernelRequest,
     run_kernel_on_device,
 )
 from ttl.circular_buffer import CircularBuffer
@@ -180,13 +181,13 @@ def _run_op(
         for tensor in io_tensors
     ]
 
-    # Execute using shared kernel runner.
-    run_kernel_on_device(
+    run_req = RunKernelRequest(
         kernel_specs=runner_specs,
         tensors=io_tensors,
         cb_configs=cb_configs,
         core_ranges=core_grid,
     )
+    run_kernel_on_device(run_req)
 
     # Return result.
     result = ttnn.to_torch(output_tensor)
