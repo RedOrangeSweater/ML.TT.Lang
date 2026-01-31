@@ -253,8 +253,9 @@ def add_kernel(lhs, rhs, out):
 - проверить/verifier errors без Python контекста;
 - сделать минимальный MLIR regression test (lit/FileCheck).
 
-## 8) Что читать дальше (3 пункта)
+## 8) Что читать дальше (4 пункта)
 
 - `docs/LOWERING_MULTITILE.md` — “одна трасса, которая объясняет половину системы”.
 - `docs/sdlc/00_Main/02_Architecture/01_HighLevelDesign.md` — границы ответственности компонентов.
+- `docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md` — слои Python-фреймворка (Program / Graph / Compile / Runtime), поток данных и реестр трансформаций.
 - `test/TESTING.md` — как тесты проверяют IR на двух стадиях (initial/final).

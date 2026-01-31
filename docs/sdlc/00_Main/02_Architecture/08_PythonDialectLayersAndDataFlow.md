@@ -14,35 +14,35 @@
 
 | Слой | Содержимое | Модули / типы |
 |------|------------|----------------|
-| **Program** | Что задаёт пользователь: grid, block_factors, objective, placement. | `ProgramOptions`, `ProgramConfig`; декоратор `@ttl.program`. |
+| **Program** | Что задаёт пользователь: grid, block_factors, objective, placement. Иерархия запроса компиляции: per-invocation + опции декоратора. | `ProgramOptions`, `ProgramConfig`, `KernelCompileRequest` (root: grid, program_hash, indexing_maps, iterator_types; nested: `options: ProgramOptions`); декоратор `@ttl.program`. |
 | **Graph** | Внутреннее представление программы как граф операций и план размещения. | `OpGraph`, `OpNode`, `Topology`, `SchedulePlan` (scheduler); док 12, фазы 3–4 roadmap. |
-| **Compile** | Всё для одной компиляции: module, args, grid, thread_tensor_indices, опции. | `TTNNKernelCompileRequest`, `ThreadConfigBuildRequest`, `KernelWriteRequest`, `ComputeDescriptorBuildContext`; результат — MLIR module, kernel paths, `CompiledTTNNKernel`. |
+| **Compile** | Всё для одной компиляции: request в _compile_kernel, module, args, grid, thread_tensor_indices, опции; source info по тредам. | `KernelCompileRequest`, `TTNNKernelCompileRequest`, `ThreadConfigBuildRequest`, `KernelWriteRequest`, `ComputeDescriptorBuildContext`, `TTNNKernelCompileOptions`, `ThreadSourceInfo`; `_compile_kernel(f, args, kwargs, request)`, `_collect_source_info_from_threads(threads)`; результат — MLIR module, kernel paths, `CompiledTTNNKernel`. |
 | **Runtime** | Что уходит в ttnn: дескрипторы ядер, CB, CoreRangeSet, запуск. | `KernelSpec`, ttnn_proxy (ComputeConfigDescriptor, Reader/Writer, CoreRangeSet); `build_kernel_descriptors`, `build_cb_descriptors`, `run_kernel_on_device`. |
 
 ## 3. Data flow (диаграмма)
 
 ```mermaid
 flowchart LR
-  subgraph input [Input]
+  subgraph input ["Input"]
     UserProg["User program"]
   end
-  subgraph program_dialect [Program dialect]
+  subgraph program_dialect ["Program dialect"]
     ProgOpts["ProgramOptions"]
   end
-  subgraph graph_dialect [Graph dialect]
+  subgraph graph_dialect ["Graph dialect"]
     OpGraph["OpGraph"]
     SchedPlan["SchedulePlan"]
   end
-  subgraph compile_dialect [Compile dialect]
+  subgraph compile_dialect ["Compile dialect"]
     CompileReq["TTNNKernelCompileRequest"]
     ThreadReq["ThreadConfigBuildRequest"]
   end
-  subgraph runtime_dialect [Runtime dialect]
+  subgraph runtime_dialect ["Runtime dialect"]
     KernelSpec["KernelSpec"]
     CoreRange["CoreRangeSetProxy"]
     Desc["KernelDescriptor"]
   end
-  subgraph output [Output]
+  subgraph output ["Output"]
     Exec["ttnn.generic_op"]
   end
   UserProg --> ProgOpts
@@ -61,7 +61,10 @@ flowchart LR
 | From | To | Реализация (код) |
 |------|----|-------------------|
 | User program | ProgramOptions | Декоратор `@ttl.program`, валидация ProgramOptions. |
-| ProgramOptions | TTNNKernelCompileRequest | pykernel_gen → module, затем сборка compile_req в ttl_api. |
+| ProgramOptions + per-invocation | KernelCompileRequest | pykernel_gen строит `KernelCompileRequest(grid, program_hash, indexing_maps, iterator_types, options)` и вызывает `_compile_kernel(f, args, kwargs, request)`. |
+| KernelCompileRequest | (threads, module, …) | `_compile_kernel(request)` → компиляция тредов; source info через `_collect_source_info_from_threads(compiled_threads)` по `ct.source_info` (ThreadSourceInfo). |
+| (internal) compiled_threads | all_source_files / all_source_lines / kernel_line_offsets | `_collect_source_info_from_threads(threads)` — по `ct.name` и `ct.source_info` (ThreadSourceInfo). |
+| ProgramOptions / module path | TTNNKernelCompileRequest | pykernel_gen → module, затем сборка compile_req в ttl_api. |
 | (OpGraph) SchedulePlan | grid / program_config | Планировщик (заглушка) → grid, placement. |
 | TTNNKernelCompileRequest | CompiledTTNNKernel | `_compile_ttnn_kernel(req)`. |
 | ThreadConfigBuildRequest | (config, entries) | `_build_config_for_thread(request)` → descriptor_options + ttnn_proxy. |
@@ -71,9 +74,13 @@ flowchart LR
 
 ## 5. Реестр Python-диалектов
 
-- **Program**: ProgramOptions, ProgramConfig.
+- **Program**: ProgramOptions, ProgramConfig, KernelCompileRequest (иерархия: root + options: ProgramOptions).
 - **Graph**: OpGraph, OpNode, Topology, SchedulePlan.
-- **Compile**: TTNNKernelCompileRequest, ThreadConfigBuildRequest, KernelWriteRequest, ComputeDescriptorBuildContext, TTNNKernelCompileOptions.
+- **Compile**: KernelCompileRequest, TTNNKernelCompileRequest, ThreadConfigBuildRequest, KernelWriteRequest, ComputeDescriptorBuildContext, TTNNKernelCompileOptions, ThreadSourceInfo; хелперы `_compile_kernel(f, args, kwargs, request)`, `_collect_source_info_from_threads(threads)`; TTLGenericCompiler.source_info → ThreadSourceInfo.
 - **Runtime**: KernelSpec, дескрипторы через ttnn_proxy (ComputeConfigProxy/Resolved, ReaderConfigProxy, WriterConfigProxy, CoreCoordProxy, CoreRangeProxy, CoreRangeSetProxy).
 
 Реестр исполнительных Python-диалектов ведётся отдельно от документационного пайплайна (Doc–MLIR–GraphDB, диалект ttm.sdlc_doc). Регистрация: в этом документе и при необходимости в `.cursor/artifacts_mlir_graphdb` или `docs/sdlc/_KG_MLIR` для прослеживаемости.
+
+## 6. Целевое направление (proxy / ttnn boundary)
+
+Для каждой примитивной сущности, которую tt-lang передаёт в ttnn (DataType, дескрипторы, CoreRange и т.д.), целевая модель: **Pydantic-прокси или обёртка с методом `.to_ttnn()`**, разрешающая тип на границе вызова. Валидация и сериализация — в Pydantic; флаги дескрипторов (например `fp32_dest_acc_en`) задаются через post-validation или фабричные методы, без ручного перечисления в вызывающем коде.

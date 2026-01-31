@@ -2,6 +2,7 @@
 
 - **SDLC** (status, ideas, architecture, specs, QA): [docs/sdlc/README.md](sdlc/README.md). Main process: [docs/sdlc/00_Main/](sdlc/00_Main/). Cross-project status (tt-metal): [01_tt_metal/00_Status/00_projects_graph.md](sdlc/01_tt_metal/00_Status/00_projects_graph.md).
 - **Start here (tt-lang)**: [00_Main/00_Status/00_Quickstart.md](sdlc/00_Main/00_Status/00_Quickstart.md) — quick technical intro; status: [01_tt_metal/00_Status/00_projects_graph.md](sdlc/01_tt_metal/00_Status/00_projects_graph.md).
+- **Python dialect layers (SoT)**: [00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md](sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md) — Program / Graph / Compile / Runtime, data flow and transformation registry.
 
 ## Prerequisites
 - Docs are disabled by default. Enable with `-DTTLANG_ENABLE_DOCS=ON` when configuring CMake.
