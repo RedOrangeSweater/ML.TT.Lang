@@ -584,20 +584,6 @@ def datamovement(verbose: bool = False) -> Callable:
 # -> CompiledTTNNKernel. Implementation in .compile.pipeline; facade delegates.
 # -----------------------------------------------------------------------------
 
-
-def _compile_kernel(
-    f: Callable[..., object],
-    args: tuple[object, ...],
-    kwargs: dict[str, object],
-    request: KernelCompileRequest,
-    engine_config: AbstractEngineConfig | None = None,
-) -> CompiledTTNNKernel | None:
-    """Compile kernel to CompiledTTNNKernel. Delegates to compile.pipeline with thread_registry."""
-    return _compile_kernel_impl(
-        f, args, kwargs, request, _thread_registry, engine_config
-    )
-
-
 OBJECTIVE_VALUES = ("latency", "throughput", "balanced")
 PLACEMENT_VALUES = ("auto", "manual")
 
@@ -673,12 +659,13 @@ def run(
     )
     program_hash = hash((id(req.spec.program), cache_key))
     request = req.spec.to_compile_request(req.args, req.kwargs, program_hash)
-    compiled = _compile_kernel(
+    compiled = _compile_kernel_impl(
         req.spec.program,
         req.args,
         dict(req.kwargs),
         request,
-        engine_config=engine_config,
+        _thread_registry,
+        engine_config,
     )
     if compiled is None:
         return None
@@ -783,7 +770,9 @@ def pykernel_gen(
                     iterator_types=iterator_types_list,
                     options=options,
                 )
-                compiled_kernel = _compile_kernel(f, args, kwargs, compile_request)
+                compiled_kernel = _compile_kernel_impl(
+                    f, args, kwargs, compile_request, _thread_registry, None
+                )
 
                 if compiled_kernel is not None:
                     cache[cache_key] = compiled_kernel

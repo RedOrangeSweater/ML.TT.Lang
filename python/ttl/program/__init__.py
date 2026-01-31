@@ -107,6 +107,7 @@ class ProgramOptions(BaseModel):
     objective: Literal["latency", "throughput", "balanced"] | None = None
     placement: Literal["auto", "manual"] | None = None
 
+    @property
     def program_config_dict(self) -> dict[str, str | None]:
         """Dict for program_config (objective, placement)."""
         return {"objective": self.objective, "placement": self.placement}

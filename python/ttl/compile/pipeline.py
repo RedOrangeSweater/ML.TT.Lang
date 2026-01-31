@@ -356,14 +356,7 @@ def _compile_kernel(
 
     thread_registry is passed from ttl_api (where @compute/@datamovement register).
     """
-    grid = request.grid
-    program_hash = request.program_hash
-    num_outs = request.options.num_outs
-    memory_space = request.options.memory_space
-    tiled = request.options.tiled
-    fp32_dest_acc_en = request.options.fp32_dest_acc_en
-    dst_full_sync_en = request.options.dst_full_sync_en
-    program_config = request.options.program_config_dict() or {}
+    memory_space = request.options.memory_space  # may be updated from tensor
     f_params = inspect.signature(f).parameters
 
     try:
@@ -387,9 +380,9 @@ def _compile_kernel(
     _track_tensor_sources(f_params, args, kernel_source_file)
 
     run_config = ProgramRunConfig(
-        grid=list(grid),
+        grid=list(request.grid),
         memory_space=memory_space,
-        tiled=tiled,
+        tiled=request.options.tiled,
         debug_locations=True,
     )
     run_config.inject_into_kwargs(kwargs, set(f_params))
@@ -398,7 +391,7 @@ def _compile_kernel(
     from ..operators import _set_current_grid
 
     _reset_cb_counter()
-    _set_current_grid(grid)
+    _set_current_grid(request.grid)
 
     thread_registry.clear()
     f(*args, **kwargs)
@@ -465,8 +458,8 @@ def _compile_kernel(
                     (ct.name, ct.kernel_type or "dm") for ct in compiled_threads
                 ]
                 op_graph = build_op_graph_from_threads(thread_infos)
-                topology = build_topology_from_grid(grid)
-                plan = schedule_stub(op_graph, topology, program_config)
+                topology = build_topology_from_grid(request.grid)
+                plan = schedule_stub(op_graph, topology, request.options.program_config_dict)
                 assert (
                     plan.grid_cols == topology.grid_cols
                     and plan.grid_rows == topology.grid_rows
@@ -483,9 +476,9 @@ def _compile_kernel(
                     if hasattr(engine_cfg, "get_topology_grid")
                     else None
                 )
-                grid_for_topology = topo_grid if topo_grid is not None else grid
+                grid_for_topology = topo_grid if topo_grid is not None else request.grid
                 topology = build_topology_from_grid(grid_for_topology)
-                plan = schedule_stub(op_graph, topology, program_config)
+                plan = schedule_stub(op_graph, topology, request.options.program_config_dict)
                 assert (
                     plan.grid_cols == topology.grid_cols
                     and plan.grid_rows == topology.grid_rows
@@ -515,13 +508,13 @@ def _compile_kernel(
         verify = True
         set_compute_config_pass = "func.func(ttl-set-compute-kernel-config)"
         config_options = []
-        if fp32_dest_acc_en is not None:
+        if request.options.fp32_dest_acc_en is not None:
             config_options.append(
-                f"fp32-dest-acc-en={1 if fp32_dest_acc_en else 0}"
+                f"fp32-dest-acc-en={1 if request.options.fp32_dest_acc_en else 0}"
             )
-        if dst_full_sync_en is not None:
+        if request.options.dst_full_sync_en is not None:
             config_options.append(
-                f"dst-full-sync-en={1 if dst_full_sync_en else 0}"
+                f"dst-full-sync-en={1 if request.options.dst_full_sync_en else 0}"
             )
         if config_options:
             set_compute_config_pass = (
@@ -613,12 +606,12 @@ def _compile_kernel(
         compile_input = TTNNCompileInput(
             module=module,
             args=args,
-            grid=grid,
-            num_outs=num_outs,
+            grid=request.grid,
+            num_outs=request.options.num_outs,
             thread_tensor_indices=thread_tensor_indices,
         )
         cache_and_cb = TTNNCompileCacheAndCb(
-            cb_configs=cb_configs, program_hash=program_hash
+            cb_configs=cb_configs, program_hash=request.program_hash
         )
         profiling_input = TTNNProfilingInput(
             source_lines=profile_source_lines,
@@ -628,9 +621,9 @@ def _compile_kernel(
         compile_req = TTNNKernelCompileRequest(
             input=compile_input,
             compile_options=TTNNKernelCompileOptions(
-                fp32_dest_acc_en=fp32_dest_acc_en,
-                dst_full_sync_en=dst_full_sync_en,
-                program_config=program_config,
+                fp32_dest_acc_en=request.options.fp32_dest_acc_en,
+                dst_full_sync_en=request.options.dst_full_sync_en,
+                program_config=request.options.program_config_dict,
             ),
             cache_and_cb=cache_and_cb,
             profiling=profiling_input,
