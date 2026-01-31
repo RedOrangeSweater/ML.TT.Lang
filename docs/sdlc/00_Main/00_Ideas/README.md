@@ -3,3 +3,7 @@
 Идеи, предложения и design notes по tt-lang (не утверждённые спеки).
 
 - [11_future_framework_vision.md](11_future_framework_vision.md) — видение фреймворка будущего (целевой UX, функциональный стиль, C++ ranges, модульность).
+- [12_colored_compute_graph_and_tensix_state_machine.md](12_colored_compute_graph_and_tensix_state_machine.md) — раскрашенный граф вычислений, Tensix как «фабрики», state-машина устройств, Reader-Compute-Writer vs планировщик, multi P/C, «цветной Tetris».
+- [13_architecture_impact_and_refactor_vision.md](13_architecture_impact_and_refactor_vision.md) — примеры целевого кода пользователя, архитектурные изменения, план рефакторинга (Python → C++), гибкая система с распределением по умолчанию (low latency).
+- [14_implementation_roadmap.md](14_implementation_roadmap.md) — дорожная карта внедрения: program, toy examples, последовательное переписывание tt-lang (фазы 0–9+).
+- [15_salabim_tensix_dataflow_simulator.md](15_salabim_tensix_dataflow_simulator.md) — симулятор Tensix/DataFlow на базе salabim (ShopsSimilarity): разноцветные вычислительные блоки и DataFlow state блоки, Tensix-cores слабо на фоне.
