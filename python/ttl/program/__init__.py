@@ -316,10 +316,13 @@ class Program:
         return Program(*self.threads, args=args, kwargs={**self.kwargs, **kwargs})
 
 
+from .builder import ProgramBuilder
+
 __all__ = [
     "CompileKernelRequest",
     "KernelCompileRequest",
     "Program",
+    "ProgramBuilder",
     "ProgramDecoratorParams",
     "ProgramOptions",
     "ProgramSpec",

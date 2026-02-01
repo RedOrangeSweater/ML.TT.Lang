@@ -124,20 +124,36 @@ _TTL_PROGRAM_ATTR = "_ttl_program"
 
 
 def run(
-    req: RunRequest,
+    req: RunRequest | Callable[..., object],
+    *args: object,
     engine_config_path: str | Path | None = None,
     engine_config: AbstractEngineConfig | None = None,
+    grid: (tuple[int, ...] | list[int] | Callable[..., object]) | None = None,
+    options: ProgramOptions | None = None,
+    **kwargs: object,
 ) -> object | None:
     """
-    Compile and run kernel from a single RunRequest. Ideal UX entry point.
+    Compile and run kernel. Ideal UX entry point.
 
-    Build RunRequest explicitly:
+    Two forms:
     - run(RunRequest(spec=spec, args=args, kwargs=kwargs))
-    - run(RunRequest.from_program(program, *args, grid=..., options=..., **kwargs))
+    - run(program, *args, grid=..., options=..., **kwargs)
+      e.g. run(add_kernel, lhs, rhs, out, grid=(2, 2))
 
     Optional engine_config_path or engine_config: abstract engine config for scheduler.
     See docs/sdlc/00_Main/00_Ideas/20_nickel_mlir_config_abstract_engine.md.
     """
+    if not isinstance(req, RunRequest):
+        program = req
+        if grid is None:
+            raise ValueError(
+                "grid= is required when passing program as first arg; "
+                "e.g. run(add_kernel, lhs, rhs, out, grid=(2, 2))"
+            )
+        req = RunRequest.from_program(
+            program, *args, grid=grid, options=options, **kwargs
+        )
+
     if engine_config_path is not None:
         from .scheduler import load_abstract_engine_config
 
