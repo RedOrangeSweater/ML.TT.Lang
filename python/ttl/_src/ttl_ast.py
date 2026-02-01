@@ -7,7 +7,6 @@ from __future__ import annotations
 import ast
 import inspect
 
-from pydantic import BaseModel, ConfigDict, Field
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import *
 
@@ -24,8 +23,10 @@ from .auto_profile import (
 )
 from .context import (
     CompilerContext,
-    TTLCompilerConfig,
     ThreadSourceInfo,
+    TTLCompilerConfig,
+)
+from .context import (
     make_file_loc as _make_file_loc,
 )
 from .tensor_registry import get_tensor_global_index

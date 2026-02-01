@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import inspect
-from typing import Callable
+from collections.abc import Callable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -88,5 +88,5 @@ def collect_captures(
 
     return {
         n: convert(n, c.cell_contents)
-        for n, c in zip(f.__code__.co_freevars, f.__closure__)
+        for n, c in zip(f.__code__.co_freevars, f.__closure__, strict=False)
     }

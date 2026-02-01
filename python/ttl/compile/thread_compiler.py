@@ -23,15 +23,14 @@ from ttmlir.ir import (
     Module,
 )
 
+from .._src.tensor_registry import register_tensor_name
 from .._src.ttl_ast import TTLGenericCompiler
 from ..circular_buffer import get_cb_count
 from ..constants import SUPPORTED_MEMORY_SPACES
 from ..descriptor_options import ProgramRunConfig
 from ..diagnostics import TTLangCompileError, format_python_error
 from ..dtype_utils import TTNNMemoryConfigProxy, is_ttnn_tensor
-from ..program import CompileKernelRequest, KernelCompileRequest, Program
-from .._src.tensor_registry import register_tensor_name
-
+from ..program import CompileKernelRequest, Program
 from .source_collector import (
     collect_cb_configs,
     collect_source_info_from_threads,

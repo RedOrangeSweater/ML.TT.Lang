@@ -40,7 +40,6 @@ from ..descriptor_options import (
 from ..dtype_utils import is_ttnn_tensor
 from ..settings import settings_ttlang
 from ..ttl_utils import tmp_dir
-
 from .kernel_writer import write_kernel_to_tmp
 
 

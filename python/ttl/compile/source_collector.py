@@ -17,11 +17,11 @@ from types import CellType
 
 from pydantic import BaseModel, ConfigDict
 
+from .._src.tensor_registry import register_tensor_source
 from .._src.ttl_ast import TTLGenericCompiler
 from ..circular_buffer import CircularBuffer
 from ..diagnostics import find_variable_assignment
 from ..dtype_utils import is_ttnn_tensor
-from .._src.tensor_registry import register_tensor_source
 
 
 class ThreadWrapperView(BaseModel):

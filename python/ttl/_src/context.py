@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 
+import ast
 from typing import TYPE_CHECKING
 
-import ast
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..constants import MemorySpace

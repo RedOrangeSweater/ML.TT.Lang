@@ -12,9 +12,6 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..boundary import MlirModuleLike
-    validate_kernel_count_for_request,
-    validate_ttnn_tensors_for_request,
-)
 
 from .program_config import ProgramConfig
 from .thread_config import ComputeConfigOptions

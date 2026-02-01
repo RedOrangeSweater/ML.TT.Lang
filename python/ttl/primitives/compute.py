@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from .base import BuildContext, Primitive
+from .base import BuildContext
 
 
 class ComputePrimitive(BaseModel):

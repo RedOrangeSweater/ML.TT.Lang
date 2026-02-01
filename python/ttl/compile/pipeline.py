@@ -34,7 +34,6 @@ from ..descriptor_options import (
 from ..diagnostics import format_mlir_error
 from ..program import CompileKernelRequest, KernelCompileRequest
 from ..settings import settings_ttlang
-
 from .source_collector import get_source_line_offset
 from .thread_compiler import (
     build_module_from_threads,

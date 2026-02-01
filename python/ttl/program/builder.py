@@ -18,7 +18,6 @@ from collections.abc import Callable
 from typing import Self
 
 from ..constants import MemorySpace
-
 from . import ProgramOptions, ProgramSpec
 
 
