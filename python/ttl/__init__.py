@@ -36,6 +36,10 @@ from ttl.ttl_api import (
     TensorBlock,
 )
 
+# PyTorch-like modular API (ttl.nn)
+from . import nn
+from .nn import Module, Pipeline, PipelineConfig, ProgramModule, Sequential
+
 __all__ = [
     "CircularBuffer",
     "CopyTransferHandler",
@@ -55,6 +59,12 @@ __all__ = [
     "run",
     "signpost",
     "make_circular_buffer_like",
+    "nn",
+    "Module",
+    "Pipeline",
+    "PipelineConfig",
+    "ProgramModule",
+    "Sequential",
     # Elementwise operators are automatically included from generated file
     *_elementwise_all,
 ]

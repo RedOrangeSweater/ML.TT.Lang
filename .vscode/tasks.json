@@ -25,6 +25,41 @@
         "reveal": "silent",
         "panel": "shared"
       }
+    },
+    {
+      "label": "TTL: Pytest (test/python)",
+      "type": "shell",
+      "command": "cmake --build build --target check-ttlang-pytest",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "TTL: Pytest nn API",
+      "type": "shell",
+      "command": "cd test/python && python -m pytest test_nn_api.py -v --tb=short",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "TTL: Lit python tests",
+      "type": "shell",
+      "command": "cmake --build build --target check-ttlang-python-lit",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "TTL: Example nn_single_module",
+      "type": "shell",
+      "command": "python examples/nn_single_module.py",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "TTL: Example nn_sequential",
+      "type": "shell",
+      "command": "python examples/nn_sequential.py",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
     }
   ]
 }

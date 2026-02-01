@@ -1,4 +1,30 @@
 {
   "version": "0.2.0",
-  "configurations": []
+  "configurations": [
+    {
+      "name": "TTL: Example nn_single_module",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/nn_single_module.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "TTL: Example nn_sequential",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/nn_sequential.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "TTL: Pytest nn API",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["test_nn_api.py", "-v", "--tb=short"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/test/python"
+    }
+  ]
 }
