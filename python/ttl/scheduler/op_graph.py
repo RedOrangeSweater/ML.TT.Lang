@@ -76,7 +76,7 @@ class OpGraph(BaseModel):
         """Topological order (simplified: same as insertion)."""
         return list(self.nodes.keys())
 
-    def to_dict(self) -> dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         """Serialize for JSON (list of nodes)."""
         return {"nodes": [n.model_dump() for n in self.nodes.values()]}
 

@@ -28,7 +28,7 @@ class Topology(BaseModel):
         """(col, row) for each core in row-major order."""
         return [(c, r) for r in range(self.grid_rows) for c in range(self.grid_cols)]
 
-    def to_dict(self) -> dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         """Serialize for JSON."""
         return self.model_dump()
 

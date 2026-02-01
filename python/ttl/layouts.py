@@ -59,7 +59,7 @@ def create_ttnn_layout(ctx, config: TTNNLayoutConfig):
 
     # logical_shape is (rows, cols), mlir_grid is (rows, cols)
 
-    ttcore_dtype = TensorDtype(dtype=config.dtype).to_ttcore()
+    ttcore_dtype = TensorDtype(dtype=config.dtype).ttcore_dtype
     element_type = ttcore.ir.TileType.get(
         ctx, DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE, ttcore_dtype
     )

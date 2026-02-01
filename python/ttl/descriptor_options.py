@@ -45,7 +45,7 @@ class ComputeConfigOptions(BaseModel):
             dst_full_sync_en=self.dst_full_sync_en,
         )
         resolved = ComputeConfigResolved.from_proxy_and_context(proxy, context)
-        config = resolved.to_ttnn()
+        config = resolved.build_ttnn()
         entries = {
             "TRISC_0": context.kernel_name,
             "TRISC_1": context.kernel_name,
@@ -67,10 +67,10 @@ class NocConfigOptions(BaseModel):
     def build_ttnn_descriptor(self) -> tuple[object, dict[str, str]]:
         """Build ttnn.ReaderConfigDescriptor or WriterConfigDescriptor and thread_to_kernel entries."""
         if self.noc_kernel_idx == 0:
-            config = ReaderConfigProxy().to_ttnn()
+            config = ReaderConfigProxy().build_ttnn()
             entries = {"NCRISC": self.kernel_name}
         else:
-            config = WriterConfigProxy().to_ttnn()
+            config = WriterConfigProxy().build_ttnn()
             entries = {"BRISC": self.kernel_name}
         return config, entries
 
@@ -84,7 +84,7 @@ class ReaderConfigOptions(BaseModel):
 
     def build_ttnn_descriptor(self) -> tuple[object, dict[str, str]]:
         """Build ttnn.ReaderConfigDescriptor and empty entries (default reader fallback)."""
-        config = ReaderConfigProxy().to_ttnn()
+        config = ReaderConfigProxy().build_ttnn()
         return config, {}
 
 
@@ -106,7 +106,7 @@ class CoreRangeSetOptions(BaseModel):
 
     def build_ttnn_core_range_set(self) -> object:
         """Build ttnn.CoreRangeSet covering [0,0] to (grid[0]-1, grid[1]-1)."""
-        return CoreRangeSetProxy(grid=self.grid).to_ttnn()
+        return CoreRangeSetProxy(grid=self.grid).build_ttnn()
 
 
 class ProgramRunConfig(BaseModel):
@@ -143,7 +143,7 @@ class ProgramConfig(BaseModel):
         default=None, description="Scheduler placement"
     )
 
-    def to_dict(self) -> dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         """Dict for compatibility with scheduler and CompiledTTNNKernel.program_config."""
         return self.model_dump(exclude_none=False)
 
@@ -190,8 +190,8 @@ class TTNNKernelCompileOptions(BaseModel):
         default=None, description="Override for compute dst full sync"
     )
     verbose: bool = Field(default=True, description="Print compilation info")
-    program_config: ProgramConfig | dict[str, object] | None = Field(
-        default=None, description="Grid, objective, placement (dict or ProgramConfig)"
+    program_config: ProgramConfig | None = Field(
+        default=None, description="Grid, objective, placement"
     )
 
     def compute_config_options(self) -> ComputeConfigOptions:

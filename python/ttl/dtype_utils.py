@@ -224,25 +224,6 @@ DTypeNameLike = Annotated[DTypeName, BeforeValidator(_coerce_to_dtype_name)]
 TileBytesLike = Annotated[int, BeforeValidator(_coerce_to_tile_bytes)]
 
 
-def tensor_dtype_to_ttcore_datatype(
-    dtype: Union[torch.dtype, ttcore.DataType, str, object],
-) -> ttcore.DataType:
-    """
-    Convert tensor dtype to ttcore.DataType (torch, ttcore, name, or object with .name).
-    """
-    return _coerce_to_ttcore(dtype)
-
-
-def tile_bytes_from_dtype(
-    dtype: Union[ttcore.DataType, torch.dtype, str, object],
-) -> int:
-    """
-    Calculate tile size in bytes from dtype (ttcore, torch, name, or object with .name).
-    For tiled tensors, each tile is 32x32 elements.
-    """
-    return _coerce_to_tile_bytes(dtype)
-
-
 # -----------------------------------------------------------------------------
 # TensorDtype: Pydantic model; field uses TTCoreDataTypeLike so coercion is automatic
 # -----------------------------------------------------------------------------
@@ -253,7 +234,7 @@ class TensorDtype(BaseModel):
     Pydantic wrapper for tensor dtype (torch, ttcore, canonical name, or object with .name).
 
     Field dtype is TTCoreDataTypeLike: Pydantic coerces on assignment.
-    Exposes .to_ttcore(), .dtype_name(), .tile_bytes(). No ttnn dependency.
+    Exposes .ttcore_dtype, .dtype_name(), .tile_bytes(). No ttnn dependency.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -263,7 +244,8 @@ class TensorDtype(BaseModel):
         description="ttcore.DataType (coerced from torch/name/object with .name via TTCoreDataTypeLike)",
     )
 
-    def to_ttcore(self) -> ttcore.DataType:
+    @property
+    def ttcore_dtype(self) -> ttcore.DataType:
         """Return ttcore.DataType."""
         return self.dtype
 

@@ -6,7 +6,7 @@
 Protocols for ttnn-facing values used in compile/runtime layers.
 
 Minimum surface required by kernel_runner, ttl_api, program, dtype_utils.
-ttnn_proxy remains the only module that returns Any (from .to_ttnn()).
+ttnn_proxy remains the only module that returns Any (from .build_ttnn()).
 """
 
 from __future__ import annotations

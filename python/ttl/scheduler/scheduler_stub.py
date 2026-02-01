@@ -30,7 +30,7 @@ class SchedulePlan(BaseModel):
         coords = self.placement.get(node_id, [0, 0])
         return (coords[0], coords[1]) if len(coords) >= 2 else (0, 0)
 
-    def to_dict(self) -> dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         """Serialize for JSON."""
         return self.model_dump()
 

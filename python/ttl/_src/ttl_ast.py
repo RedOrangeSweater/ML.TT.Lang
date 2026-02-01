@@ -78,7 +78,7 @@ def _build_tensor_type(ctx, tensor, grid, tiled, memory_space: MemorySpace):
         ),
     )
 
-    ttcore_dtype = TensorDtype(dtype=tensor.dtype).to_ttcore()
+    ttcore_dtype = TensorDtype(dtype=tensor.dtype).ttcore_dtype
     element_type = ttcore.ir.TileType.get(
         ctx, DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE, ttcore_dtype
     )
@@ -443,7 +443,7 @@ class TTLGenericCompiler(TTCompilerBase):
 
     def _emit_cb_from_capture(self, cb):
         """Emit ttl.bind_cb for a captured CircularBuffer instance."""
-        ttcore_dtype = TensorDtype(dtype=cb.dtype).to_ttcore()
+        ttcore_dtype = TensorDtype(dtype=cb.dtype).ttcore_dtype
         element_type = ttcore.ir.TileType.get(
             self.ctx, DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE, ttcore_dtype
         )

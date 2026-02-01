@@ -57,7 +57,7 @@ from ..diagnostics import (
     format_python_error,
 )
 from ..dtype_utils import TTNNMemoryConfigProxy, is_ttnn_tensor
-from ..program import KernelCompileRequest, Program
+from ..program import CompileKernelRequest, KernelCompileRequest, Program
 from ..settings import settings_ttlang
 from ..ttl_utils import tmp_dir
 try:
@@ -299,10 +299,7 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest) -> object | None:
 
     thread_names = [name for name, _ in kernel_info]
     raw_cfg = opts.program_config
-    if isinstance(raw_cfg, ProgramConfig):
-        cfg = raw_cfg.to_dict()
-    else:
-        cfg = dict(raw_cfg or {})
+    cfg = raw_cfg.model_dump(exclude_none=False) if raw_cfg is not None else {}
     cfg.setdefault("grid", req.input.grid)
     cb = req.cache_and_cb
     prof = req.profiling
@@ -343,19 +340,19 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest) -> object | None:
     return compiled_kernel
 
 
-def _compile_kernel(
-    f: Callable[..., object],
-    args: tuple[object, ...],
-    kwargs: dict[str, object],
-    request: KernelCompileRequest,
-    thread_registry: ThreadRegistryLike,
-    engine_config: object | None = None,
-) -> object | None:
+def _compile_kernel(req: CompileKernelRequest) -> object | None:
     """
     Compile kernel function to MLIR and return CompiledTTNNKernel.
 
-    thread_registry is passed from ttl_api (where @compute/@datamovement register).
+    Single request object bundles program, args/kwargs, compile params, and thread registry.
     """
+    f = req.program
+    args = req.args
+    kwargs = dict(req.kwargs)
+    request = req.compile_request
+    thread_registry = req.thread_registry
+    engine_config = req.engine_config
+
     memory_space = request.options.memory_space  # may be updated from tensor
     f_params = inspect.signature(f).parameters
 
@@ -619,12 +616,20 @@ def _compile_kernel(
             all_source_lines=all_source_lines or None,
             kernel_line_offsets=kernel_line_offsets or None,
         )
+        grid_tuple: tuple[int, int] | None = None
+        if isinstance(request.grid, (tuple, list)) and len(request.grid) >= 2:
+            grid_tuple = (int(request.grid[0]), int(request.grid[1]))
+        program_config = ProgramConfig(
+            grid=grid_tuple,
+            objective=request.options.objective,
+            placement=request.options.placement,
+        )
         compile_req = TTNNKernelCompileRequest(
             input=compile_input,
             compile_options=TTNNKernelCompileOptions(
                 fp32_dest_acc_en=request.options.fp32_dest_acc_en,
                 dst_full_sync_en=request.options.dst_full_sync_en,
-                program_config=request.options.program_config_dict,
+                program_config=program_config,
             ),
             cache_and_cb=cache_and_cb,
             profiling=profiling_input,

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from ttl.program import ProgramOptions, ProgramSpec
+from ttl.program import ProgramOptions, ProgramSpec, RunRequest
 from ttl.scheduler import (
     AbstractEngineConfig,
     TopologyGridSpec,
@@ -119,7 +119,7 @@ def test_run_with_engine_config_tenstorrent_uses_topology():
     try:
         os.environ["TTLANG_USE_SCHEDULER"] = "1"
         os.environ["TTLANG_COMPILE_ONLY"] = "1"
-        run(spec, lhs, rhs, out, engine_config=engine_config)
+        run(RunRequest(spec=spec, args=(lhs, rhs, out), kwargs={}), engine_config=engine_config)
     except TypeError as e:
         if "Unhandled capture" in str(e) or "torch.Tensor" in str(e):
             pytest.skip("compile-only with torch tensors not supported in this env")
@@ -157,7 +157,7 @@ def test_run_with_engine_config_toy_completes():
     try:
         os.environ["TTLANG_USE_SCHEDULER"] = "1"
         os.environ["TTLANG_COMPILE_ONLY"] = "1"
-        run(spec, lhs, rhs, out, engine_config=engine_config)
+        run(RunRequest(spec=spec, args=(lhs, rhs, out), kwargs={}), engine_config=engine_config)
     except TypeError as e:
         if "Unhandled capture" in str(e) or "torch.Tensor" in str(e):
             pytest.skip("compile-only with torch tensors not supported in this env")

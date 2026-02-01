@@ -11,7 +11,7 @@ See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
 
 from __future__ import annotations
 
-from typing import Callable, Literal, Self
+from typing import Callable, Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -41,8 +41,49 @@ def _resolve_grid(grid, args, kwargs):
     return grid
 
 
+class ProgramOptions(BaseModel):
+    """Validated options for @ttl.program decorator. Replaces manual if/raise checks."""
+
+    num_outs: int = Field(default=1, ge=1)
+    memory_space: MemorySpace = "L1"
+    tiled: bool = True
+    fp32_dest_acc_en: bool | None = None
+    dst_full_sync_en: bool | None = None
+    objective: Literal["latency", "throughput", "balanced"] | None = None
+    placement: Literal["auto", "manual"] | None = None
+
+    @property
+    def program_config_dict(self) -> dict[str, str | None]:
+        """Dict for program_config (objective, placement)."""
+        return {"objective": self.objective, "placement": self.placement}
+
+    def build_program_config(self, grid: tuple[int, int] | None = None) -> ProgramConfig:
+        """Build ProgramConfig from decorator options (objective, placement, optional grid)."""
+        return ProgramConfig(
+            grid=grid,
+            objective=self.objective,
+            placement=self.placement,
+        )
+
+    def build_compile_options(
+        self,
+        *,
+        verbose: bool = True,
+        program_config: ProgramConfig | None = None,
+    ) -> TTNNKernelCompileOptions:
+        """Build TTNNKernelCompileOptions for _compile_ttnn_kernel."""
+        if program_config is None:
+            program_config = self.build_program_config()
+        return TTNNKernelCompileOptions(
+            fp32_dest_acc_en=self.fp32_dest_acc_en,
+            dst_full_sync_en=self.dst_full_sync_en,
+            verbose=verbose,
+            program_config=program_config,
+        )
+
+
 class ProgramDecoratorParams(BaseModel):
-    """Validated decorator params for @ttl.program. Contract: grid required; indexing_maps when iterator_types; num_outs == 1."""
+    """Validated decorator params for @ttl.program. Contract: grid required; indexing_maps when iterator_types; options.num_outs == 1."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -54,13 +95,10 @@ class ProgramDecoratorParams(BaseModel):
         default=None, description="Indexing maps"
     )
     iterator_types: list[str] | None = Field(default=None, description="Iterator types")
-    num_outs: int = Field(1, ge=1)
-    memory_space: MemorySpace = Field(default="L1")
-    tiled: bool = Field(default=True)
-    fp32_dest_acc_en: bool | None = Field(default=None)
-    dst_full_sync_en: bool | None = Field(default=None)
-    objective: Literal["latency", "throughput", "balanced"] | None = Field(default=None)
-    placement: Literal["auto", "manual"] | None = Field(default=None)
+    options: ProgramOptions = Field(
+        default_factory=lambda: ProgramOptions(),
+        description="Program options (num_outs, memory_space, tiled, etc.)",
+    )
 
     @model_validator(mode="after")
     def grid_required(self) -> Self:
@@ -79,62 +117,9 @@ class ProgramDecoratorParams(BaseModel):
     @model_validator(mode="after")
     def single_output_for_run(self) -> Self:
         """Contract: num_outs must be 1 for TTNN run."""
-        if self.num_outs != 1:
-            raise ValueError(f"num_outs must be 1, got {self.num_outs}")
+        if self.options.num_outs != 1:
+            raise ValueError(f"num_outs must be 1, got {self.options.num_outs}")
         return self
-
-    def to_program_options(self) -> "ProgramOptions":
-        """Build ProgramOptions from validated params."""
-        return ProgramOptions(
-            num_outs=self.num_outs,
-            memory_space=self.memory_space,
-            tiled=self.tiled,
-            fp32_dest_acc_en=self.fp32_dest_acc_en,
-            dst_full_sync_en=self.dst_full_sync_en,
-            objective=self.objective,
-            placement=self.placement,
-        )
-
-
-class ProgramOptions(BaseModel):
-    """Validated options for @ttl.program decorator. Replaces manual if/raise checks."""
-
-    num_outs: int = Field(1, ge=1)
-    memory_space: MemorySpace = "L1"
-    tiled: bool = True
-    fp32_dest_acc_en: bool | None = None
-    dst_full_sync_en: bool | None = None
-    objective: Literal["latency", "throughput", "balanced"] | None = None
-    placement: Literal["auto", "manual"] | None = None
-
-    @property
-    def program_config_dict(self) -> dict[str, str | None]:
-        """Dict for program_config (objective, placement)."""
-        return {"objective": self.objective, "placement": self.placement}
-
-    def to_program_config(self, grid: tuple[int, int] | None = None) -> ProgramConfig:
-        """Build ProgramConfig from decorator options (objective, placement, optional grid)."""
-        return ProgramConfig(
-            grid=grid,
-            objective=self.objective,
-            placement=self.placement,
-        )
-
-    def to_compile_options(
-        self,
-        *,
-        verbose: bool = True,
-        program_config: ProgramConfig | dict | None = None,
-    ) -> TTNNKernelCompileOptions:
-        """Build TTNNKernelCompileOptions for _compile_ttnn_kernel."""
-        if program_config is None:
-            program_config = self.to_program_config()
-        return TTNNKernelCompileOptions(
-            fp32_dest_acc_en=self.fp32_dest_acc_en,
-            dst_full_sync_en=self.dst_full_sync_en,
-            verbose=verbose,
-            program_config=program_config,
-        )
 
 
 class KernelCompileRequest(BaseModel):
@@ -155,6 +140,31 @@ class KernelCompileRequest(BaseModel):
     )
     options: ProgramOptions = Field(
         ..., description="Decorator-level options (num_outs, memory_space, tiled, etc.)"
+    )
+
+
+class CompileKernelRequest(BaseModel):
+    """Single request object for _compile_kernel. Bundles program, invocation, compile params, and registry."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    program: Callable[..., object] = Field(
+        ..., description="Kernel function (typically @ttl.program-decorated)"
+    )
+    args: tuple[object, ...] = Field(
+        default_factory=tuple, description="Positional arguments (tensors)"
+    )
+    kwargs: dict[str, object] = Field(
+        default_factory=dict, description="Keyword arguments"
+    )
+    compile_request: KernelCompileRequest = Field(
+        ..., description="Grid, program_hash, options for this compile"
+    )
+    thread_registry: object = Field(
+        ..., description="Registry for @compute/@datamovement threads"
+    )
+    engine_config: object | None = Field(
+        default=None, description="Optional abstract engine config for scheduler"
     )
 
 
@@ -188,14 +198,15 @@ class ProgramSpec(BaseModel):
             raise ValueError("indexing_maps must be set when iterator_types is set")
         return self
 
-    def to_compile_request(
+    def build_compile_request(
         self,
         args: tuple,
         kwargs: dict,
         program_hash: int,
     ) -> KernelCompileRequest:
         """Build KernelCompileRequest for this spec and invocation."""
-        grid = _resolve_grid(self.grid, args, kwargs)
+        resolved = _resolve_grid(self.grid, args, kwargs)
+        grid = cast(tuple[int, ...] | list[int], resolved)
         return KernelCompileRequest(
             grid=grid,
             program_hash=program_hash,
@@ -206,7 +217,7 @@ class ProgramSpec(BaseModel):
 
 
 class RunRequest(BaseModel):
-    """Request for run(spec, *args): validates num_outs == 1 before compile."""
+    """Request for run(req). Single entry point: spec + args + kwargs. Validates num_outs == 1 before compile."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -224,6 +235,25 @@ class RunRequest(BaseModel):
         if self.spec.options.num_outs != 1:
             raise ValueError(f"num_outs must be 1, got {self.spec.options.num_outs}")
         return self
+
+    @classmethod
+    def from_program(
+        cls,
+        program: Callable[..., object],
+        *args: object,
+        grid: (tuple[int, ...] | list[int] | Callable[..., object]) | None = None,
+        options: ProgramOptions | None = None,
+        **kwargs: object,
+    ) -> Self:
+        """Build RunRequest from a @ttl.program-decorated callable. grid is required."""
+        if grid is None:
+            raise ValueError(
+                "grid= is required when using from_program; "
+                "e.g. RunRequest.from_program(add_kernel, lhs, rhs, out, grid=(2, 2))"
+            )
+        opts = options if options is not None else ProgramOptions()
+        spec = ProgramSpec(program=program, grid=grid, options=opts)
+        return cls(spec=spec, args=args, kwargs=kwargs)
 
 
 class Program:
@@ -266,6 +296,7 @@ class Program:
 
 
 __all__ = [
+    "CompileKernelRequest",
     "KernelCompileRequest",
     "Program",
     "ProgramDecoratorParams",

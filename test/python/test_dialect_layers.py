@@ -13,9 +13,11 @@ import pytest
 from pydantic import ValidationError
 
 from ttl.program import (
+    CompileKernelRequest,
     KernelCompileRequest,
     ProgramOptions,
     ProgramSpec,
+    RunRequest,
     _resolve_grid,
 )
 from ttl.descriptor_options import (
@@ -48,15 +50,15 @@ from ttl import run
 # -----------------------------------------------------------------------------
 
 
-def test_program_spec_to_compile_request():
-    """ProgramSpec.to_compile_request(args, kwargs, program_hash) returns KernelCompileRequest."""
+def test_program_spec_build_compile_request():
+    """ProgramSpec.build_compile_request(args, kwargs, program_hash) returns KernelCompileRequest."""
 
     def _dummy_program(_x):
         pass
 
     options = ProgramOptions(memory_space="L1", tiled=True)
     spec = ProgramSpec(program=_dummy_program, grid=(2, 2), options=options)
-    req = spec.to_compile_request((), {}, program_hash=42)
+    req = spec.build_compile_request((), {}, program_hash=42)
     assert isinstance(req, KernelCompileRequest)
     assert req.program_hash == 42
     assert req.grid == (2, 2)
@@ -76,24 +78,33 @@ def test_resolve_grid_tuple():
 
 
 def test_run_with_raw_callable_raises_not_implemented():
-    """run(lambda lhs, rhs: lhs + rhs, lhs, rhs) raises NotImplementedError (lambda inference planned)."""
+    """run(RunRequest(spec=ProgramSpec(program=lambda...))) raises NotImplementedError (lambda inference planned)."""
+    req = RunRequest(
+        spec=ProgramSpec(
+            program=lambda lhs, rhs: lhs + rhs,
+            grid=(1, 1),
+            options=ProgramOptions(),
+        ),
+        args=(None, None),
+        kwargs={},
+    )
     with pytest.raises(NotImplementedError, match="raw callable.*not yet implemented"):
-        run(lambda lhs, rhs: lhs + rhs, None, None)
+        run(req)
 
 
 def test_run_with_program_no_grid_raises():
-    """run(program, *args) without grid= raises ValueError when program is @ttl.program-like."""
+    """RunRequest.from_program(program, *args) without grid= raises ValueError."""
 
     def _fake_program(_x):
         pass
 
     _fake_program._ttl_program = True  # simulate @ttl.program-decorated
     with pytest.raises(ValueError, match="grid= is required"):
-        run(_fake_program, None)
+        RunRequest.from_program(_fake_program, None)
 
 
 def test_run_with_spec_accepts():
-    """run(ProgramSpec(...), *args) builds and runs (no device)."""
+    """run(RunRequest(spec=ProgramSpec(...), args=...)) builds and runs (no device)."""
 
     def _dummy_program(_x):
         pass
@@ -103,9 +114,43 @@ def test_run_with_spec_accepts():
         grid=(1, 1),
         options=ProgramOptions(),
     )
-    # Will fail at _compile_kernel (no threads) but run() accepts spec and proceeds
+    req = RunRequest(spec=spec, args=(None,), kwargs={})
+    # Will fail at _compile_kernel (no threads) but run() accepts req and proceeds
     with pytest.raises(ValueError, match="No threads found"):
-        run(spec, None)
+        run(req)
+
+
+def test_compile_kernel_request_compile_only_path():
+    """_compile_kernel(CompileKernelRequest(...)) accepts single request and proceeds to No threads found."""
+    from ttl.compile.pipeline import _compile_kernel
+
+    def _dummy_program(_x):
+        pass
+
+    class _EmptyRegistry:
+        def clear(self) -> None:
+            pass
+
+        def get_and_clear(self) -> list:
+            return []
+
+    compile_request = KernelCompileRequest(
+        grid=(1, 1),
+        program_hash=42,
+        indexing_maps=[],
+        iterator_types=[],
+        options=ProgramOptions(),
+    )
+    req = CompileKernelRequest(
+        program=_dummy_program,
+        args=(None,),
+        kwargs={},
+        compile_request=compile_request,
+        thread_registry=_EmptyRegistry(),
+        engine_config=None,
+    )
+    with pytest.raises(ValueError, match="No threads found"):
+        _compile_kernel(req)
 
 
 # -----------------------------------------------------------------------------

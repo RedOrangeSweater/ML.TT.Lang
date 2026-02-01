@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pydantic proxies for ttnn primitives. All construction of ttnn config/Core* goes through these proxies via .to_ttnn()."""
+"""Pydantic proxies for ttnn primitives. All construction of ttnn config/Core* goes through these proxies via .build_ttnn()."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _import_ttnn():  # noqa: ANN202
 
 
 # -----------------------------------------------------------------------------
-# ComputeConfigDescriptor proxy (optional flags -> resolved -> to_ttnn)
+# ComputeConfigDescriptor proxy (optional flags -> resolved -> build_ttnn)
 # -----------------------------------------------------------------------------
 
 
@@ -50,7 +50,7 @@ class ComputeConfigProxy(BaseModel):
 
 
 class ComputeConfigResolved(BaseModel):
-    """Resolved compute config (all bools set). Single place for .to_ttnn() mapping."""
+    """Resolved compute config (all bools set). Single place for build_ttnn() mapping."""
 
     fp32_dest_acc_en: bool = Field(default=False)
     dst_full_sync_en: bool = Field(default=False)
@@ -73,7 +73,7 @@ class ComputeConfigResolved(BaseModel):
             dst_full_sync_en=dst_sync if dst_sync is not None else False,
         )
 
-    def to_ttnn(self) -> Any:
+    def build_ttnn(self) -> Any:
         """Build ttnn.ComputeConfigDescriptor from resolved fields. No branching."""
         ttnn = _import_ttnn()
         config = ttnn.ComputeConfigDescriptor()
@@ -90,7 +90,7 @@ class ComputeConfigResolved(BaseModel):
 class ReaderConfigProxy(BaseModel):
     """Pydantic proxy for ttnn.ReaderConfigDescriptor (empty struct)."""
 
-    def to_ttnn(self) -> Any:
+    def build_ttnn(self) -> Any:
         """Build ttnn.ReaderConfigDescriptor."""
         ttnn = _import_ttnn()
         return ttnn.ReaderConfigDescriptor()
@@ -99,7 +99,7 @@ class ReaderConfigProxy(BaseModel):
 class WriterConfigProxy(BaseModel):
     """Pydantic proxy for ttnn.WriterConfigDescriptor (empty struct)."""
 
-    def to_ttnn(self) -> Any:
+    def build_ttnn(self) -> Any:
         """Build ttnn.WriterConfigDescriptor."""
         ttnn = _import_ttnn()
         return ttnn.WriterConfigDescriptor()
@@ -116,7 +116,7 @@ class CoreCoordProxy(BaseModel):
     x: int = Field(..., ge=0)
     y: int = Field(..., ge=0)
 
-    def to_ttnn(self) -> Any:
+    def build_ttnn(self) -> Any:
         """Build ttnn.CoreCoord."""
         ttnn = _import_ttnn()
         return ttnn.CoreCoord(self.x, self.y)
@@ -128,10 +128,10 @@ class CoreRangeProxy(BaseModel):
     start: CoreCoordProxy = Field(...)
     end: CoreCoordProxy = Field(...)
 
-    def to_ttnn(self) -> Any:
+    def build_ttnn(self) -> Any:
         """Build ttnn.CoreRange."""
         ttnn = _import_ttnn()
-        return ttnn.CoreRange(self.start.to_ttnn(), self.end.to_ttnn())
+        return ttnn.CoreRange(self.start.build_ttnn(), self.end.build_ttnn())
 
 
 class CoreRangeSetProxy(BaseModel):
@@ -150,11 +150,11 @@ class CoreRangeSetProxy(BaseModel):
             raise ValueError("grid (cols, rows) must have both >= 1")
         return v
 
-    def to_ttnn(self) -> Any:
+    def build_ttnn(self) -> Any:
         """Build ttnn.CoreRangeSet covering [0,0] to (grid[0]-1, grid[1]-1)."""
         cols, rows = self.grid
         start = CoreCoordProxy(x=0, y=0)
         end = CoreCoordProxy(x=cols - 1, y=rows - 1)
         core_range = CoreRangeProxy(start=start, end=end)
         ttnn = _import_ttnn()
-        return ttnn.CoreRangeSet([core_range.to_ttnn()])
+        return ttnn.CoreRangeSet([core_range.build_ttnn()])

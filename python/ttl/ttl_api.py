@@ -56,7 +56,6 @@ from .dtype_utils import (
     TensorDtype,
     TTNNMemoryConfigProxy,
     is_ttnn_tensor,
-    tile_bytes_from_dtype,
 )
 from .kernel_runner import (
     KernelSpec,
@@ -69,6 +68,7 @@ from .compile.pipeline import (
     _get_source_line_offset,
 )
 from .program import (
+    CompileKernelRequest,
     KernelCompileRequest,
     Program,
     ProgramDecoratorParams,
@@ -597,75 +597,48 @@ _TTL_PROGRAM_ATTR = "_ttl_program"
 
 
 def run(
-    spec_or_program: ProgramSpec | Callable[..., object],
-    *args: object,
-    grid: (tuple[int, ...] | list[int] | Callable[..., object]) | None = None,
-    options: ProgramOptions | None = None,
+    req: RunRequest,
     engine_config_path: str | Path | None = None,
     engine_config: AbstractEngineConfig | None = None,
-    **kwargs: object,
 ) -> object | None:
     """
-    Facade: compile and run kernel from a spec or program. Ideal UX entry point.
+    Compile and run kernel from a single RunRequest. Ideal UX entry point.
 
-    Two forms:
-    - run(spec, *args, **kwargs) — spec is ProgramSpec (program + grid + options).
-    - run(program, *args, grid=..., options=..., **kwargs) — program is @ttl.program-decorated;
-      grid is required; options default to ProgramOptions().
+    Build RunRequest explicitly:
+    - run(RunRequest(spec=spec, args=args, kwargs=kwargs))
+    - run(RunRequest.from_program(program, *args, grid=..., options=..., **kwargs))
 
-    Optional engine_config_path or engine_config: abstract engine config for scheduler
-    (backend, topology, objective). When use_scheduler is True, tenstorrent backend uses
-    topology from config if topology_grid is set; toy backend runs schedule_toy_stub.
+    Optional engine_config_path or engine_config: abstract engine config for scheduler.
     See docs/sdlc/00_Main/00_Ideas/20_nickel_mlir_config_abstract_engine.md.
-
-    Lambda / raw callable: passing a lambda (e.g. lambda lhs, rhs: lhs + rhs) is planned;
-    inference from parameters and return type is not yet implemented. Use @ttl.program for now.
-    See 20_IdealDataFlowAndModuleStructure.md (lambda + inference).
     """
     if engine_config_path is not None:
         from .scheduler import load_abstract_engine_config
 
         engine_config = load_abstract_engine_config(engine_config_path)
-    if isinstance(spec_or_program, ProgramSpec):
-        spec = spec_or_program
-    else:
-        if not callable(spec_or_program):
-            raise TypeError(
-                "first argument must be ProgramSpec or @ttl.program-decorated callable"
-            )
-        program_fn = spec_or_program
-        if not getattr(program_fn, _TTL_PROGRAM_ATTR, False):
-            raise NotImplementedError(
-                "run() with a raw callable (e.g. lambda) is not yet implemented: "
-                "inference from parameters and return type is planned. "
-                "Use @ttl.program to define the kernel and pass it to run(program, *args, grid=...). "
-                "See docs/sdlc/00_Main/02_Architecture/20_IdealDataFlowAndModuleStructure.md "
-                "(lambda + inference)."
-            )
-        if grid is None:
-            raise ValueError(
-                "grid= is required when passing a program callable; "
-                "e.g. run(add_kernel, lhs, rhs, out, grid=(2, 2))"
-            )
-        opts = options if options is not None else ProgramOptions()
-        spec = ProgramSpec(program=program_fn, grid=grid, options=opts)
-
-    req = RunRequest(spec=spec, args=args, kwargs=kwargs)
+    if not getattr(req.spec.program, _TTL_PROGRAM_ATTR, False):
+        raise NotImplementedError(
+            "run() with a raw callable (e.g. lambda) is not yet implemented: "
+            "inference from parameters and return type is planned. "
+            "Use @ttl.program to define the kernel and pass RunRequest.from_program(program, *args, grid=...). "
+            "See docs/sdlc/00_Main/02_Architecture/20_IdealDataFlowAndModuleStructure.md "
+            "(lambda + inference)."
+        )
     cache_key = _make_cache_key(
         req.args,
         fp32_dest_acc_en=req.spec.options.fp32_dest_acc_en,
         dst_full_sync_en=req.spec.options.dst_full_sync_en,
     )
     program_hash = hash((id(req.spec.program), cache_key))
-    request = req.spec.to_compile_request(req.args, req.kwargs, program_hash)
-    compiled = _compile_kernel_impl(
-        req.spec.program,
-        req.args,
-        dict(req.kwargs),
-        request,
-        _thread_registry,
-        engine_config,
+    compile_request = req.spec.build_compile_request(req.args, req.kwargs, program_hash)
+    compile_req = CompileKernelRequest(
+        program=req.spec.program,
+        args=req.args,
+        kwargs=dict(req.kwargs),
+        compile_request=compile_request,
+        thread_registry=_thread_registry,
+        engine_config=engine_config,
     )
+    compiled = _compile_kernel_impl(compile_req)
     if compiled is None:
         return None
     if _should_execute():
@@ -714,15 +687,17 @@ def pykernel_gen(
         grid=grid,
         indexing_maps=indexing_maps,
         iterator_types=iterator_types,
-        num_outs=num_outs,
-        memory_space=memory_space,
-        tiled=tiled,
-        fp32_dest_acc_en=fp32_dest_acc_en,
-        dst_full_sync_en=dst_full_sync_en,
-        objective=objective,
-        placement=placement,
+        options=ProgramOptions(
+            num_outs=num_outs,
+            memory_space=memory_space,
+            tiled=tiled,
+            fp32_dest_acc_en=fp32_dest_acc_en,
+            dst_full_sync_en=dst_full_sync_en,
+            objective=objective,
+            placement=placement,
+        ),
     )
-    options = params.to_program_options()
+    options = params.options
     indexing_maps = params.indexing_maps if params.indexing_maps is not None else []
     iterator_types = params.iterator_types if params.iterator_types is not None else []
 
@@ -765,13 +740,19 @@ def pykernel_gen(
                 compile_request = KernelCompileRequest(
                     grid=resolved_grid,
                     program_hash=program_hash,
-                    indexing_maps=indexing_maps_list,
-                    iterator_types=iterator_types_list,
+                    indexing_maps=indexing_maps,
+                    iterator_types=iterator_types,
                     options=options,
                 )
-                compiled_kernel = _compile_kernel_impl(
-                    f, args, kwargs, compile_request, _thread_registry, None
+                compile_req = CompileKernelRequest(
+                    program=f,
+                    args=args,
+                    kwargs=kwargs,
+                    compile_request=compile_request,
+                    thread_registry=_thread_registry,
+                    engine_config=None,
                 )
+                compiled_kernel = _compile_kernel_impl(compile_req)
 
                 if compiled_kernel is not None:
                     cache[cache_key] = compiled_kernel
