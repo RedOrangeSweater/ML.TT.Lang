@@ -27,3 +27,4 @@ flowchart TD
 
   Idea["Идея в inbox"] --> Park["Остаётся в inbox<br/>(можно вернуться позже)"]
 ```
+

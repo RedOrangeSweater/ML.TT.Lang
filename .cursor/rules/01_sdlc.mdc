@@ -33,7 +33,6 @@ For any non-trivial user request (feature, refactor, fix, or change affecting be
 2. **Consistency**: Ensure navigation, status, specs, run configs are aligned; run or use output of `/sdlc.audit` (full or for affected paths) when needed.
 3. **Plan**: Record required SDLC updates (Task, BA, Arch, Testing, Status) and the list of files/sections to change; plan is agreed before code.
 4. **Implementation** — last: code, tests, doc updates per plan; after each logical step — commit and push (per 15 + 02).
-5. **Every change**: Check whether SDLC docs (08, 20, Ideas) and rules need updating; if the change affects policy (validation, layers, API) or customer/request impact, update docs and rules in the same cycle (same or next commit). After implementation, follow the checklist of `/sdlc.change.preflight` (or equivalent) so the user does not have to remind.
 
 Documentation is updated **during** the work (same commit or next atomic one), not "later". When code and docs diverge, prefer updating docs from code (code is SoT), except for planned target specs/architecture.
 

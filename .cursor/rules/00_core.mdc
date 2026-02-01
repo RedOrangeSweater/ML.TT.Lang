@@ -7,9 +7,9 @@ alwaysApply: true
 
 - Keep the project purpose and the SoT entrypoint **explicit** (a short “start here” path).
 - Prefer linking to one canonical navigation document (README/status/issue/discussion) instead of duplicating content.
-- **SDLC documentation** for tt-lang, tt-metal, and tt_llk is maintained in this repo (tt-lang) under `docs/sdlc/` (00_Main, 01_tt_metal, 02_llk). In tt-metal and tt_llk repos, `docs/sdlc/` contains only stubs pointing here.
 
 ## Language rules
 
 - **Documentation is in Russian** unless explicitly stated otherwise: ideas/, numbered SDLC folders (e.g. `docs/01_Architecture/`, `docs/sdlc/00_Main/`), README, status, specs, BA, architecture, QA, runbooks.
 - Code comments are in English.
+

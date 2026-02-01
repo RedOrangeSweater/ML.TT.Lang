@@ -9,3 +9,4 @@ alwaysApply: true
 - Keep changes minimal and focused; avoid unrelated refactors.
 - Avoid noisy churn (mass formatting/reserialization/lockfile churn) unless explicitly required.
 - If unrelated changes are present, split them by task/concern and commit separately.
+

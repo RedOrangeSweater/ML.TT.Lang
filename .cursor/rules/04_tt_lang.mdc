@@ -13,3 +13,4 @@ alwaysApply: true
 
 - Prefer one-click runnable flows via `.vscode/launch.json` / `.vscode/tasks.json` when introducing new workflows.
 - Be conservative with heavy builds; propose a minimal smoke plan before running expensive toolchains.
+
