@@ -6,7 +6,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+if TYPE_CHECKING:
+    from ..kernel_runner import RunKernelRequest
 
 
 class CompiledKernelArtifacts(BaseModel):
@@ -183,13 +188,9 @@ class CompiledTTNNKernel(BaseModel):
     def kernel_line_offsets(self) -> dict[str, object]:
         return self.profiling.kernel_line_offsets if self.profiling else {}
 
-    def __call__(self, *args: object) -> object:
-        """Execute the kernel with the given tensors."""
-        from ..kernel_runner import (
-            KernelSpec,
-            RunKernelRequest,
-            run_kernel_on_device,
-        )
+    def build_run_request(self, *args: object) -> RunKernelRequest:
+        """Build RunKernelRequest from this compiled kernel and tensor args (with validation)."""
+        from ..kernel_runner import KernelSpec, RunKernelRequest
 
         if len(args) != self.num_tensors:
             raise ValueError(f"Expected {self.num_tensors} tensors, got {len(args)}")
@@ -216,14 +217,19 @@ class CompiledTTNNKernel(BaseModel):
             )
             kernel_specs.append(spec)
 
-        run_req = RunKernelRequest(
+        return RunKernelRequest(
             kernel_specs=kernel_specs,
             tensors=list(args),
             cb_configs=self.cb_configs,
             core_ranges=self.core_ranges,
             program_hash=self.program_hash,
         )
-        return run_kernel_on_device(run_req)
+
+    def __call__(self, *args: object) -> object:
+        """Execute the kernel with the given tensors."""
+        from ..kernel_runner import run_kernel_on_device
+
+        return run_kernel_on_device(self.build_run_request(*args))
 
     def get_scheduler_input(self) -> dict:
         """Return scheduler input (op_graph, topology, plan) for use by scheduler-viz."""
