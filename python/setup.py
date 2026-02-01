@@ -107,7 +107,7 @@ ttlang_c = TTLangExtension("ttl")
 
 # Read README.md file from project root
 readme_path = pathlib.Path(__file__).absolute().parent.parent / "README.md"
-with open(str(readme_path), "r", encoding="utf-8") as f:
+with open(str(readme_path), encoding="utf-8") as f:
     readme = f.read()
 
 setup(

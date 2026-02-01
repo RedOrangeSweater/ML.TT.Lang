@@ -47,8 +47,38 @@ build = "cp311-manylinux_x86_64*"
 skip = "*-musllinux_*"
 build-verbosity = 2
 
+[tool.ruff]
+line-length = 88
+# Latest Python version Ruff supports; drives pyupgrade and version-aware rules.
+target-version = "py314"
+src = ["python", "examples", "test", "apps"]
+# E/W = pycodestyle errors/warnings, F = pyflakes, I = isort, N = pep8-naming,
+# UP = pyupgrade, B = flake8-bugbear, C4 = flake8-comprehensions, SIM = flake8-simplify.
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"python/ttl/dialects/*" = ["F401"]
+
 [tool.mypy]
-mypy_path = "examples"
+python_version = "3.11"
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+mypy_path = "python"
+check_untyped_defs = false
+disallow_incomplete_defs = false
+# Check ttl package via pre-commit: mypy -p ttl
+
+[[tool.mypy.overrides]]
+module = ["ttmlir.*", "ttnn.*", "ttnn"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["ttl._mlir_libs.*", "ttl._generated_elementwise", "ttl.config", "ttl.dialects._ttl_enum_gen", "ttl.dialects._ttl_ops_gen", "sympy.*", "setuptools.*", "yaml.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["ttl.utils.*"]
+ignore_missing_imports = true
 
 [tool.pyright]
 typeCheckingMode = "strict"

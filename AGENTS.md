@@ -6,8 +6,10 @@
 with pre-build tt-mlir `cmake -G Ninja -B build -DTTMLIR_BUILD_DIR=/path/to/tt-mlir/build`;
 with pre-installed tt-mlir `cmake -G Ninja -B build -DTTMLIR_DIR=/path/to/tt-mlir/build/lib/cmake/ttmlir`
 - **Build**: `cmake --build build`
-- **Lint**: `pre-commit run --all-files` (includes clang-format, black,
-  copyright checks)
+- **Lint**: `pre-commit run --all-files` (ruff check --fix, black, clang-format,
+  mypy, copyright checks)
+- **Typecheck**: mypy and pyright (mypy runs in pre-commit; pyright via
+  `TTL: Typecheck (pyright)` task or `pyright python`)
 - **Compiler tests**: `cmake --build build --target check-ttlang`
 - **Single MLIR test**: `llvm-lit test/ttlang/path/to/test.mlir`
 - **ME2E tests**: `pytest test/me2e/`(requires ttnn and a TT device)

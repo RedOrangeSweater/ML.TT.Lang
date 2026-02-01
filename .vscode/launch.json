@@ -2,12 +2,38 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "TTL: Pytest dialect layers",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["test_dialect_layers.py", "-v", "--tb=short"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/test/python",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/build/python_packages:${workspaceFolder}/python:${workspaceFolder}/test"
+      }
+    },
+    {
+      "name": "TTL: Example eltwise_add",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/eltwise_add.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/build/python_packages:${workspaceFolder}/python:${workspaceFolder}/test"
+      }
+    },
+    {
       "name": "TTL: Example nn_single_module",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/examples/nn_single_module.py",
       "console": "integratedTerminal",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/build/python_packages:${workspaceFolder}/python:${workspaceFolder}/test"
+      }
     },
     {
       "name": "TTL: Example nn_sequential",
@@ -15,7 +41,10 @@
       "request": "launch",
       "program": "${workspaceFolder}/examples/nn_sequential.py",
       "console": "integratedTerminal",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/build/python_packages:${workspaceFolder}/python:${workspaceFolder}/test"
+      }
     },
     {
       "name": "TTL: Pytest nn API",
@@ -24,7 +53,10 @@
       "module": "pytest",
       "args": ["test_nn_api.py", "-v", "--tb=short"],
       "console": "integratedTerminal",
-      "cwd": "${workspaceFolder}/test/python"
+      "cwd": "${workspaceFolder}/test/python",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/build/python_packages:${workspaceFolder}/python:${workspaceFolder}/test"
+      }
     },
     {
       "name": "TTL: Trainer (benchmark)",
@@ -33,7 +65,10 @@
       "program": "${workspaceFolder}/examples/nn_trainer_benchmark.py",
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "env": { "TTLANG_COMPILE_ONLY": "1" }
+      "env": {
+        "TTLANG_COMPILE_ONLY": "1",
+        "PYTHONPATH": "${workspaceFolder}/build/python_packages:${workspaceFolder}/python:${workspaceFolder}/test"
+      }
     },
     {
       "name": "TTL: Trainer (scheduler env)",
@@ -41,7 +76,10 @@
       "request": "launch",
       "program": "${workspaceFolder}/examples/nn_trainer_scheduler_env.py",
       "console": "integratedTerminal",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/build/python_packages:${workspaceFolder}/python:${workspaceFolder}/test"
+      }
     }
   ]
 }
