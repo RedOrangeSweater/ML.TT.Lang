@@ -228,29 +228,7 @@ def pykernel_gen(
             placement=placement,
         ),
     )
-
-    def _decorator(f):
-        kernel_id = random.getrandbits(64)
-        cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
-
-        @functools.wraps(f)
-        def _wrapper(*args, **kwargs):
-            ctx = ProgramInvocationContext(
-                program=f,
-                args=args,
-                kwargs=kwargs,
-                params=params,
-                kernel_id=kernel_id,
-                cache=cache,
-            )
-            ctx = compile_cached(ctx)
-            _wrapper._last_compiled_kernel = ctx.compiled  # type: ignore[attr-defined]
-            return execute_and_maybe_profile(ctx.compiled, ctx.args)
-
-        setattr(_wrapper, _TTL_PROGRAM_ATTR, True)
-        return _wrapper
-
-    return _decorator
+    return pykernel_from_params(params)
 
 
 def pykernel_from_params(params: ProgramDecoratorParams) -> Callable:
