@@ -35,6 +35,15 @@ from .constants import MemorySpace
 from .descriptor_options import (
     CompiledTTNNKernel,
 )
+from .layered import compose
+from .layered.compile.build_compile_request import build_compile_request
+from .layered.compile.compile_kernel import compile_kernel
+from .layered.context import ProgramInvocationContext, RunContext
+from .layered.program.compile_cached import compile_cached
+from .layered.program.compute_cache_key import compute_cache_key
+from .layered.program.ensure_run_request import ensure_run_request
+from .layered.program.require_ttl_program import require_ttl_program_attr
+from .layered.program.resolve_engine_config import resolve_engine_config
 from .operators import CopyTransferHandler, TensorBlock, copy
 from .program import (
     Program,
@@ -43,15 +52,6 @@ from .program import (
     RunRequest,
 )
 from .settings import settings_ttlang
-from .layered import compose
-from .layered.context import ProgramInvocationContext, RunContext
-from .layered.compile.build_compile_request import build_compile_request
-from .layered.compile.compile_kernel import compile_kernel
-from .layered.program.ensure_run_request import ensure_run_request
-from .layered.program.compute_cache_key import compute_cache_key
-from .layered.program.compile_cached import compile_cached
-from .layered.program.require_ttl_program import require_ttl_program_attr
-from .layered.program.resolve_engine_config import resolve_engine_config
 
 
 # For kernel body: TensorAccessor and dma (alias for copy) used in examples

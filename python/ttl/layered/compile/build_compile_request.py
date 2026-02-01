@@ -4,15 +4,15 @@
 
 from __future__ import annotations
 
-from ..context import RunContext
-from ..core import middleware
 from ...compile.registry import get_thread_registry
 from ...program import CompileKernelRequest, KernelCompileRequest, _resolve_grid
 from ...program.cache_key import make_cache_key
+from ..context import RunContext
+from ..core import middleware
 
 
 @middleware
-def build_compile_request(ctx: RunContext, next_handler: object) -> object | None:
+def build_compile_request(ctx: RunContext) -> RunContext:
     """Build CompileKernelRequest from RunRequest and store in ctx.compile_req."""
     req = ctx.req
     if req is None:
@@ -41,7 +41,7 @@ def build_compile_request(ctx: RunContext, next_handler: object) -> object | Non
         engine_config=ctx.engine_config,
     )
     ctx = ctx.model_copy(update={"compile_req": compile_req})
-    return next_handler(ctx)
+    return ctx
 
 
 __all__ = ["build_compile_request"]

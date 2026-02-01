@@ -12,7 +12,7 @@ def require_ttl_program_attr(attr_name: str):
     """Ensure ctx.req.spec.program has a marker attribute (e.g. _ttl_program)."""
 
     @middleware
-    def _mw(ctx: RunContext, next_handler: object) -> object | None:
+    def _mw(ctx: RunContext) -> RunContext:
         req = ctx.req
         if req is None:
             raise RuntimeError("require_ttl_program_attr requires ctx.req to be set")
@@ -24,7 +24,7 @@ def require_ttl_program_attr(attr_name: str):
                 "See docs/sdlc/00_Main/02_Architecture/20_IdealDataFlowAndModuleStructure.md "
                 "(lambda + inference)."
             )
-        return next_handler(ctx)
+        return ctx
 
     return _mw
 

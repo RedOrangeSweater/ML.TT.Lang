@@ -4,13 +4,13 @@
 
 from __future__ import annotations
 
+from ...program import ProgramOptions, RunRequest
 from ..context import RunContext
 from ..core import middleware
-from ...program import ProgramOptions, RunRequest
 
 
 @middleware
-def ensure_run_request(ctx: RunContext, next_handler: object) -> object | None:
+def ensure_run_request(ctx: RunContext) -> RunContext:
     """Normalize RunContext raw input into RunRequest (Pydantic-first)."""
     if ctx.req is None:
         if isinstance(ctx.raw_req, RunRequest):
@@ -27,7 +27,7 @@ def ensure_run_request(ctx: RunContext, next_handler: object) -> object | None:
                 program, *ctx.raw_args, grid=ctx.grid, options=opts, **ctx.raw_kwargs
             )
         ctx = ctx.model_copy(update={"req": req})
-    return next_handler(ctx)
+    return ctx
 
 
 __all__ = ["ensure_run_request"]

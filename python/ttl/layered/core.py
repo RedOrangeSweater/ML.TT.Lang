@@ -10,9 +10,8 @@ Middleware model:
   - middleware(next_handler) -> handler
   - compose(handler, [mw1, mw2, ...]) -> wrapped handler
 
-The mental model mirrors MLIR pass pipelines: each middleware is a transform over
-an explicit context dialect (Pydantic model), and may update the context or
-produce diagnostics.
+Business functions use @middleware and take only (ctx) -> ctx; the decorator
+calls next_handler(updated_ctx) so the function does not see next_handler.
 """
 
 from __future__ import annotations
@@ -28,14 +27,12 @@ Handler = Callable[[Ctx], Out]
 Middleware = Callable[[Handler[Ctx, Out]], Handler[Ctx, Out]]
 
 
-def middleware(
-    fn: Callable[[Ctx, Handler[Ctx, Out]], Out],
-) -> Middleware[Ctx, Out]:
-    """Wrap a function (ctx, next) -> out into a Middleware for use with compose()."""
+def middleware(fn: Callable[[Ctx], Ctx]) -> Middleware[Ctx, Out]:
+    """Wrap a transform (ctx) -> ctx into a Middleware; decorator calls next_handler."""
     @functools.wraps(fn)
     def mw(next_handler: Handler[Ctx, Out]) -> Handler[Ctx, Out]:
         def handler(ctx: Ctx) -> Out:
-            return fn(ctx, next_handler)
+            return next_handler(fn(ctx))
         return handler
     return mw
 

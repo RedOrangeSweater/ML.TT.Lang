@@ -9,14 +9,14 @@ from ..core import middleware
 
 
 @middleware
-def resolve_engine_config(ctx: RunContext, next_handler: object) -> object | None:
+def resolve_engine_config(ctx: RunContext) -> RunContext:
     """Resolve engine_config from engine_config_path (if provided)."""
     if ctx.engine_config_path is not None:
         from ...scheduler import load_abstract_engine_config
 
         engine_config = load_abstract_engine_config(ctx.engine_config_path)
         ctx = ctx.model_copy(update={"engine_config": engine_config})
-    return next_handler(ctx)
+    return ctx
 
 
 __all__ = ["resolve_engine_config"]
