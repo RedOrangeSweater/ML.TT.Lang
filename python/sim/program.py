@@ -399,7 +399,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
 
             def _advance_generator(
                 name: str,
-                gen: Generator[None, None, None],
+                gen: Generator[None],
                 thread_type: ThreadType,
                 allow_completion: bool = False,
             ) -> tuple[Any, bool]:
@@ -486,7 +486,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
             # active[name] = (generator, blocking_object, operation, thread_type)
             # blocking_object can be CircularBuffer or CopyTransaction - both support can_wait()/can_reserve()
             active: dict[
-                str, tuple[Generator[None, None, None], Any, str, ThreadType]
+                str, tuple[Generator[None], Any, str, ThreadType]
             ] = {}
 
             # Track original source file and base line number for each generator

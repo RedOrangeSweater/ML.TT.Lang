@@ -60,7 +60,7 @@ def _core_in_dst_range(
 def if_pipe_src(
     pipes: Pipe | list[Pipe],
     func: Callable[[Pipe], Iterator[Any] | None],
-) -> Generator[Any, None, None]:
+) -> Generator[Any]:
     """Execute a function for each pipe if the current core is the source.
 
     Args:
@@ -88,7 +88,7 @@ def if_pipe_src(
 def if_pipe_dst(
     pipes: Pipe | list[Pipe],
     func: Callable[[Pipe], Iterator[Any] | None],
-) -> Generator[Any, None, None]:
+) -> Generator[Any]:
     """Execute a function for each pipe if the current core is a destination.
 
     Args:

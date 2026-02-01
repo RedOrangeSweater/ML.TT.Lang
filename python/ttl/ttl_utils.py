@@ -16,7 +16,7 @@ __all__ = ["get_thread_type_string", "tmp_dir"]
 @contextmanager
 def tmp_dir(
     base_path: Path, dir_name: str | Callable[[], str]
-) -> Generator[Path, None, None]:
+) -> Generator[Path]:
     """
     Create a subdirectory under base_path and yield its path.
 

@@ -117,7 +117,7 @@ def run_until_done(env: SchedulerPlacementEnv, policy: Any) -> float:
 
 
 @contextmanager
-def session_scope() -> Generator[None, None, None]:
+def session_scope() -> Generator[None]:
     """Context manager: clear app.state.session on exit (for tests or scripts)."""
     try:
         yield
