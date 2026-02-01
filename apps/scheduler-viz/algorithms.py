@@ -11,7 +11,7 @@ Adding a new algorithm = one register() call, no if-chains in backend.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 
 class UnknownAlgorithmError(ValueError):

@@ -11,26 +11,26 @@ Uses Pydantic models, algorithm registry, and a single session object.
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Generator
-
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import ValidationError
+from typing import Any
 
 from algorithms import ALGORITHMS, UnknownAlgorithmError
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from models import (
     BackendSession,
     LoadExampleRequest,
     LoadResponse,
+    SchedulerInputPayload,
     SetAlgorithmRequest,
     StateResponse,
     StepRequest,
     StepResponse,
-    SchedulerInputPayload,
     observation_from_env,
 )
+from pydantic import ValidationError
 from scheduler_env import SchedulerPlacementEnv
 
 app = FastAPI(title="Scheduler Viz Backend")

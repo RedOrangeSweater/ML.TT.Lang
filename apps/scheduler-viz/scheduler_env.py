@@ -14,8 +14,9 @@ simulator (doc 15 or simplified model); reward and comparison from trajectory me
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
