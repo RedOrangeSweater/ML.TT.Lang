@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
+#
+# SPDX-License-Identifier: Apache-2.0
+
+from __future__ import annotations
+
+import functools
+from collections.abc import Callable
+from typing import Any, TypeVar
+
+Ctx = TypeVar("Ctx")
+Val = TypeVar("Val")
+
+
+def require_attr(attr_name: str, *, error: str | None = None):
+    """Require ctx.<attr_name> to be non-None before calling the function."""
+
+    def decorator(fn: Callable[[Ctx], Val]) -> Callable[[Ctx], Val]:
+        @functools.wraps(fn)
+        def wrapper(ctx: Ctx) -> Val:
+            if getattr(ctx, attr_name) is None:
+                raise RuntimeError(error or f"required attribute is None: {attr_name}")
+            return fn(ctx)
+
+        return wrapper
+
+    return decorator
+
+
+def cache_by_key(
+    cache_attr: str,
+    key_attr: str,
+    *,
+    store_if_not_none: bool = True,
+):
+    """
+    Cache decorator: lookup getattr(ctx, cache_attr)[getattr(ctx, key_attr)].
+
+    - On hit: returns cached value (fn is not called).
+    - On miss: calls fn(ctx); stores the result if enabled.
+    """
+
+    def decorator(fn: Callable[[Ctx], Val]) -> Callable[[Ctx], Val]:
+        @functools.wraps(fn)
+        def wrapper(ctx: Ctx) -> Val:
+            cache = getattr(ctx, cache_attr)
+            key = getattr(ctx, key_attr)
+
+            if key is not None and key in cache:
+                return cache[key]
+
+            value = fn(ctx)
+            if store_if_not_none and value is not None and key is not None:
+                cache[key] = value
+            return value
+
+        return wrapper
+
+    return decorator
+
+
+def store_to_ctx(field: str, *, skip_if_set: bool = True):
+    """Convert fn(ctx)->value into fn(ctx)->ctx via ctx.model_copy()."""
+
+    def decorator(fn: Callable[[Ctx], Any]) -> Callable[[Ctx], Ctx]:
+        @functools.wraps(fn)
+        def wrapper(ctx: Ctx) -> Ctx:
+            if skip_if_set and getattr(ctx, field) is not None:
+                return ctx
+            value = fn(ctx)
+            model_copy = getattr(ctx, "model_copy", None)
+            if model_copy is None:
+                raise TypeError("store_to_ctx requires ctx.model_copy(...)")
+            return model_copy(update={field: value})
+
+        return wrapper
+
+    return decorator
+
+
+__all__ = [
+    "cache_by_key",
+    "require_attr",
+    "store_to_ctx",
+]
+
