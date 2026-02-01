@@ -2,6 +2,8 @@
 
 **Цель**: доки по низкоуровневым ядрам LLK; репо tt_llk внутри tt-metal (`tt_metal/third_party/tt_llk/`); связь с tt-lang и tt-metal.
 
+**С чего начать (tt-llk SDLC)**: [02_Architecture/00_DirectionAndLayers.md](02_Architecture/00_DirectionAndLayers.md) — направление, слои и контракты Python test infra (Pydantic).
+
 | Подпапка | Назначение |
 |----------|------------|
 | `00_Status/` | Dashboard, Kanban, статус-снимки по LLK |
