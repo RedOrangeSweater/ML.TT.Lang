@@ -96,7 +96,7 @@ class TTNNMemoryConfigProxy(BaseModel):
     tensor: object = Field(..., description="TTNN tensor or any object (non-TTNN uses default).")
     default: MemorySpace = Field(default="unknown", description="MemorySpace when not TTNN or unparseable.")
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def memory_space(self) -> MemorySpace:
         if not is_ttnn_tensor(self.tensor):
@@ -110,7 +110,7 @@ class TTNNMemoryConfigProxy(BaseModel):
                 return "DRAM"
         return self.default
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def is_interleaved(self) -> bool:
         if not is_ttnn_tensor(self.tensor):
