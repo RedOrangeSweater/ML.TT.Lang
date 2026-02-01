@@ -50,7 +50,7 @@ build-verbosity = 2
 [tool.ruff]
 line-length = 88
 # Latest Python version Ruff supports; drives pyupgrade and version-aware rules.
-target-version = "py314"
+target-version = "py313"
 src = ["python", "examples", "test", "apps"]
 # E/W = pycodestyle errors/warnings, F = pyflakes, I = isort, N = pep8-naming,
 # UP = pyupgrade, B = flake8-bugbear, C4 = flake8-comprehensions, SIM = flake8-simplify.
