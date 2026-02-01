@@ -12,7 +12,6 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..boundary import MlirModuleLike
-
 from .program_config import ProgramConfig
 from .thread_config import ComputeConfigOptions
 
