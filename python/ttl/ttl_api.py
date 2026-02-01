@@ -187,8 +187,6 @@ def pykernel_gen(
     dst_full_sync_en: bool | None = None,
     objective: Literal["latency", "throughput", "balanced"] | None = None,
     placement: Literal["auto", "manual"] | None = None,
-    *,
-    params: ProgramDecoratorParams | None = None,
 ) -> Callable:
     """
     Decorator for generating TTL kernels from Python functions.
@@ -216,21 +214,47 @@ def pykernel_gen(
     Raises:
         AssertionError: If required parameters are missing or invalid
     """
-    if params is None:
-        params = ProgramDecoratorParams(
-            grid=grid,
-            indexing_maps=indexing_maps,  # type: ignore[arg-type]
-            iterator_types=iterator_types,  # type: ignore[arg-type]
-            options=ProgramOptions(
-                num_outs=num_outs,
-                memory_space=memory_space,
-                tiled=tiled,
-                fp32_dest_acc_en=fp32_dest_acc_en,
-                dst_full_sync_en=dst_full_sync_en,
-                objective=objective,
-                placement=placement,
-            ),
-        )
+    params = ProgramDecoratorParams(
+        grid=grid,
+        indexing_maps=indexing_maps,  # type: ignore[arg-type]
+        iterator_types=iterator_types,  # type: ignore[arg-type]
+        options=ProgramOptions(
+            num_outs=num_outs,
+            memory_space=memory_space,
+            tiled=tiled,
+            fp32_dest_acc_en=fp32_dest_acc_en,
+            dst_full_sync_en=dst_full_sync_en,
+            objective=objective,
+            placement=placement,
+        ),
+    )
+
+    def _decorator(f):
+        kernel_id = random.getrandbits(64)
+        cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
+
+        @functools.wraps(f)
+        def _wrapper(*args, **kwargs):
+            ctx = ProgramInvocationContext(
+                program=f,
+                args=args,
+                kwargs=kwargs,
+                params=params,
+                kernel_id=kernel_id,
+                cache=cache,
+            )
+            ctx = compile_cached(ctx)
+            _wrapper._last_compiled_kernel = ctx.compiled  # type: ignore[attr-defined]
+            return execute_and_maybe_profile(ctx.compiled, ctx.args)
+
+        setattr(_wrapper, _TTL_PROGRAM_ATTR, True)
+        return _wrapper
+
+    return _decorator
+
+
+def pykernel_from_params(params: ProgramDecoratorParams) -> Callable:
+    """Decorator entrypoint for pre-built ProgramDecoratorParams."""
 
     def _decorator(f):
         kernel_id = random.getrandbits(64)
@@ -266,6 +290,7 @@ program = pykernel_gen
 
 __all__ = [
     "pykernel_gen",
+    "pykernel_from_params",
     "kernel",
     "program",
     "Program",

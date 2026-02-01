@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
-from typing import Protocol, TypeVar
 
 from .compile.build_compile_request import build_compile_request
 from .compile.compile_kernel import compile_kernel
@@ -15,21 +14,17 @@ from .program.ensure_run_request import ensure_run_request
 from .program.require_ttl_program import require_ttl_program_attr
 from .program.resolve_engine_config import resolve_engine_config
 
-Out_co = TypeVar("Out_co", covariant=True)
-
-
-class RunFn(Protocol[Out_co]):
-    def __call__(self, ctx: RunContext) -> Out_co: ...
+RunFn = Callable[[RunContext], object | None]
 
 
 def _wrap_step(
     step: Callable[[RunContext], RunContext],
-) -> Callable[[RunFn[Out_co]], RunFn[Out_co]]:
+) -> Callable[[RunFn], RunFn]:
     """Turn a ctx->ctx step into a decorator for a ctx->Out business fn."""
 
-    def decorator(fn: RunFn[Out_co]) -> RunFn[Out_co]:
+    def decorator(fn: RunFn) -> RunFn:
         @functools.wraps(fn)
-        def wrapper(ctx: RunContext) -> Out_co:
+        def wrapper(ctx: RunContext) -> object | None:
             return fn(step(ctx))
 
         return wrapper
@@ -39,19 +34,43 @@ def _wrap_step(
 
 ctx_request_ensure_run_request = _wrap_step(ensure_run_request)
 ctx_config_resolve_engine_config = _wrap_step(resolve_engine_config)
-ctx_compile_build_compile_request = _wrap_step(build_compile_request)
-ctx_compile_compile_kernel = _wrap_step(compile_kernel)
+def ctx_compile_build_compile_request(
+    fn: RunFn,
+) -> RunFn:
+    """Ensure ctx.compile_req is set, then call fn(ctx)."""
+
+    @functools.wraps(fn)
+    def wrapper(ctx: RunContext) -> object | None:
+        if ctx.compile_req is None:
+            ctx = ctx.model_copy(update={"compile_req": build_compile_request(ctx)})
+        return fn(ctx)
+
+    return wrapper
+
+
+def ctx_compile_compile_kernel(
+    fn: RunFn,
+) -> RunFn:
+    """Ensure ctx.compiled is set, then call fn(ctx)."""
+
+    @functools.wraps(fn)
+    def wrapper(ctx: RunContext) -> object | None:
+        if ctx.compiled is None:
+            ctx = ctx.model_copy(update={"compiled": compile_kernel(ctx)})
+        return fn(ctx)
+
+    return wrapper
 
 
 def ctx_program_require_ttl_program_attr(
     attr_name: str,
-) -> Callable[[RunFn[Out_co]], RunFn[Out_co]]:
+) -> Callable[[RunFn], RunFn]:
     """Decorator: enforce TTL program marker on ctx.req.spec.program."""
     return _wrap_step(require_ttl_program_attr(attr_name))
 
 
 def ctx_request_build_run_context(
-    fn: Callable[[RunContext], object | None],
+    fn: RunFn,
 ) -> Callable[..., object | None]:
     """
     Decorator: build RunContext from run() args/kwargs and call fn(ctx).

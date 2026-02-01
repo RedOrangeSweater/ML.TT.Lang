@@ -5,17 +5,15 @@
 from __future__ import annotations
 
 from ...compile.pipeline import _compile_kernel as _compile_kernel_impl
+from ...descriptor_options import CompiledTTNNKernel
 from ..context import RunContext
 
 
-def compile_kernel(ctx: RunContext) -> RunContext:
-    """Compile ctx.compile_req and store CompiledTTNNKernel in ctx.compiled."""
-    compile_req = ctx.compile_req
-    if compile_req is None:
+def compile_kernel(ctx: RunContext) -> CompiledTTNNKernel | None:
+    """Business logic: compile ctx.compile_req and return compiled kernel."""
+    if ctx.compile_req is None:
         raise RuntimeError("compile_kernel requires ctx.compile_req to be set")
-    compiled = _compile_kernel_impl(compile_req)
-    ctx = ctx.model_copy(update={"compiled": compiled})
-    return ctx
+    return _compile_kernel_impl(ctx.compile_req)
 
 
 __all__ = ["compile_kernel"]
