@@ -1,0 +1,11 @@
+# GitHub: использовать gh CLI
+
+При работе с GitHub или при запросе пользователя про GitHub (issues, PR, репозиторий, просмотр, создание и т.п.) использовать **GitHub CLI** (`gh`), а не только веб или ручные git-команды.
+
+Примеры:
+- Список issues: `gh issue list --limit 20`
+- Просмотр issue: `gh issue view NUMBER`
+- PR: `gh pr list`, `gh pr view NUMBER`, `gh pr create`
+- Репозиторий: `gh repo view` и т.д.
+
+Когда агент сам обращается к GitHub (проверка контекста, issues, статус) — предпочитать `gh` в терминале.
