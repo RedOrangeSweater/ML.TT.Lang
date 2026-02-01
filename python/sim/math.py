@@ -9,13 +9,11 @@ This module provides math functions that operate on blocks, matching the
 ttl.math API from the TT-Lang specification.
 """
 
-from typing import List
 
 from .block import Block
-from .typedefs import Shape
 
 
-def broadcast(block: Block, dims: List[int]) -> Block:
+def broadcast(block: Block, dims: list[int]) -> Block:
     """Broadcast a block along specified dimensions.
 
     Marks a block for explicit broadcasting along the specified dimensions.

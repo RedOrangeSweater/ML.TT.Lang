@@ -13,8 +13,8 @@ Usage:
     python ttlang-sim -m test.sim.my_kernel
 """
 
-import sys
 import argparse
+import sys
 from pathlib import Path
 from typing import Any
 

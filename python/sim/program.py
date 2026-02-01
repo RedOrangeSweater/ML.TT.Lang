@@ -8,16 +8,17 @@ This module provides the core execution framework for running compute and data m
 functions across multiple cores with proper context binding and error handling.
 """
 
-import copy
 import ast
+import copy
 import inspect
 import textwrap
 import traceback
 import types
+from collections.abc import Callable, Generator
 from types import CellType, FunctionType
-from typing import Any, Callable, Dict, Generator, List, Optional, Protocol, Tuple
+from typing import Any, Protocol
 
-from .block import ThreadType, _set_current_thread_type, _clear_current_thread_type
+from .block import ThreadType, _set_current_thread_type
 from .cb import CircularBuffer
 from .cbapi import CBAPI
 from .ttnnsim import Tensor
@@ -82,7 +83,7 @@ class BindableTemplate(Protocol):
 
     __name__: str
 
-    def bind(self, ctx: Dict[str, Any]) -> Callable[[], Any]:
+    def bind(self, ctx: dict[str, Any]) -> Callable[[], Any]:
         """Bind the template to a specific execution context."""
         ...
 
@@ -97,7 +98,7 @@ def _make_cell(value: Any) -> CellType:
     return inner.__closure__[0]
 
 
-def rebind_func_with_ctx(func: FunctionType, ctx: Dict[str, Any]) -> FunctionType:
+def rebind_func_with_ctx(func: FunctionType, ctx: dict[str, Any]) -> FunctionType:
     """
     Create a new function from `func` but with:
       - globals = func.__globals__ + ctx
@@ -106,11 +107,11 @@ def rebind_func_with_ctx(func: FunctionType, ctx: Dict[str, Any]) -> FunctionTyp
     """
     freevars = func.__code__.co_freevars
     orig_closure = func.__closure__ or ()
-    orig_cell_map: Dict[str, CellType] = {
-        name: cell for name, cell in zip(freevars, orig_closure)
+    orig_cell_map: dict[str, CellType] = {
+        name: cell for name, cell in zip(freevars, orig_closure, strict=False)
     }
 
-    new_cells: List[CellType] = []
+    new_cells: list[CellType] = []
     for name in freevars:
         if name in ctx:
             new_cells.append(_make_cell(ctx[name]))
@@ -119,7 +120,7 @@ def rebind_func_with_ctx(func: FunctionType, ctx: Dict[str, Any]) -> FunctionTyp
             new_cells.append(orig_cell_map[name])
 
     # merge globals with ctx so globals-based lookups also see per-core state
-    new_globals: Dict[str, Any] = dict(func.__globals__)
+    new_globals: dict[str, Any] = dict(func.__globals__)
     new_globals.update(ctx)
 
     new_func = types.FunctionType(
@@ -142,7 +143,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
             *functions: BindableTemplate,
         ):
             self.functions = functions
-            self.context: Dict[str, Any] = {"grid": grid}
+            self.context: dict[str, Any] = {"grid": grid}
 
         def __call__(self, *args: Any, **kwargs: Any) -> None:
             frame = inspect.currentframe()
@@ -159,7 +160,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
                     func = tmpl.__wrapped__
                     if func.__code__.co_freevars and func.__closure__:
                         for var_name, cell in zip(
-                            func.__code__.co_freevars, func.__closure__
+                            func.__code__.co_freevars, func.__closure__, strict=False
                         ):
                             try:
                                 # Only add if not already in context
@@ -180,7 +181,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
             # Run in cooperative mode
             self._run_cooperative(total_cores, compute_func_tmpl, dm0_tmpl, dm1_tmpl)
 
-        def _build_core_context(self, core: int) -> Dict[str, Any]:
+        def _build_core_context(self, core: int) -> dict[str, Any]:
             """Build per-core context with copied circular buffers and other state.
 
             Args:
@@ -189,8 +190,8 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
             Returns:
                 Dictionary containing per-core context with fresh CircularBuffers
             """
-            memo: Dict[int, Any] = {}
-            core_context: Dict[str, Any] = {}
+            memo: dict[int, Any] = {}
+            core_context: dict[str, Any] = {}
             api = CBAPI()  # new CBAPI per core
 
             for key, value in self.context.items():
@@ -234,12 +235,12 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
             """Cooperative scheduling execution mode - all cores run in round-robin."""
 
             # Create transformed sources for all cores
-            all_sources: List[
-                Tuple[str, str, ast.Module, Dict[str, Any], str, int, ThreadType]
+            all_sources: list[
+                tuple[str, str, ast.Module, dict[str, Any], str, int, ThreadType]
             ] = []
 
             # Track all per-core contexts for validation
-            all_core_contexts: List[Dict[str, Any]] = []
+            all_core_contexts: list[dict[str, Any]] = []
 
             for core in range(total_cores):
                 # build per-core context
@@ -260,7 +261,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
             self._validate_circular_buffers(all_core_contexts)
 
         def _validate_circular_buffers(
-            self, all_core_contexts: List[Dict[str, Any]]
+            self, all_core_contexts: list[dict[str, Any]]
         ) -> None:
             """Validate that all CircularBuffers have no pending blocks at end of execution.
 
@@ -288,11 +289,11 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
         def _create_cooperative_generators(
             self,
             core: int,
-            core_context: Dict[str, Any],
+            core_context: dict[str, Any],
             compute_func_tmpl: BindableTemplate,
             dm0_tmpl: BindableTemplate,
             dm1_tmpl: BindableTemplate,
-        ) -> List[Tuple[str, str, ast.Module, Dict[str, Any], str, int, ThreadType]]:
+        ) -> list[tuple[str, str, ast.Module, dict[str, Any], str, int, ThreadType]]:
             """Transform function sources for cooperative execution.
 
             Returns list of (name, func_name, transformed_ast, namespace, orig_file, orig_lineno, thread_type) tuples
@@ -305,8 +306,8 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
             3. Continue generator if unblocked, or switch to another if blocked
             4. Detect deadlock when all generators are blocked
             """
-            sources: List[
-                Tuple[str, str, ast.Module, Dict[str, Any], str, int, ThreadType]
+            sources: list[
+                tuple[str, str, ast.Module, dict[str, Any], str, int, ThreadType]
             ] = []
 
             for name, tmpl in [
@@ -374,8 +375,8 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
 
         def _run_round_robin_scheduler(
             self,
-            sources: List[
-                Tuple[str, str, ast.Module, Dict[str, Any], str, int, ThreadType]
+            sources: list[
+                tuple[str, str, ast.Module, dict[str, Any], str, int, ThreadType]
             ],
         ) -> None:
             """Compile sources into generators and run them in round-robin.
@@ -391,7 +392,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
             """
 
             # Build mapping of generator names to original source locations
-            orig_source_map: Dict[str, Tuple[str, int]] = {
+            orig_source_map: dict[str, tuple[str, int]] = {
                 name: (orig_file, orig_lineno)
                 for name, _, _, _, orig_file, orig_lineno, _ in sources
             }
@@ -401,7 +402,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
                 gen: Generator[None, None, None],
                 thread_type: ThreadType,
                 allow_completion: bool = False,
-            ) -> Tuple[Any, bool]:
+            ) -> tuple[Any, bool]:
                 """Advance a generator one step.
 
                 Args:
@@ -484,13 +485,13 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
             # First, compile and execute all sources to create generators
             # active[name] = (generator, blocking_object, operation, thread_type)
             # blocking_object can be CircularBuffer or CopyTransaction - both support can_wait()/can_reserve()
-            active: Dict[
-                str, Tuple[Generator[None, None, None], Any, str, ThreadType]
+            active: dict[
+                str, tuple[Generator[None, None, None], Any, str, ThreadType]
             ] = {}
 
             # Track original source file and base line number for each generator
             # Used for mapping transformed line numbers back to original source
-            orig_source_info: Dict[str, Tuple[str, int]] = {}
+            orig_source_info: dict[str, tuple[str, int]] = {}
 
             for (
                 name,
@@ -552,7 +553,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
                 # Track if any generator made progress in this iteration
                 any_progress: bool = False
                 # Track which generators have completed
-                to_remove: List[str] = []
+                to_remove: list[str] = []
 
                 # Try to advance each active generator
                 for name in list(active.keys()):
@@ -614,7 +615,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
 
                 # Deadlock detection: no progress made and generators still active
                 if not any_progress and active:
-                    blocked_info: List[str] = []
+                    blocked_info: list[str] = []
                     for k, (gen, blocking_obj, op, _) in active.items():
                         # Extract file and line information from generator frame
                         frame = gen.gi_frame
@@ -654,7 +655,7 @@ def Program(*funcs: BindableTemplate, grid: Shape) -> Any:
                             blocked_info.append(f"  {k}: blocked on {op}(){obj_desc}")
 
                     raise RuntimeError(
-                        f"Deadlock detected: all generators blocked\n"
+                        "Deadlock detected: all generators blocked\n"
                         + "\n".join(blocked_info)
                     )
 

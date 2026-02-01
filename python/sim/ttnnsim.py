@@ -18,7 +18,7 @@ Scope:
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple, Union, cast
+from typing import Any, Union, cast
 
 import torch
 
@@ -32,8 +32,8 @@ TILE_LAYOUT = IndexType.TILE
 
 
 def tensor_shape_in_tiles(
-    tensor: "Tensor", tile_shape: Tuple[int, ...]
-) -> Tuple[int, ...]:
+    tensor: Tensor, tile_shape: tuple[int, ...]
+) -> tuple[int, ...]:
     """
     Convert tensor shape from element dimensions to tile dimensions.
 
@@ -52,16 +52,16 @@ def tensor_shape_in_tiles(
         shape = tensor_shape_in_tiles(tensor, (32, 32))
         assert shape == (2, 1)  # 64/32=2 rows, 32/32=1 col
     """
-    return tuple(dim // tile_dim for dim, tile_dim in zip(tensor.shape, tile_shape))
+    return tuple(dim // tile_dim for dim, tile_dim in zip(tensor.shape, tile_shape, strict=False))
 
 
 def broadcast_tensors(
-    left_tensors: List["Tensor"],
-    right_tensors: List["Tensor"],
+    left_tensors: list[Tensor],
+    right_tensors: list[Tensor],
     left_shape: Shape,
     right_shape: Shape,
     op: Any,
-) -> List["Tensor"]:
+) -> list[Tensor]:
     """Apply binary operation to tensor lists with broadcasting.
 
     Stacks tensors into batched tensors, reshapes according to tile grid shapes,
@@ -162,10 +162,10 @@ class CoreRangeSet:
         _ranges: List of CoreRange objects
     """
 
-    def __init__(self, ranges: List[CoreRange]):
+    def __init__(self, ranges: list[CoreRange]):
         self._ranges = ranges
 
-    def ranges(self) -> List[CoreRange]:
+    def ranges(self) -> list[CoreRange]:
         """Get the list of core ranges."""
         return self._ranges
 
@@ -226,7 +226,7 @@ class Tensor:
     def __init__(self, tensor: torch.Tensor) -> None:
         self._tensor: torch.Tensor = tensor
         # Accessor is created lazily only when tile-style indexing is used
-        self._accessor: Optional[TensorAccessor] = None
+        self._accessor: TensorAccessor | None = None
 
     @property
     def shape(self) -> Shape:
@@ -246,17 +246,17 @@ class Tensor:
         if len(self._tensor.shape) != 2:
             return False
 
-        for dim_size, tile_dim in zip(self._tensor.shape, TILE_SHAPE):
+        for dim_size, tile_dim in zip(self._tensor.shape, TILE_SHAPE, strict=False):
             # Allow degenerate dimensions (size 1) or tile-aligned dimensions
             if dim_size != 1 and dim_size % tile_dim != 0:
                 return False
 
         return True
 
-    def __getitem__(self, key: Any) -> "Tensor":
+    def __getitem__(self, key: Any) -> Tensor:
         # If key looks like tile-style indexing (two slices/ints), use TensorAccessor
         if isinstance(key, tuple):
-            key_t = cast(Tuple[Any, ...], key)
+            key_t = cast(tuple[Any, ...], key)
             if len(key_t) == 2:
                 row_key = key_t[0]
                 col_key = key_t[1]
@@ -281,10 +281,10 @@ class Tensor:
 
         return Tensor(self._tensor.__getitem__(cast(Any, key)))
 
-    def __setitem__(self, key: Any, value: Union["Tensor", torch.Tensor, Any]) -> None:
+    def __setitem__(self, key: Any, value: Tensor | torch.Tensor | Any) -> None:
         # If setting via tile-style indexing, route through accessor
         if isinstance(key, tuple):
-            key_t = cast(Tuple[Any, ...], key)
+            key_t = cast(tuple[Any, ...], key)
             if len(key_t) == 2:
                 row_key = key_t[0]
                 col_key = key_t[1]
@@ -372,7 +372,7 @@ class Tensor:
 
     # ---- Binary operations (element-wise) ----
 
-    def __add__(self, other: TensorOrScalar) -> "Tensor":
+    def __add__(self, other: TensorOrScalar) -> Tensor:
         """Element-wise addition."""
         match other:
             case Tensor():
@@ -382,7 +382,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __sub__(self, other: TensorOrScalar) -> "Tensor":
+    def __sub__(self, other: TensorOrScalar) -> Tensor:
         """Element-wise subtraction."""
         match other:
             case Tensor():
@@ -392,7 +392,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __mul__(self, other: TensorOrScalar) -> "Tensor":
+    def __mul__(self, other: TensorOrScalar) -> Tensor:
         """Element-wise multiplication."""
         match other:
             case Tensor():
@@ -402,7 +402,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __truediv__(self, other: TensorOrScalar) -> "Tensor":
+    def __truediv__(self, other: TensorOrScalar) -> Tensor:
         """Element-wise true division."""
         match other:
             case Tensor():
@@ -412,7 +412,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __floordiv__(self, other: TensorOrScalar) -> "Tensor":
+    def __floordiv__(self, other: TensorOrScalar) -> Tensor:
         """Element-wise floor division."""
         match other:
             case Tensor():
@@ -422,7 +422,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __mod__(self, other: TensorOrScalar) -> "Tensor":
+    def __mod__(self, other: TensorOrScalar) -> Tensor:
         """Element-wise modulo."""
         match other:
             case Tensor():
@@ -432,7 +432,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __pow__(self, other: TensorOrScalar) -> "Tensor":
+    def __pow__(self, other: TensorOrScalar) -> Tensor:
         """Element-wise exponentiation."""
         match other:
             case Tensor():
@@ -442,7 +442,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __matmul__(self, other: "Tensor") -> "Tensor":
+    def __matmul__(self, other: Tensor) -> Tensor:
         """Matrix multiplication."""
         match other:
             case Tensor():
@@ -452,7 +452,7 @@ class Tensor:
 
     # ---- Reverse binary operations ----
 
-    def __radd__(self, other: Scalar) -> "Tensor":
+    def __radd__(self, other: Scalar) -> Tensor:
         """Reverse element-wise addition."""
         match other:
             case float() | int():
@@ -460,7 +460,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __rsub__(self, other: Scalar) -> "Tensor":
+    def __rsub__(self, other: Scalar) -> Tensor:
         """Reverse element-wise subtraction."""
         match other:
             case float() | int():
@@ -468,7 +468,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __rmul__(self, other: Scalar) -> "Tensor":
+    def __rmul__(self, other: Scalar) -> Tensor:
         """Reverse element-wise multiplication."""
         match other:
             case float() | int():
@@ -476,7 +476,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __rtruediv__(self, other: Scalar) -> "Tensor":
+    def __rtruediv__(self, other: Scalar) -> Tensor:
         """Reverse element-wise true division."""
         match other:
             case float() | int():
@@ -484,7 +484,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __rfloordiv__(self, other: Scalar) -> "Tensor":
+    def __rfloordiv__(self, other: Scalar) -> Tensor:
         """Reverse element-wise floor division."""
         match other:
             case float() | int():
@@ -492,7 +492,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __rmod__(self, other: Scalar) -> "Tensor":
+    def __rmod__(self, other: Scalar) -> Tensor:
         """Reverse element-wise modulo."""
         match other:
             case float() | int():
@@ -500,7 +500,7 @@ class Tensor:
             case _:  # type: ignore[reportUnnecessaryComparison]
                 return NotImplemented
 
-    def __rpow__(self, other: Scalar) -> "Tensor":
+    def __rpow__(self, other: Scalar) -> Tensor:
         """Reverse element-wise exponentiation."""
         match other:
             case float() | int():
@@ -530,7 +530,7 @@ def empty(
     return Tensor(t)
 
 
-def to_torch(t: Union[Tensor, torch.Tensor]) -> torch.Tensor:
+def to_torch(t: Tensor | torch.Tensor) -> torch.Tensor:
     """Convert a simulator Tensor or torch.Tensor to torch.Tensor."""
     match t:
         case Tensor() as tw:
@@ -544,9 +544,9 @@ def to_torch(t: Union[Tensor, torch.Tensor]) -> torch.Tensor:
 
 def from_torch(
     tensor: torch.Tensor,
-    dtype: Optional[torch.dtype] = None,
+    dtype: torch.dtype | None = None,
     layout: Any = None,
-    device: Optional[Device] = None,
+    device: Device | None = None,
     memory_config: Any = None,
 ) -> Tensor:
     """Convert a torch.Tensor to a TTNN simulator Tensor.
@@ -653,10 +653,10 @@ def repeat(input_tensor: Tensor, repetition_vector: Shape) -> Tensor:
 
 
 def split_work_to_cores(
-    core_grid: Union[CoreCoord, CoreRangeSet],
+    core_grid: CoreCoord | CoreRangeSet,
     units_to_divide: int,
     row_wise: bool = False,
-) -> Tuple[int, CoreRangeSet, CoreRangeSet, CoreRangeSet, int, int]:
+) -> tuple[int, CoreRangeSet, CoreRangeSet, CoreRangeSet, int, int]:
     """Split work units across cores in a grid or CoreRangeSet.
 
     This function divides a specified number of work units across cores. It returns
@@ -730,7 +730,7 @@ def split_work_to_cores(
         # All cores get the same amount of work (evenly divisible)
         if isinstance(core_grid, CoreCoord) and grid_size:
             # Generate core list for the used cores
-            cores_list: List[CoreCoord] = []
+            cores_list: list[CoreCoord] = []
             if row_wise:
                 for y in range(grid_size[1]):
                     for x in range(grid_size[0]):
@@ -746,7 +746,7 @@ def split_work_to_cores(
         else:
             # For CoreRangeSet, extract the first num_cores_used cores
             ranges = all_cores.ranges()
-            cores_list: List[CoreCoord] = []
+            cores_list: list[CoreCoord] = []
             for r in ranges:
                 for y in range(r.start.y, r.end.y + 1):
                     for x in range(r.start.x, r.end.x + 1):
@@ -760,7 +760,7 @@ def split_work_to_cores(
         # Split cores into two groups
         if isinstance(core_grid, CoreCoord) and grid_size:
             # Generate core ranges for the two groups
-            cores_list: List[CoreCoord] = []
+            cores_list: list[CoreCoord] = []
             if row_wise:
                 # Row-wise iteration: iterate rows first
                 for y in range(grid_size[1]):
@@ -773,8 +773,8 @@ def split_work_to_cores(
                         cores_list.append(CoreCoord(x, y))
 
             # Split into groups
-            group_1_cores: List[CoreCoord] = cores_list[:num_cores_group_1]
-            group_2_cores: List[CoreCoord] = cores_list[
+            group_1_cores: list[CoreCoord] = cores_list[:num_cores_group_1]
+            group_2_cores: list[CoreCoord] = cores_list[
                 num_cores_group_1:num_cores_used
             ]
 
@@ -793,14 +793,14 @@ def split_work_to_cores(
             # This is a basic implementation - a more sophisticated version would
             # iterate through the actual ranges in the CoreRangeSet
             ranges = all_cores.ranges()
-            all_cores_list: List[CoreCoord] = []
+            all_cores_list: list[CoreCoord] = []
             for r in ranges:
                 for y in range(r.start.y, r.end.y + 1):
                     for x in range(r.start.x, r.end.x + 1):
                         all_cores_list.append(CoreCoord(x, y))
 
-            group_1_cores: List[CoreCoord] = all_cores_list[:num_cores_group_1]
-            group_2_cores: List[CoreCoord] = all_cores_list[
+            group_1_cores: list[CoreCoord] = all_cores_list[:num_cores_group_1]
+            group_2_cores: list[CoreCoord] = all_cores_list[
                 num_cores_group_1:num_cores_used
             ]
 

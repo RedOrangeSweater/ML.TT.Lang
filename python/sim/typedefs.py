@@ -8,7 +8,7 @@ Type aliases with Pydantic constraints for runtime validation.
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Annotated, NamedTuple, Tuple, Union
+from typing import Annotated, NamedTuple, Union
 
 from pydantic import Field
 
@@ -30,7 +30,7 @@ NaturalInt = Annotated[int, Field(ge=0)]
 Size = PositiveInt
 Index = NaturalInt
 Count = NaturalInt
-CoreIndex = Union[Index, Tuple[Index, Index, *tuple[Index, ...]]]
+CoreIndex = Union[Index, tuple[Index, Index, *tuple[Index, ...]]]
 
 
 class Pipe(NamedTuple):
@@ -45,10 +45,10 @@ class Pipe(NamedTuple):
     """
 
     src_core: CoreIndex
-    dst_core_range: Union[CoreIndex, Tuple[CoreIndex, CoreIndex]]
+    dst_core_range: CoreIndex | tuple[CoreIndex, CoreIndex]
 
 
-Shape = Tuple[Size, ...]
+Shape = tuple[Size, ...]
 _MAX_CBS: Size = 32  # Fixed pool of circular buffers
 CBID = Annotated[NaturalInt, Field(ge=0, lt=_MAX_CBS)]
 

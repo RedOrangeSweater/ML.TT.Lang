@@ -5,7 +5,6 @@
 TensorAccessor implementation for PyTorch tensor access with tile-based indexing.
 """
 
-from typing import Tuple, Union
 
 import torch
 
@@ -109,7 +108,7 @@ class TensorAccessor:
                 f"Slice {dimension_name} must not have step value, got slice({s.start}, {s.stop}, {s.step}). Only simple slices are supported."
             )
 
-    def _normalize_index(self, index: Union[int, slice]) -> slice:
+    def _normalize_index(self, index: int | slice) -> slice:
         """Convert int index to slice to preserve 2D shape, or return slice as-is.
 
         Args:
@@ -220,7 +219,7 @@ class TensorAccessor:
 
         self.tensor[slice(row_start, row_stop), slice(col_start, col_stop)] = value
 
-    def get_tile_shape(self) -> Tuple[int, int]:
+    def get_tile_shape(self) -> tuple[int, int]:
         """Get the tensor shape in tiles rather than elements.
 
         For dimensions of size 1, returns 1 (not divided by TILE_SHAPE).
@@ -229,7 +228,7 @@ class TensorAccessor:
         tile_cols = 1 if self.shape[1] == 1 else self.shape[1] // TILE_SHAPE[1]
         return (tile_rows, tile_cols)
 
-    def validate_tile_coordinates(self, key: Tuple[slice, slice]) -> bool:
+    def validate_tile_coordinates(self, key: tuple[slice, slice]) -> bool:
         """Validate that the given coordinates are within tile bounds."""
         row_slice, col_slice = key
 

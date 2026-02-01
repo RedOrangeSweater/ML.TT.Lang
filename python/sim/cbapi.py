@@ -7,11 +7,11 @@ Public API for cbsim: a class-based interface with a singleton default.
 """
 
 import threading
-from typing import Annotated, Any, List, NamedTuple, Optional
+from typing import Annotated, Any, NamedTuple
 
 from pydantic import Field, validate_call
 
-from .block import Block, BlockAcquisition, ThreadType, _get_current_thread_type
+from .block import Block, BlockAcquisition, _get_current_thread_type
 from .cbstate import CBState
 from .constants import CB_DEFAULT_TIMEOUT, MAX_CBS
 from .errors import CBContractError, CBTimeoutError
@@ -25,9 +25,9 @@ class CBStats(NamedTuple):
     visible: int
     reserved: int
     free: int
-    step: Optional[int]
+    step: int | None
     head: int
-    list: List[Optional[object]]
+    list: list[object | None]
 
 
 class CBAPI:
@@ -39,11 +39,11 @@ class CBAPI:
     Each CBState in the pool can have a different CBElemTypeVar parameter.
     """
 
-    def __init__(self, timeout: Optional[float] = CB_DEFAULT_TIMEOUT):
+    def __init__(self, timeout: float | None = CB_DEFAULT_TIMEOUT):
         """Initialize simulator with optional per-instance timeout (seconds)."""
 
-        self._pool: List[Any] = [None] * MAX_CBS
-        self._timeout: Optional[float] = timeout
+        self._pool: list[Any] = [None] * MAX_CBS
+        self._timeout: float | None = timeout
         self._next_cb_id: CBID = 0
         self._cb_allocator_lock = threading.Lock()
 
@@ -260,10 +260,10 @@ class CBAPI:
             return block
 
     @validate_call
-    def set_timeout(self, seconds: Optional[Annotated[float, Field(gt=0)]]) -> None:
+    def set_timeout(self, seconds: Annotated[float, Field(gt=0)] | None) -> None:
         """Set this simulator instance's timeout."""
         self._timeout = seconds
 
-    def get_timeout(self) -> Optional[float]:
+    def get_timeout(self) -> float | None:
         """Return this simulator instance's timeout."""
         return self._timeout

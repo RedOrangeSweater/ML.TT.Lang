@@ -8,14 +8,15 @@ This module provides decorators for marking functions as compute or data movemen
 operations within the simulation framework.
 """
 
+from collections.abc import Callable
 from types import FunctionType
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 from .block import ThreadType
 from .program import BindableTemplate, rebind_func_with_ctx
 
 # Thread registry for automatic collection of @compute and @datamovement threads
-_thread_registry: List[BindableTemplate] = []
+_thread_registry: list[BindableTemplate] = []
 
 
 def _register_thread(thread_template: BindableTemplate) -> None:
@@ -28,7 +29,7 @@ def _clear_thread_registry() -> None:
     _thread_registry.clear()
 
 
-def _get_registered_threads() -> List[BindableTemplate]:
+def _get_registered_threads() -> list[BindableTemplate]:
     """Get all registered threads and clear the registry."""
     threads = list(_thread_registry)
     _thread_registry.clear()
@@ -52,7 +53,7 @@ def compute() -> Callable[[FunctionType], BindableTemplate]:
             __wrapped__ = func  # Standard convention from functools.wraps
             thread_type = ThreadType.COMPUTE  # ThreadType enum for type safety
 
-            def bind(self, ctx: Dict[str, Any]) -> Callable[[], Any]:
+            def bind(self, ctx: dict[str, Any]) -> Callable[[], Any]:
                 # rebuild function with per-core closure
                 bound_func = rebind_func_with_ctx(func, ctx)
 
@@ -87,7 +88,7 @@ def datamovement() -> Callable[[FunctionType], BindableTemplate]:
             __wrapped__ = func  # Standard convention from functools.wraps
             thread_type = ThreadType.DM  # ThreadType enum for type safety
 
-            def bind(self, ctx: Dict[str, Any]) -> Callable[[], Any]:
+            def bind(self, ctx: dict[str, Any]) -> Callable[[], Any]:
                 bound_func = rebind_func_with_ctx(func, ctx)
 
                 def runner() -> Any:

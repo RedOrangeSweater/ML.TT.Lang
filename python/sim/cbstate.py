@@ -7,7 +7,7 @@ _CState and related internal state management for cbsim.
 """
 
 from threading import Condition, RLock, Thread
-from typing import List, Optional
+from typing import Optional
 
 from .errors import CBContractError, CBNotConfigured
 from .ttnnsim import Tensor
@@ -40,19 +40,19 @@ class CBState:
 
     def __init__(self):
         self.cap: Size = 1
-        self.buf: List[CBSlot] = []
+        self.buf: list[CBSlot] = []
         self.head: Index = 0
         self.visible: Count = 0
         self.reserved: Count = 0
-        self.step: Optional[Size] = None
+        self.step: Size | None = None
         self.last_wait_target: Count = 0
         self.last_reserve_target: Count = 0
         self.configured = False
         self.lock = RLock()
         self.can_consume = Condition(self.lock)
         self.can_produce = Condition(self.lock)
-        self.consumer_waiting: Optional[Thread] = None
-        self.producer_reserving: Optional[Thread] = None
+        self.consumer_waiting: Thread | None = None
+        self.producer_reserving: Thread | None = None
         self.shape: Shape  # Shape in tiles (rows, cols)
 
     def require_configured(self) -> None:

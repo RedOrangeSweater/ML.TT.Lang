@@ -47,7 +47,6 @@ Use:
     assert tu.all_true(tensor > 0)
 """
 
-from typing import List, Union
 
 import torch
 
@@ -70,7 +69,7 @@ def ones(*shape: int) -> torch.Tensor:
     return torch.ones(*shape)  # type: ignore
 
 
-def full(shape: Shape, fill_value: Union[int, float]) -> torch.Tensor:
+def full(shape: Shape, fill_value: int | float) -> torch.Tensor:
     """Create a tensor filled with a specific value. Simplifies torch.full overloads."""
     return torch.full(shape, fill_value)  # type: ignore
 
@@ -96,12 +95,12 @@ def equal(a: torch.Tensor, b: torch.Tensor) -> bool:
 
 
 # Common tensor operations
-def cat(tensors: List[torch.Tensor], dim: Count = 0) -> torch.Tensor:
+def cat(tensors: list[torch.Tensor], dim: Count = 0) -> torch.Tensor:
     """Concatenate tensors. Simplifies torch.cat overloads."""
     return torch.cat(tensors, dim=dim)  # type: ignore
 
 
-def stack(tensors: List[torch.Tensor], dim: Count = 0) -> torch.Tensor:
+def stack(tensors: list[torch.Tensor], dim: Count = 0) -> torch.Tensor:
     """Stack tensors. Simplifies torch.stack overloads."""
     return torch.stack(tensors, dim=dim)  # type: ignore
 
@@ -133,4 +132,4 @@ def is_tiled(tensor: torch.Tensor, tile_shape: Shape) -> bool:
     """
     if len(tensor.shape) != len(tile_shape):
         return False
-    return all(dim % tile_dim == 0 for dim, tile_dim in zip(tensor.shape, tile_shape))
+    return all(dim % tile_dim == 0 for dim, tile_dim in zip(tensor.shape, tile_shape, strict=False))

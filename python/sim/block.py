@@ -7,15 +7,15 @@ Block and supporting Span for cbsim.
 """
 
 import operator as _op
+from collections.abc import Callable, Sequence
 from enum import Enum, auto
-from typing import Any, Callable, List, Optional, Sequence, Union
+from typing import Any, Optional, Union
 
 from pydantic import validate_call
 
 from .cbstate import CBSlot
 from .ttnnsim import Tensor
 from .typedefs import Index, Shape, Size, Span
-
 
 # Global variable to track current thread type in cooperative scheduling
 _current_thread_type: Optional["ThreadType"] = None
@@ -131,14 +131,14 @@ class Block:
     # @validate_call
     def __init__(
         self,
-        buf: List[CBSlot],
+        buf: list[CBSlot],
         capacity: Size,
         span: Span,
         shape: Shape,
         acquisition: BlockAcquisition,
         thread_type: ThreadType,
         is_temporary: bool = False,
-        broadcast_dims: List[int] | None = None,
+        broadcast_dims: list[int] | None = None,
     ):
         self._buf = buf
         self._capacity = capacity
@@ -197,9 +197,9 @@ class Block:
     @classmethod
     def from_list(
         cls,
-        tensors: List[Tensor],
+        tensors: list[Tensor],
         shape: Shape,
-        broadcast_dims: List[int] | None = None,
+        broadcast_dims: list[int] | None = None,
     ) -> "Block":
         """Create a temporary Block from a list of tensors (computation result).
 
@@ -512,7 +512,7 @@ class Block:
         return self._is_temporary
 
     @property
-    def broadcast_dims(self) -> List[int]:
+    def broadcast_dims(self) -> list[int]:
         """Get the dimensions along which this block is marked for broadcasting."""
         return self._broadcast_dims
 
@@ -635,7 +635,7 @@ class Block:
             raise ValueError(f"Popping uninitialized or consumed slot at index {idx}")
         self._buf[(self._span.start + idx) % self._capacity] = None
 
-    def to_list(self) -> List[CBSlot]:
+    def to_list(self) -> list[CBSlot]:
         return [self[i] for i in range(len(self))]
 
     def copy_as_dest(self, items: Sequence[Tensor]) -> None:
@@ -668,7 +668,7 @@ class Block:
 
         result_shape = tuple(
             max(l, r) if l == 1 or r == 1 or l == r else None
-            for l, r in zip(left_shape, right_shape)
+            for l, r in zip(left_shape, right_shape, strict=False)
         )
 
         if None in result_shape:
@@ -724,7 +724,7 @@ class Block:
         left: "Block",
         right: "Block",
         op: Callable[[Any, Any], Any],
-    ) -> List[Tensor]:
+    ) -> list[Tensor]:
         """Element-wise binary op: left (op) right.
 
         Broadcasting must be explicit via ttl.math.broadcast().

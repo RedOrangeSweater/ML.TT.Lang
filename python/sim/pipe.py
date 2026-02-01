@@ -5,7 +5,8 @@
 Pipe utilities for conditional execution based on pipe roles.
 """
 
-from typing import Any, Callable, Generator, Iterator, List, Optional, Union
+from collections.abc import Callable, Generator, Iterator
+from typing import Any
 
 from .kernel import core, flatten_core_index
 from .typedefs import CoreIndex, Pipe
@@ -14,7 +15,7 @@ from .typedefs import CoreIndex, Pipe
 # TODO: Core Ranges should probably be their own type
 # TODO: Bring Pipe type here from typedefs.py
 def _core_in_dst_range(
-    dst_core_range: Union[CoreIndex, tuple[CoreIndex, CoreIndex]],
+    dst_core_range: CoreIndex | tuple[CoreIndex, CoreIndex],
 ) -> bool:
     """Check if the current core is within the destination range.
 
@@ -57,8 +58,8 @@ def _core_in_dst_range(
 
 
 def if_pipe_src(
-    pipes: Union[Pipe, List[Pipe]],
-    func: Callable[[Pipe], Optional[Iterator[Any]]],
+    pipes: Pipe | list[Pipe],
+    func: Callable[[Pipe], Iterator[Any] | None],
 ) -> Generator[Any, None, None]:
     """Execute a function for each pipe if the current core is the source.
 
@@ -85,8 +86,8 @@ def if_pipe_src(
 
 
 def if_pipe_dst(
-    pipes: Union[Pipe, List[Pipe]],
-    func: Callable[[Pipe], Optional[Iterator[Any]]],
+    pipes: Pipe | list[Pipe],
+    func: Callable[[Pipe], Iterator[Any] | None],
 ) -> Generator[Any, None, None]:
     """Execute a function for each pipe if the current core is a destination.
 

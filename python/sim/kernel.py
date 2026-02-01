@@ -9,8 +9,9 @@ specified grid configurations.
 """
 
 import inspect
-from typing import Any, Callable, List, Tuple, Union, cast
 import types
+from collections.abc import Callable
+from typing import Any, cast
 
 from .block import ThreadType
 from .typedefs import CoreIndex, Index, Shape, Size
@@ -86,7 +87,7 @@ def flatten_core_index(core_idx: CoreIndex) -> Index:
             return int(linear)
 
 
-def grid_size(dims: Size = 2) -> Union[Size, Shape]:
+def grid_size(dims: Size = 2) -> Size | Shape:
     """Get the grid size from the execution context.
 
     Returns the size of the grid in the specified dimensionality.
@@ -173,7 +174,7 @@ def core(dims: Size = 2) -> CoreIndex:
         "grid", "grid not available - function must be called within a kernel context"
     )
 
-    coords: List[Index] = []
+    coords: list[Index] = []
 
     for s in reversed(grid):
         coords.append(cid % s)
@@ -196,11 +197,11 @@ def core(dims: Size = 2) -> CoreIndex:
     if dims == 1:
         return coords[0]
     else:
-        return cast(Tuple[Index, Index, *tuple[Index, ...]], tuple(coords))
+        return cast(tuple[Index, Index, *tuple[Index, ...]], tuple(coords))
 
 
 def kernel(
-    grid: Union[str, Shape] = "auto",
+    grid: str | Shape = "auto",
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator that generates a kernel with specified grid.
@@ -287,7 +288,7 @@ def kernel(
             program(*args, **kwargs)
 
         # Store the decorator parameters for later access
-        setattr(wrapper, "__pykernel_config__", {"grid": grid})
+        wrapper.__pykernel_config__ = {"grid": grid}
         return wrapper
 
     return decorator

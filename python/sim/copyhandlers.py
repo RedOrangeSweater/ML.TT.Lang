@@ -12,24 +12,20 @@ New transfer types can be added by creating a new handler and decorating it with
 import threading
 import time
 from collections import deque
-from numpy import prod
 from typing import (
     TYPE_CHECKING,
     Any,
-    Deque,
-    Dict,
-    List,
     Protocol,
-    Tuple,
-    Type,
     TypedDict,
     Union,
 )
 
+from numpy import prod
+
 from .block import Block
 from .cb import ReserveContext, WaitContext
 from .constants import COPY_PIPE_TIMEOUT, TILE_SHAPE
-from .ttnnsim import Tensor, tensor_shape_in_tiles
+from .ttnnsim import Tensor
 from .typedefs import Count, Pipe, Shape
 
 if TYPE_CHECKING:
@@ -49,11 +45,11 @@ if TYPE_CHECKING:
 # To add a new endpoint type, add it to the Unions and implement a handler for it
 CopyEndpoint = Union[Tensor, Block, Pipe, "ReserveContext", "WaitContext"]
 CopyEndpointType = Union[
-    Type[Tensor],
-    Type[Block],
-    Type[Pipe],
-    Type["ReserveContext"],
-    Type["WaitContext"],
+    type[Tensor],
+    type[Block],
+    type[Pipe],
+    type["ReserveContext"],
+    type["WaitContext"],
 ]
 
 
@@ -82,7 +78,7 @@ def tile_count(tensor_shape: Shape, tile_shape: Shape) -> Count:
         prod(
             [
                 tensor_dim // tile_dim
-                for tensor_dim, tile_dim in zip(tensor_shape, tile_shape)
+                for tensor_dim, tile_dim in zip(tensor_shape, tile_shape, strict=False)
             ]
         )
     )
@@ -90,7 +86,7 @@ def tile_count(tensor_shape: Shape, tile_shape: Shape) -> Count:
 
 def tensor_shape_in_tiles_with_skip(
     tensor_shape: Shape, tile_shape: Shape
-) -> Tuple[int, ...]:
+) -> tuple[int, ...]:
     """Convert tensor shape to tile dimensions, preserving size-1 dimensions.
 
     Unlike tensor_shape_in_tiles, this returns 1 for dimensions that are already
@@ -115,7 +111,7 @@ def tensor_shape_in_tiles_with_skip(
         )
     return tuple(
         1 if dim_size == 1 else dim_size // tile_dim
-        for dim_size, tile_dim in zip(tensor_shape, tile_shape)
+        for dim_size, tile_dim in zip(tensor_shape, tile_shape, strict=False)
     )
 
 
@@ -126,12 +122,12 @@ def tensor_shape_in_tiles_with_skip(
 # - lock: threading.Lock to guard queue and receiver count updates
 # In a real implementation this would be handled by NoC hardware.
 class _PipeEntry(TypedDict):
-    queue: Deque[Tuple[List[Tensor], Count]]
+    queue: deque[tuple[list[Tensor], Count]]
     event: threading.Event
     lock: threading.Lock
 
 
-_pipe_buffer: Dict[Pipe, _PipeEntry] = {}
+_pipe_buffer: dict[Pipe, _PipeEntry] = {}
 # Lock protecting creation of per-pipe entries in _pipe_buffer.
 # This ensures all threads agree on the same entry object (and its lock)
 # and avoids races where two threads create different entry dicts for
@@ -183,8 +179,8 @@ class CopyTransferHandler(Protocol):
 
 
 # Global handler registry: (src_type, dst_type) -> handler instance
-handler_registry: Dict[
-    Tuple[CopyEndpointType, CopyEndpointType], CopyTransferHandler
+handler_registry: dict[
+    tuple[CopyEndpointType, CopyEndpointType], CopyTransferHandler
 ] = {}
 
 
@@ -206,7 +202,7 @@ def register_copy_handler(src_type: CopyEndpointType, dst_type: CopyEndpointType
             def transfer(self, src, dst): ...
     """
 
-    def decorator(handler_cls: Type[CopyTransferHandler]):
+    def decorator(handler_cls: type[CopyTransferHandler]):
         handler_registry[(src_type, dst_type)] = handler_cls()
         return handler_cls
 
@@ -279,7 +275,7 @@ class TensorToBlockHandler:
         if src_shape_in_tiles != block_shape:
             raise ValueError(
                 f"Tensor shape {src.shape} (={src_shape_in_tiles} tiles) does not match "
-                f"Block shape {block_shape} tiles (={tuple(d * t for d, t in zip(block_shape, TILE_SHAPE))} elements)"
+                f"Block shape {block_shape} tiles (={tuple(d * t for d, t in zip(block_shape, TILE_SHAPE, strict=False))} elements)"
             )
 
     def transfer(self, src: Tensor, dst: Block) -> None:
@@ -324,7 +320,7 @@ class BlockToTensorHandler:
         if dst_shape_in_tiles != block_shape:
             raise ValueError(
                 f"Tensor shape {dst.shape} (={dst_shape_in_tiles} tiles) does not match "
-                f"Block shape {block_shape} tiles (={tuple(d * t for d, t in zip(block_shape, TILE_SHAPE))} elements)"
+                f"Block shape {block_shape} tiles (={tuple(d * t for d, t in zip(block_shape, TILE_SHAPE, strict=False))} elements)"
             )
 
     def transfer(self, src: Block, dst: Tensor) -> None:
@@ -390,7 +386,7 @@ class PipeToBlockHandler:
                 _pipe_buffer[src] = new_entry
                 entry = new_entry
         event: threading.Event = entry["event"]
-        queue: Deque[Tuple[List[Tensor], Count]] = entry["queue"]
+        queue: deque[tuple[list[Tensor], Count]] = entry["queue"]
         lock: threading.Lock = entry["lock"]
 
         while True:
@@ -399,9 +395,9 @@ class PipeToBlockHandler:
             remaining = COPY_PIPE_TIMEOUT - elapsed
             if remaining <= 0:
                 raise TimeoutError(
-                    f"Timeout waiting for pipe data. "
-                    f"The sender may not have called copy(block, pipe).wait() "
-                    f"or there may be a deadlock."
+                    "Timeout waiting for pipe data. "
+                    "The sender may not have called copy(block, pipe).wait() "
+                    "or there may be a deadlock."
                 )
 
             # Wait until signaled or timeout
@@ -409,9 +405,9 @@ class PipeToBlockHandler:
             if not signaled:
                 # event.wait returned False -> timeout
                 raise TimeoutError(
-                    f"Timeout waiting for pipe data. "
-                    f"The sender may not have called copy(block, pipe).wait() "
-                    f"or there may be a deadlock."
+                    "Timeout waiting for pipe data. "
+                    "The sender may not have called copy(block, pipe).wait() "
+                    "or there may be a deadlock."
                 )
 
             # Event signaled - examine queue under lock

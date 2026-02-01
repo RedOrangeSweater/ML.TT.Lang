@@ -10,8 +10,8 @@ tensor data. It handles CB allocation, configuration, and provides tensor-aware
 operations.
 """
 
+from collections.abc import Callable
 from types import TracebackType
-from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 
@@ -57,9 +57,9 @@ class _BlockContextManager:
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         # Always attempt cleanup, but don't let cleanup errors mask original exceptions
         try:
@@ -173,7 +173,7 @@ class CircularBuffer:
         element: Tensor,
         shape: Shape,
         buffer_factor: Size = 2,
-        api: Optional[CBAPI] = None,
+        api: CBAPI | None = None,
     ):
         """
         Initialize a CircularBuffer.
@@ -196,12 +196,12 @@ class CircularBuffer:
         self._buffer_factor = buffer_factor
 
         # Store API instance (may be None)
-        self._api: Optional[CBAPI] = api
+        self._api: CBAPI | None = api
 
         # Track pending blocks for state machine completion
         # At most one pending reserved block and one pending waited block at a time
-        self._pending_reserved_block: Optional[Block] = None
-        self._pending_waited_block: Optional[Block] = None
+        self._pending_reserved_block: Block | None = None
+        self._pending_waited_block: Block | None = None
 
         # Calculate total capacity in tiles
         self._tiles_per_operation = shape[0] * shape[1]
@@ -210,14 +210,14 @@ class CircularBuffer:
         # Only allocate and configure if API is provided
         # If None, this will be done when the CB is copied by Program
         if self._api is not None:
-            self._cb_id: Optional[CBID] = self._api.allocate_cb_id()
+            self._cb_id: CBID | None = self._api.allocate_cb_id()
             self._api.host_configure_cb(self._cb_id, self._capacity_tiles, self._shape)
             # Reset the buffer to initialize with zero entries
             self._api.host_reset_cb(self._cb_id)
         else:
-            self._cb_id: Optional[CBID] = None  # Placeholder until properly initialized
+            self._cb_id: CBID | None = None  # Placeholder until properly initialized
 
-    def _ensure_initialized(self) -> Tuple[CBAPI, CBID]:
+    def _ensure_initialized(self) -> tuple[CBAPI, CBID]:
         """Verify that the CircularBuffer has been properly initialized with an API.
 
         Returns:
@@ -396,7 +396,7 @@ class CircularBuffer:
         api.cb_pop_front(cb_id, self._tiles_per_operation)
 
     @property
-    def shape(self) -> Tuple[Size, Size]:
+    def shape(self) -> tuple[Size, Size]:
         """Get the shape (in tiles) for wait/reserve operations."""
         return self._shape
 
@@ -411,7 +411,7 @@ class CircularBuffer:
         return self._buffer_factor
 
     @property
-    def cb_id(self) -> Optional[CBID]:
+    def cb_id(self) -> CBID | None:
         """Get the internal CB ID (for debugging/advanced use)."""
         return self._cb_id
 
