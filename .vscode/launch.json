@@ -25,6 +25,23 @@
       "args": ["test_nn_api.py", "-v", "--tb=short"],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}/test/python"
+    },
+    {
+      "name": "TTL: Trainer (benchmark)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/nn_trainer_benchmark.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": { "TTLANG_COMPILE_ONLY": "1" }
+    },
+    {
+      "name": "TTL: Trainer (scheduler env)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/nn_trainer_scheduler_env.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
     }
   ]
 }

@@ -60,6 +60,20 @@
       "command": "python examples/nn_sequential.py",
       "group": "test",
       "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "TTL: Trainer (benchmark)",
+      "type": "shell",
+      "command": "TTLANG_COMPILE_ONLY=1 python examples/nn_trainer_benchmark.py",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "TTL: Trainer (scheduler env)",
+      "type": "shell",
+      "command": "python examples/nn_trainer_scheduler_env.py",
+      "group": "test",
+      "presentation": { "reveal": "always", "panel": "shared" }
     }
   ]
 }

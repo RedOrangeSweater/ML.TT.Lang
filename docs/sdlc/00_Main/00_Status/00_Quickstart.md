@@ -253,6 +253,17 @@ def add_kernel(lhs, rhs, out):
 - проверить/verifier errors без Python контекста;
 - сделать минимальный MLIR regression test (lit/FileCheck).
 
+## 7.1) Lightning-like workflow (модуль + Trainer)
+
+Для сценариев «прогон батчей» и «обучение по reward» можно использовать `ttl.nn.Trainer` и модули:
+
+- **Модуль**: `ttl.nn.ProgramModule(program, grid, options=..., tensor_adapter=...)` оборачивает `@ttl.program`; опционально `TensorAdapter` для конвертации torch↔ttnn; метод `compile(*args)` — warmup без вызова с реальными данными.
+- **Trainer**: `ttl.nn.Trainer(model=module, config=TrainerConfig(...), callbacks=[...], logger=...)`. `fit(train_batches=...)` — benchmark/inference loop (compile warmup, затем прогон с метриками latency/throughput); `fit(env=...)` при `mode="scheduler_env"` — цикл reset/step по среде (reward-based).
+- **Конфиг**: `TrainerConfig(mode="benchmark"|"scheduler_env", max_steps, compile_warmup_steps, enable_profiling, output_dir)`. При `enable_profiling` выставляется `TTLANG_AUTO_PROFILE=1`; в `output_dir` пишется `summary.json`.
+- **Примеры**: `examples/nn_trainer_benchmark.py` (compile-only OK), `examples/nn_trainer_scheduler_env.py` (mock env без устройства). Run configs: «TTL: Trainer (benchmark)», «TTL: Trainer (scheduler env)».
+
+Подробнее: [TASK_lightning_like_ux.md](../06_Development/TASK_lightning_like_ux.md).
+
 ## 8) Что читать дальше (4 пункта)
 
 - `docs/LOWERING_MULTITILE.md` — “одна трасса, которая объясняет половину системы”.
