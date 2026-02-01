@@ -16,7 +16,7 @@ class Sequential:
 
     Each step is a Module (ProgramModule or custom). Call with initial tensors;
     step 0 gets all args; step i (i > 0) gets (output of step i-1,) as first arg.
-    For two-step pipeline: step0(*args) -> out0, step1(out0) -> out1, return out1.
+    compile() runs the full sequence once to warmup compile caches.
     """
 
     def __init__(self, *modules: Module | ProgramModule) -> None:
@@ -26,6 +26,10 @@ class Sequential:
             *modules: Module instances (ProgramModule or any callable matching Module protocol).
         """
         self._modules: list[Module] = list(modules)
+
+    def compile(self, *args: object, **kwargs: object) -> None:
+        """Run the full sequence once to warmup compile caches. Same as one __call__ for side effect."""
+        self(*args, **kwargs)
 
     def __call__(self, *args: object, **kwargs: object) -> object | None:
         """Run modules in sequence; output of each step is first input of next."""
