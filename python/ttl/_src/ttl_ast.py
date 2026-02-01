@@ -2,9 +2,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+from __future__ import annotations
+
 import ast
 import inspect
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pykernel._src.kernel_ast import TTCompilerBase
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import *
@@ -102,10 +104,11 @@ class CompilerContext(BaseModel):
 
 
 class TTLCompilerConfig(BaseModel):
-    """Pydantic config for TTLGenericCompiler; built from kwargs to avoid long __init__."""
+    """Pydantic config for TTLGenericCompiler; built from source_context + kwargs."""
 
     model_config = ConfigDict(extra="ignore")
 
+    source_context: CompilationSourceContext | None = None  # lazy: ..compile.source_context
     grid: list[int] = Field(default_factory=lambda: [1, 1])
     memory_space: MemorySpace = "L1"
     tiled: bool = True
@@ -118,6 +121,25 @@ class TTLCompilerConfig(BaseModel):
     fn_globals: dict[str, object] = Field(
         default_factory=dict, validation_alias="_globals"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _inject_source_context(cls, data: object) -> object:
+        """Fill source fields from source_context when provided; kwargs override."""
+        if not isinstance(data, dict):
+            return data
+        ctx = data.get("source_context")
+        if ctx is None:
+            return data
+        from ..compile.source_context import CompilationSourceContext
+
+        if not isinstance(ctx, CompilationSourceContext):
+            return data
+        data.setdefault("_source_file", ctx.source_file)
+        data.setdefault("_source_lines", ctx.source_lines)
+        data.setdefault("_line_offset", ctx.line_offset)
+        data.setdefault("debug_locations", ctx.debug_locations)
+        return data
 
 
 class ThreadSourceInfo(BaseModel):
