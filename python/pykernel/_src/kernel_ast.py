@@ -6,9 +6,8 @@
 # and cleaned up to remove unused code (TTKernelCompiler) and fix i32->i64.
 
 import ast
-import inspect
 
-from ttmlir.dialects import arith, emitc, func, memref, scf
+from ttmlir.dialects import arith, emitc, memref, scf
 from ttmlir.ir import *
 
 from .base_ast import PyKernelAstBase
@@ -127,9 +126,7 @@ class TTCompilerBase(PyKernelAstBase):
                 if_cond, arith.ConstantOp(IndexType.get(self.ctx), 0)
             ).result
             cond_type = if_cond.type
-        elif hasattr(if_cond, "type") and isinstance(if_cond.type, IntegerType):
-            cond_type = if_cond.type
-        elif isinstance(if_cond, arith.ConstantOp):
+        elif hasattr(if_cond, "type") and isinstance(if_cond.type, IntegerType) or isinstance(if_cond, arith.ConstantOp):
             cond_type = if_cond.type
 
         # Create C-Style comparison if cond_type is not None
@@ -383,7 +380,7 @@ class TTCompilerBase(PyKernelAstBase):
                 func, args_as_attr = func
             func_args = []
             assert len(node.args) == len(args_as_attr)
-            for arg, as_attr in zip(node.args, args_as_attr):
+            for arg, as_attr in zip(node.args, args_as_attr, strict=False):
                 arg._ttkernel_as_attr = as_attr
                 func_arg = _load_func_arg(self.visit(arg))
                 func_args.append(func_arg)
@@ -447,9 +444,7 @@ class TTCompilerBase(PyKernelAstBase):
                     value, arith.ConstantOp(IndexType.get(self.ctx), 0)
                 ).result
                 value_type = value.type
-            elif hasattr(value, "type") and isinstance(value.type, IntegerType):
-                value_type = value.type
-            elif isinstance(value, arith.ConstantOp):
+            elif hasattr(value, "type") and isinstance(value.type, IntegerType) or isinstance(value, arith.ConstantOp):
                 value_type = value.type
 
             if value_type is None:

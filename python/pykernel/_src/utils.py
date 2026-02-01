@@ -8,7 +8,7 @@
 import inspect
 import re
 import textwrap
-from typing import Callable
+from collections.abc import Callable
 
 from ttmlir.dialects import arith
 from ttmlir.ir import *
