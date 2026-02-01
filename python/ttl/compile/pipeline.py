@@ -23,6 +23,7 @@ import ttl._mlir_libs._ttlang  # noqa: F401  # Register tt-lang passes
 from .._src.auto_profile import is_auto_profile_enabled
 from ..config import HAS_TT_DEVICE
 from ..descriptor_options import (
+    CompiledTTNNKernel,
     ProgramConfig,
     TTNNCompileCacheAndCb,
     TTNNCompileInput,
@@ -31,7 +32,7 @@ from ..descriptor_options import (
     TTNNProfilingInput,
 )
 from ..diagnostics import format_mlir_error
-from ..program import CompileKernelRequest
+from ..program import CompileKernelRequest, KernelCompileRequest
 from ..settings import settings_ttlang
 
 from .source_collector import get_source_line_offset
@@ -50,7 +51,56 @@ class ThreadRegistryLike(Protocol):
     def get_and_clear(self) -> list[Callable[..., object]]: ...
 
 
-def _compile_kernel(req: CompileKernelRequest) -> object | None:
+def build_ttnn_compile_request(
+    module: object,
+    args: tuple[object, ...],
+    request: KernelCompileRequest,
+    thread_tensor_indices: list[list[int]],
+    cb_configs: list[object],
+    all_source_lines: dict[str, list[str]] | None,
+    kernel_line_offsets: dict[str, int] | None,
+) -> TTNNKernelCompileRequest:
+    """Build TTNNKernelCompileRequest from pipeline artifacts and KernelCompileRequest."""
+    compile_input = TTNNCompileInput(
+        module=module,
+        args=args,
+        grid=request.grid,
+        num_outs=request.options.num_outs,
+        thread_tensor_indices=thread_tensor_indices,
+    )
+    cache_and_cb = TTNNCompileCacheAndCb(
+        cb_configs=cb_configs, program_hash=request.program_hash
+    )
+    profile_source_lines = None
+    if all_source_lines:
+        first_thread = next(iter(all_source_lines.keys()))
+        profile_source_lines = all_source_lines[first_thread]
+    profiling_input = TTNNProfilingInput(
+        source_lines=profile_source_lines,
+        all_source_lines=all_source_lines or None,
+        kernel_line_offsets=kernel_line_offsets or None,
+    )
+    grid_tuple: tuple[int, int] | None = None
+    if isinstance(request.grid, (tuple, list)) and len(request.grid) >= 2:
+        grid_tuple = (int(request.grid[0]), int(request.grid[1]))
+    program_config = ProgramConfig(
+        grid=grid_tuple,
+        objective=request.options.objective,
+        placement=request.options.placement,
+    )
+    return TTNNKernelCompileRequest(
+        input=compile_input,
+        compile_options=TTNNKernelCompileOptions(
+            fp32_dest_acc_en=request.options.fp32_dest_acc_en,
+            dst_full_sync_en=request.options.dst_full_sync_en,
+            program_config=program_config,
+        ),
+        cache_and_cb=cache_and_cb,
+        profiling=profiling_input,
+    )
+
+
+def _compile_kernel(req: CompileKernelRequest) -> CompiledTTNNKernel | None:
     """
     Compile kernel function to MLIR and return CompiledTTNNKernel.
 
@@ -254,45 +304,16 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
         )
         run_stages(get_final_stages(), final_stage_ctx, settings_ttlang)
 
-        profile_source_lines = None
-        if all_source_lines:
-            first_thread = next(iter(all_source_lines.keys()))
-            profile_source_lines = all_source_lines[first_thread]
-
-        compile_input = TTNNCompileInput(
+        ttnn_req = build_ttnn_compile_request(
             module=module,
             args=req.args,
-            grid=request.grid,
-            num_outs=request.options.num_outs,
+            request=request,
             thread_tensor_indices=thread_tensor_indices,
+            cb_configs=cb_configs,
+            all_source_lines=all_source_lines,
+            kernel_line_offsets=kernel_line_offsets,
         )
-        cache_and_cb = TTNNCompileCacheAndCb(
-            cb_configs=cb_configs, program_hash=request.program_hash
-        )
-        profiling_input = TTNNProfilingInput(
-            source_lines=profile_source_lines,
-            all_source_lines=all_source_lines or None,
-            kernel_line_offsets=kernel_line_offsets or None,
-        )
-        grid_tuple: tuple[int, int] | None = None
-        if isinstance(request.grid, (tuple, list)) and len(request.grid) >= 2:
-            grid_tuple = (int(request.grid[0]), int(request.grid[1]))
-        program_config = ProgramConfig(
-            grid=grid_tuple,
-            objective=request.options.objective,
-            placement=request.options.placement,
-        )
-        compile_req = TTNNKernelCompileRequest(
-            input=compile_input,
-            compile_options=TTNNKernelCompileOptions(
-                fp32_dest_acc_en=request.options.fp32_dest_acc_en,
-                dst_full_sync_en=request.options.dst_full_sync_en,
-                program_config=program_config,
-            ),
-            cache_and_cb=cache_and_cb,
-            profiling=profiling_input,
-        )
-        return compile_ttnn_kernel(compile_req)
+    return compile_ttnn_kernel(ttnn_req)
 
 
 # Backward compatibility: same names as before refactor
