@@ -6,10 +6,8 @@ from __future__ import annotations
 
 from ...compile.pipeline import _compile_kernel as _compile_kernel_impl
 from ..context import RunContext
-from ..core import middleware
 
 
-@middleware
 def compile_kernel(ctx: RunContext) -> RunContext:
     """Compile ctx.compile_req and store CompiledTTNNKernel in ctx.compiled."""
     compile_req = ctx.compile_req

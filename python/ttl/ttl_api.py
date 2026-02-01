@@ -35,15 +35,15 @@ from .constants import MemorySpace
 from .descriptor_options import (
     CompiledTTNNKernel,
 )
-from .layered import compose
-from .layered.compile.build_compile_request import build_compile_request
-from .layered.compile.compile_kernel import compile_kernel
 from .layered.context import ProgramInvocationContext, RunContext
 from .layered.program.compile_cached import compile_cached
-from .layered.program.compute_cache_key import compute_cache_key
-from .layered.program.ensure_run_request import ensure_run_request
-from .layered.program.require_ttl_program import require_ttl_program_attr
-from .layered.program.resolve_engine_config import resolve_engine_config
+from .layered.run_decorators import (
+    build_compile_request_ctx,
+    compile_kernel_ctx,
+    ensure_run_request_ctx,
+    require_ttl_program_attr_ctx,
+    resolve_engine_config_ctx,
+)
 from .operators import CopyTransferHandler, TensorBlock, copy
 from .program import (
     Program,
@@ -186,22 +186,18 @@ def run(
         options=options,
     )
 
-    def handler(ctx: RunContext) -> object | None:
+    def _run_impl(ctx: RunContext) -> object | None:
         if ctx.req is None:
-            raise RuntimeError("run() pipeline invariant: ctx.req must be set")
+            raise RuntimeError("run() invariant: ctx.req must be set")
         return execute_if_needed(ctx.compiled, ctx.req)
 
-    pipeline = compose(
-        handler,
-        [
-            ensure_run_request,
-            resolve_engine_config,
-            require_ttl_program_attr(_TTL_PROGRAM_ATTR),
-            build_compile_request,
-            compile_kernel,
-        ],
-    )
-    return pipeline(ctx)
+    _run_impl = ensure_run_request_ctx(_run_impl)
+    _run_impl = resolve_engine_config_ctx(_run_impl)
+    _run_impl = require_ttl_program_attr_ctx(_TTL_PROGRAM_ATTR)(_run_impl)
+    _run_impl = build_compile_request_ctx(_run_impl)
+    _run_impl = compile_kernel_ctx(_run_impl)
+
+    return _run_impl(ctx)
 
 
 def pykernel_gen(
@@ -215,6 +211,8 @@ def pykernel_gen(
     dst_full_sync_en: bool | None = None,
     objective: Literal["latency", "throughput", "balanced"] | None = None,
     placement: Literal["auto", "manual"] | None = None,
+    *,
+    params: ProgramDecoratorParams | None = None,
 ) -> Callable:
     """
     Decorator for generating TTL kernels from Python functions.
@@ -241,30 +239,25 @@ def pykernel_gen(
     Raises:
         AssertionError: If required parameters are missing or invalid
     """
-    params = ProgramDecoratorParams(
-        grid=grid,
-        indexing_maps=indexing_maps,  # type: ignore[arg-type]
-        iterator_types=iterator_types,  # type: ignore[arg-type]
-        options=ProgramOptions(
-            num_outs=num_outs,
-            memory_space=memory_space,
-            tiled=tiled,
-            fp32_dest_acc_en=fp32_dest_acc_en,
-            dst_full_sync_en=dst_full_sync_en,
-            objective=objective,
-            placement=placement,
-        ),
-    )
+    if params is None:
+        params = ProgramDecoratorParams(
+            grid=grid,
+            indexing_maps=indexing_maps,  # type: ignore[arg-type]
+            iterator_types=iterator_types,  # type: ignore[arg-type]
+            options=ProgramOptions(
+                num_outs=num_outs,
+                memory_space=memory_space,
+                tiled=tiled,
+                fp32_dest_acc_en=fp32_dest_acc_en,
+                dst_full_sync_en=dst_full_sync_en,
+                objective=objective,
+                placement=placement,
+            ),
+        )
 
     def _decorator(f):
         kernel_id = random.getrandbits(64)
         cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
-
-        def handler(ctx: ProgramInvocationContext) -> object | None:
-            _wrapper._last_compiled_kernel = ctx.compiled  # type: ignore[attr-defined]
-            return execute_and_maybe_profile(ctx.compiled, ctx.args)
-
-        pipeline = compose(handler, [compute_cache_key, compile_cached])
 
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
@@ -276,7 +269,9 @@ def pykernel_gen(
                 kernel_id=kernel_id,
                 cache=cache,
             )
-            return pipeline(ctx)
+            ctx = compile_cached(ctx)
+            _wrapper._last_compiled_kernel = ctx.compiled  # type: ignore[attr-defined]
+            return execute_and_maybe_profile(ctx.compiled, ctx.args)
 
         setattr(_wrapper, _TTL_PROGRAM_ATTR, True)
         return _wrapper

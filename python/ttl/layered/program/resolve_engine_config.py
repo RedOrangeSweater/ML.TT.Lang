@@ -5,10 +5,8 @@
 from __future__ import annotations
 
 from ..context import RunContext
-from ..core import middleware
 
 
-@middleware
 def resolve_engine_config(ctx: RunContext) -> RunContext:
     """Resolve engine_config from engine_config_path (if provided)."""
     if ctx.engine_config_path is not None:

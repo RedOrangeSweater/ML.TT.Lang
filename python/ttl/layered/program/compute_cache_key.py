@@ -6,10 +6,8 @@ from __future__ import annotations
 
 from ...program.cache_key import make_cache_key
 from ..context import ProgramInvocationContext
-from ..core import middleware
 
 
-@middleware
 def compute_cache_key(ctx: ProgramInvocationContext) -> ProgramInvocationContext:
     """Compute cache_key from args and compile options; store into ctx.cache_key."""
     if ctx.cache_key is None:

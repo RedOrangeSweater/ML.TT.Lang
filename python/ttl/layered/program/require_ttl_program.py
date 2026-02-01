@@ -5,13 +5,11 @@
 from __future__ import annotations
 
 from ..context import RunContext
-from ..core import middleware
 
 
 def require_ttl_program_attr(attr_name: str):
     """Ensure ctx.req.spec.program has a marker attribute (e.g. _ttl_program)."""
 
-    @middleware
     def _mw(ctx: RunContext) -> RunContext:
         req = ctx.req
         if req is None:

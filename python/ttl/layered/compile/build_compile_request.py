@@ -8,10 +8,8 @@ from ...compile.registry import get_thread_registry
 from ...program import CompileKernelRequest, KernelCompileRequest, _resolve_grid
 from ...program.cache_key import make_cache_key
 from ..context import RunContext
-from ..core import middleware
 
 
-@middleware
 def build_compile_request(ctx: RunContext) -> RunContext:
     """Build CompileKernelRequest from RunRequest and store in ctx.compile_req."""
     req = ctx.req

@@ -6,21 +6,23 @@ from __future__ import annotations
 
 from ...program import ProgramOptions, RunRequest
 from ..context import RunContext
-from ..core import middleware
 
 
-@middleware
 def ensure_run_request(ctx: RunContext) -> RunContext:
     """Normalize RunContext raw input into RunRequest (Pydantic-first)."""
     if ctx.req is None:
         if isinstance(ctx.raw_req, RunRequest):
             req = ctx.raw_req
         else:
-            program = ctx.raw_req
             if ctx.grid is None:
                 raise ValueError(
                     "grid= is required when passing program as first arg; "
                     "e.g. run(add_kernel, lhs, rhs, out, grid=(2, 2))"
+                )
+            program = ctx.raw_req
+            if not callable(program):
+                raise TypeError(
+                    "run() program must be callable when raw_req is not RunRequest"
                 )
             opts = ctx.options if isinstance(ctx.options, ProgramOptions) else None
             req = RunRequest.from_program(
