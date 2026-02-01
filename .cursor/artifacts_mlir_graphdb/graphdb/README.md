@@ -1,6 +1,6 @@
 # GraphDB: схема и примеры (cursorrules)
 
-Канон — `docs/sdlc/_KG_MLIR/common/graphdb/` в портфолио-репо. Синхронизируется в проекты через propagate (common + projects/<project> overlay).
+**В репо канон** — этот каталог (`.cursor/artifacts_mlir_graphdb/graphdb/`). В портфолио-репо опционально: `docs/sdlc/_KG_MLIR/common/graphdb/` (синхронизация в проекты через propagate).
 
 ## Схема и примеры
 

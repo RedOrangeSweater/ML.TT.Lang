@@ -9,9 +9,9 @@ alwaysApply: true
 - **KG-first**: in KG store only concepts, relations, effects (no phrases). Per chunk: **SPARQL query** (structural, no CONTAINS on phrases); optionally KG facts (Turtle); **MLIR layers** `ttl.sdlc_kg` and `ttl.sdlc_doc_intent` (or project-equivalent prefixes). Text is generated only by LLM from final MLIR.
 - **Optional/deprecated**: MLIR footnote format `<!-- mlir: path/to/file.mlir [#anchor] dialect=ttl.sdlc_doc -->` — use only for legacy; prefer KG-first.
 - Follow the canonical pipeline: **docs/sdlc/00_Main/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md** (§3, §3.2 contract, §4 example).
-- Register dialects and transformations in **docs/sdlc/_KG_MLIR** (cursorrules) or **.cursor/artifacts_mlir_graphdb** (in repo after sync). KG schema and examples: same tree (mlir/, graphdb/).
+- Register dialects and transformations: **in-repo SoT** is **`.cursor/artifacts_mlir_graphdb`** (mlir/, graphdb/). Optionally `docs/sdlc/_KG_MLIR` in portfolio/cursorrules when present; when absent, use `.cursor/artifacts_mlir_graphdb` only.
 
 ## Reference
 
-- Pipeline doc: `docs/sdlc/00_Main/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md`
-- KG/MLIR artifacts: `docs/sdlc/_KG_MLIR` (cursorrules) or `.cursor/artifacts_mlir_graphdb` (synced repo)
+- Pipeline doc: `docs/sdlc/00_Main/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md` (tt-metal copy: `docs/sdlc/01_tt_metal/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md`)
+- KG/MLIR artifacts: **canon in repo** — `.cursor/artifacts_mlir_graphdb`; `docs/sdlc/_KG_MLIR` — portfolio only (if present)
