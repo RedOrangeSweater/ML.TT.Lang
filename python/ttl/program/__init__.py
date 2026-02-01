@@ -15,7 +15,7 @@ import inspect
 from collections.abc import Callable
 from typing import Literal, Self, cast
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..constants import MemorySpace
 from ..descriptor_options import (
@@ -26,10 +26,11 @@ from ..descriptor_options import (
 from ..dtype_utils import is_ttnn_tensor
 
 
-def _resolve_grid(grid, args, kwargs):
-    """Resolve grid, evaluating callable or 'auto' if needed."""
+def _resolve_grid(grid, args, kwargs) -> tuple[int, ...] | list[int]:
+    """Resolve grid, evaluating callable or 'auto' if needed. Returns concrete grid tuple/list."""
     if callable(grid):
-        return grid(*args, **kwargs)
+        resolved = grid(*args, **kwargs)
+        return cast(tuple[int, ...] | list[int], resolved)
     if grid == "auto":
         for arg in args:
             if is_ttnn_tensor(arg) and hasattr(arg, "device"):
@@ -40,7 +41,7 @@ def _resolve_grid(grid, args, kwargs):
             "grid='auto' requires at least one ttnn tensor argument "
             "to determine device compute grid"
         )
-    return grid
+    return cast(tuple[int, ...] | list[int], grid)
 
 
 class ProgramOptions(BaseModel):
@@ -94,9 +95,17 @@ class ProgramDecoratorParams(BaseModel):
         description="Grid dimensions or callable (required for TTNN run)",
     )
     indexing_maps: list[Callable[..., object]] | None = Field(
-        default=None, description="Indexing maps"
+        default=None, description="Indexing maps (normalized to [] if None)"
     )
-    iterator_types: list[str] | None = Field(default=None, description="Iterator types")
+    iterator_types: list[str] | None = Field(
+        default=None, description="Iterator types (normalized to [] if None)"
+    )
+
+    @field_validator("indexing_maps", "iterator_types", mode="before")
+    @classmethod
+    def _none_to_list(cls, v: object) -> list[object]:
+        """Normalize None to empty list so fields are always list after validation."""
+        return [] if v is None else v  # type: ignore[return-value]
     options: ProgramOptions = Field(
         default_factory=lambda: ProgramOptions(),
         description="Program options (num_outs, memory_space, tiled, etc.)",
@@ -112,7 +121,7 @@ class ProgramDecoratorParams(BaseModel):
     @model_validator(mode="after")
     def indexing_maps_when_iterator_types(self) -> Self:
         """Contract: indexing_maps must be set when iterator_types is set."""
-        if self.iterator_types is not None and self.indexing_maps is None:
+        if self.iterator_types and not self.indexing_maps:
             raise ValueError("indexing_maps must be set when iterator_types is set")
         return self
 
@@ -218,24 +227,6 @@ class ProgramSpec(BaseModel):
         if self.iterator_types and not self.indexing_maps:
             raise ValueError("indexing_maps must be set when iterator_types is set")
         return self
-
-    def build_compile_request(
-        self,
-        args: tuple,
-        kwargs: dict,
-        program_hash: int,
-    ) -> KernelCompileRequest:
-        """Build KernelCompileRequest for this spec and invocation."""
-        resolved = _resolve_grid(self.grid, args, kwargs)
-        grid = cast(tuple[int, ...] | list[int], resolved)
-        return KernelCompileRequest(
-            grid=grid,
-            program_hash=program_hash,
-            indexing_maps=self.indexing_maps,
-            iterator_types=self.iterator_types,
-            options=self.options,
-        )
-
 
 class RunRequest(BaseModel):
     """Request for run(req). Single entry point: spec + args + kwargs. Validates num_outs == 1 before compile."""

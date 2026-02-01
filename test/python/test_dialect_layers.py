@@ -70,15 +70,22 @@ def test_program_decorator_params_indexing_maps_dims_match_iterator_types():
     assert len(params.iterator_types) == 2
 
 
-def test_program_spec_build_compile_request():
-    """ProgramSpec.build_compile_request(args, kwargs, program_hash) returns KernelCompileRequest."""
+def test_program_spec_kernel_compile_request_from_spec():
+    """KernelCompileRequest built from ProgramSpec (grid via _resolve_grid) has expected fields."""
 
     def _dummy_program(_x):
         pass
 
     options = ProgramOptions()
     spec = ProgramSpec(program=_dummy_program, grid=(2, 2), options=options)
-    req = spec.build_compile_request((), {}, program_hash=42)
+    grid = _resolve_grid(spec.grid, (), {})
+    req = KernelCompileRequest(
+        grid=grid,
+        program_hash=42,
+        indexing_maps=spec.indexing_maps,
+        iterator_types=spec.iterator_types,
+        options=spec.options,
+    )
     assert isinstance(req, KernelCompileRequest)
     assert req.program_hash == 42
     assert req.grid == (2, 2)

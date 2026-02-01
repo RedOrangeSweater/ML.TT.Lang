@@ -123,6 +123,163 @@ PLACEMENT_VALUES = ("auto", "manual")
 _TTL_PROGRAM_ATTR = "_ttl_program"
 
 
+def ensure_run_request(
+    req: RunRequest | Callable[..., object],
+    *args: object,
+    grid: (tuple[int, ...] | list[int] | Callable[..., object]) | None = None,
+    options: ProgramOptions | None = None,
+    **kwargs: object,
+) -> RunRequest:
+    """Normalize run() input to a RunRequest (either pass-through or from_program)."""
+    if isinstance(req, RunRequest):
+        return req
+    program = req
+    if grid is None:
+        raise ValueError(
+            "grid= is required when passing program as first arg; "
+            "e.g. run(add_kernel, lhs, rhs, out, grid=(2, 2))"
+        )
+    return RunRequest.from_program(
+        program, *args, grid=grid, options=options, **kwargs
+    )
+
+
+def _resolve_engine_config(
+    engine_config_path: str | Path | None,
+    engine_config: object | None,
+) -> object | None:
+    """Resolve engine_config from path if given; otherwise return existing config."""
+    if engine_config_path is not None:
+        from .scheduler import load_abstract_engine_config
+
+        return load_abstract_engine_config(engine_config_path)
+    return engine_config
+
+
+def get_or_compile_run(
+    req: RunRequest,
+    engine_config: object | None,
+) -> CompiledTTNNKernel | None:
+    """Build compile request, run pipeline, return compiled kernel (cache is per-run)."""
+    if not getattr(req.spec.program, _TTL_PROGRAM_ATTR, False):
+        raise NotImplementedError(
+            "run() with a raw callable (e.g. lambda) is not yet implemented: "
+            "inference from parameters and return type is planned. "
+            "Use @ttl.program to define the kernel and pass RunRequest.from_program(program, *args, grid=...). "
+            "See docs/sdlc/00_Main/02_Architecture/20_IdealDataFlowAndModuleStructure.md "
+            "(lambda + inference)."
+        )
+    cache_key = make_cache_key(
+        req.args,
+        fp32_dest_acc_en=req.spec.options.fp32_dest_acc_en,
+        dst_full_sync_en=req.spec.options.dst_full_sync_en,
+    )
+    program_hash = hash((id(req.spec.program), cache_key))
+    grid = _resolve_grid(req.spec.grid, req.args, req.kwargs)
+    compile_request = KernelCompileRequest(
+        grid=grid,
+        program_hash=program_hash,
+        indexing_maps=req.spec.indexing_maps,
+        iterator_types=req.spec.iterator_types,
+        options=req.spec.options,
+    )
+    compile_req = CompileKernelRequest(
+        program=req.spec.program,
+        args=req.args,
+        kwargs=dict(req.kwargs),
+        compile_request=compile_request,
+        thread_registry=get_thread_registry(),
+        engine_config=engine_config,
+    )
+    return cast(
+        CompiledTTNNKernel | None,
+        _compile_kernel_impl(compile_req),
+    )
+
+
+def execute_if_needed(
+    compiled: CompiledTTNNKernel | None,
+    req: RunRequest,
+) -> object | None:
+    """Execute compiled kernel if not None and not compile-only mode; else return None."""
+    if compiled is None:
+        return None
+    if _should_execute():
+        return compiled(*req.args)
+    return None
+
+
+def with_program_compile_and_cache(
+    f: Callable[..., object],
+    params: ProgramDecoratorParams,
+    kernel_id: int,
+):
+    """
+    Decorator that builds CompileKernelRequest, does cache lookup/compile, then calls on_compiled.
+
+    Wraps a function on_compiled(compiled, args) -> result. Returns an invoker (args, kwargs) -> result
+    that computes cache_key, builds Pydantic request, get-or-compiles, then calls on_compiled.
+    """
+    cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
+
+    def decorator(on_compiled: Callable[..., object]) -> Callable[..., object]:
+        def invoker(args: tuple[object, ...], kwargs: dict[str, object]) -> object | None:
+            cache_key = make_cache_key(
+                args,
+                fp32_dest_acc_en=params.options.fp32_dest_acc_en,
+                dst_full_sync_en=params.options.dst_full_sync_en,
+            )
+            if cache_key in cache:
+                compiled = cache[cache_key]
+            else:
+                grid = _resolve_grid(params.grid, args, kwargs)
+                program_hash = hash((kernel_id, cache_key))
+                compile_request = KernelCompileRequest(
+                    grid=grid,
+                    program_hash=program_hash,
+                    indexing_maps=cast(list[Callable[..., object]], params.indexing_maps),
+                    iterator_types=cast(list[str], params.iterator_types),
+                    options=params.options,
+                )
+                compile_req = CompileKernelRequest(
+                    program=f,
+                    args=args,
+                    kwargs=kwargs,
+                    compile_request=compile_request,
+                    thread_registry=get_thread_registry(),
+                    engine_config=None,
+                )
+                compiled = cast(
+                    CompiledTTNNKernel | None,
+                    _compile_kernel_impl(compile_req),
+                )
+                if compiled is not None:
+                    cache[cache_key] = compiled
+            return on_compiled(compiled, args)
+
+        return invoker
+
+    return decorator
+
+
+def execute_and_maybe_profile(
+    compiled: CompiledTTNNKernel | None,
+    args: tuple[object, ...],
+) -> object | None:
+    """Execute compiled kernel if not None and not compile-only; run profiling if enabled."""
+    if compiled is None or not _should_execute():
+        return None
+    result = compiled(*args)
+    if is_auto_profile_enabled() and compiled.all_source_lines:
+        run_profiling_after_execute(
+            args,
+            compiled.all_source_lines,  # type: ignore[arg-type]
+            compiled.thread_to_kernel,
+            compiled.kernel_line_offsets,  # type: ignore[arg-type]
+        )
+    return result
+
+
 def run(
     req: RunRequest | Callable[..., object],
     *args: object,
@@ -143,53 +300,13 @@ def run(
     Optional engine_config_path or engine_config: abstract engine config for scheduler.
     See docs/sdlc/00_Main/00_Ideas/20_nickel_mlir_config_abstract_engine.md.
     """
-    if not isinstance(req, RunRequest):
-        program = req
-        if grid is None:
-            raise ValueError(
-                "grid= is required when passing program as first arg; "
-                "e.g. run(add_kernel, lhs, rhs, out, grid=(2, 2))"
-            )
-        req = RunRequest.from_program(
-            program, *args, grid=grid, options=options, **kwargs
-        )
-
-    if engine_config_path is not None:
-        from .scheduler import load_abstract_engine_config
-
-        engine_config = load_abstract_engine_config(engine_config_path)
-    if not getattr(req.spec.program, _TTL_PROGRAM_ATTR, False):
-        raise NotImplementedError(
-            "run() with a raw callable (e.g. lambda) is not yet implemented: "
-            "inference from parameters and return type is planned. "
-            "Use @ttl.program to define the kernel and pass RunRequest.from_program(program, *args, grid=...). "
-            "See docs/sdlc/00_Main/02_Architecture/20_IdealDataFlowAndModuleStructure.md "
-            "(lambda + inference)."
-        )
-    cache_key = make_cache_key(
-        req.args,
-        fp32_dest_acc_en=req.spec.options.fp32_dest_acc_en,
-        dst_full_sync_en=req.spec.options.dst_full_sync_en,
+    req = ensure_run_request(req, *args, grid=grid, options=options, **kwargs)
+    engine_config = cast(
+        "AbstractEngineConfig | None",
+        _resolve_engine_config(engine_config_path, engine_config),
     )
-    program_hash = hash((id(req.spec.program), cache_key))
-    compile_request = req.spec.build_compile_request(req.args, req.kwargs, program_hash)
-    compile_req = CompileKernelRequest(
-        program=req.spec.program,
-        args=req.args,
-        kwargs=dict(req.kwargs),
-        compile_request=compile_request,
-        thread_registry=get_thread_registry(),
-        engine_config=engine_config,
-    )
-    compiled = cast(
-        CompiledTTNNKernel | None,
-        _compile_kernel_impl(compile_req),
-    )
-    if compiled is None:
-        return None
-    if _should_execute():
-        return compiled(*req.args)
-    return None
+    compiled = get_or_compile_run(req, engine_config)
+    return execute_if_needed(compiled, req)
 
 
 def pykernel_gen(
@@ -243,72 +360,22 @@ def pykernel_gen(
             placement=placement,
         ),
     )
-    options = params.options
-    indexing_maps = params.indexing_maps if params.indexing_maps is not None else []
-    iterator_types = params.iterator_types if params.iterator_types is not None else []
 
     def _decorator(f):
-        # Per-kernel state: random ID and cache
         kernel_id = random.getrandbits(64)
-        cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
+
+        def _on_compiled(
+            compiled: CompiledTTNNKernel | None,
+            args: tuple[object, ...],
+        ) -> object | None:
+            _wrapper._last_compiled_kernel = compiled  # type: ignore[attr-defined]
+            return execute_and_maybe_profile(compiled, args)
+
+        _invoker = with_program_compile_and_cache(f, params, kernel_id)(_on_compiled)
 
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
-            resolved_grid = _resolve_grid(grid, args, kwargs)
-
-            # Build cache key from tensor properties
-            cache_key = make_cache_key(
-                args,
-                fp32_dest_acc_en=options.fp32_dest_acc_en,
-                dst_full_sync_en=options.dst_full_sync_en,
-            )
-
-            # Check cache for previously compiled kernel
-            if cache_key in cache:
-                compiled_kernel = cache[cache_key]
-            else:
-                # Compute program_hash for tt-metal cache
-                program_hash = hash((kernel_id, cache_key))
-
-                # Compile kernel
-                compile_request = KernelCompileRequest(
-                    grid=cast(tuple[int, ...] | list[int], resolved_grid),
-                    program_hash=program_hash,
-                    indexing_maps=indexing_maps,
-                    iterator_types=iterator_types,
-                    options=options,
-                )
-                compile_req = CompileKernelRequest(
-                    program=f,
-                    args=args,
-                    kwargs=kwargs,
-                    compile_request=compile_request,
-                    thread_registry=get_thread_registry(),
-                    engine_config=None,
-                )
-                raw_compiled = _compile_kernel_impl(compile_req)
-                compiled_kernel = cast(CompiledTTNNKernel | None, raw_compiled)
-
-                if compiled_kernel is not None:
-                    cache[cache_key] = compiled_kernel
-
-            # Expose last compiled kernel for scheduler export (e.g. get_scheduler_input)
-            _wrapper._last_compiled_kernel = compiled_kernel
-
-            # Execute (unless compile-only mode)
-            if compiled_kernel is not None and _should_execute():
-                result = compiled_kernel(*args)
-
-                # Run auto-profiling after execution
-                if is_auto_profile_enabled() and compiled_kernel.all_source_lines:
-                    run_profiling_after_execute(
-                        args,
-                        compiled_kernel.all_source_lines,  # type: ignore[arg-type]
-                        compiled_kernel.thread_to_kernel,
-                        compiled_kernel.kernel_line_offsets,  # type: ignore[arg-type]
-                    )
-
-                return result
+            return _invoker(args, kwargs)
 
         setattr(_wrapper, _TTL_PROGRAM_ATTR, True)
         return _wrapper
