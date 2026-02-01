@@ -5,8 +5,9 @@
 """
 Compile layer: KernelCompileRequest -> TTNNKernelCompileRequest -> CompiledTTNNKernel.
 
-Re-exports from descriptor_options. _compile_kernel and _compile_ttnn_kernel remain
-in ttl_api to avoid circular imports. One focus: spec to compilation artifacts.
+Re-exports from descriptor_options. _compile_kernel and _compile_ttnn_kernel in
+pipeline; thread_compiler, ttnn_compiler, kernel_writer, source_collector are
+internal. One focus: spec to compilation artifacts.
 See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
 """
 

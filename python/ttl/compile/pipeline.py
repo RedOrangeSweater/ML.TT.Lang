@@ -6,80 +6,41 @@
 Compile pipeline: KernelCompileRequest -> (threads, module) -> TTNNKernelCompileRequest
 -> CompiledTTNNKernel.
 
-One focus: spec to compilation artifacts. _compile_kernel and _compile_ttnn_kernel
-live here; ttl_api remains facade and passes thread_registry to avoid circular imports.
+Orchestration only: delegates to thread_compiler, ttnn_compiler, source_collector, stages.
 See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
 """
 
 from __future__ import annotations
 
-import inspect
-import uuid
 from collections.abc import Callable
 from pathlib import Path
-from types import CellType
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict
-from ttmlir.ir import (
-    ArrayAttr,
-    Context,
-    InsertionPoint,
-    IntegerAttr,
-    IntegerType,
-    Location,
-    Module,
-    PassManager,
-)
+from ttmlir.ir import Context, Location, PassManager
 
 import ttl._mlir_libs._ttlang  # noqa: F401  # Register tt-lang passes
 
-from .._src.ttl_ast import TTLGenericCompiler
-from ..circular_buffer import CircularBuffer, get_cb_count
-from ..constants import SUPPORTED_MEMORY_SPACES
+from .._src.auto_profile import is_auto_profile_enabled
+from ..config import HAS_TT_DEVICE
 from ..descriptor_options import (
-    CompiledKernelArtifacts,
-    CompiledProfilingSource,
-    CompiledRuntimeContext,
-    CompiledTTNNKernel,
-    CoreRangeSetOptions,
-    KernelWriteRequest,
     ProgramConfig,
-    ProgramRunConfig,
-    ThreadConfigBuildRequest,
     TTNNCompileCacheAndCb,
     TTNNCompileInput,
     TTNNKernelCompileOptions,
     TTNNKernelCompileRequest,
     TTNNProfilingInput,
 )
-from ..diagnostics import (
-    TTLangCompileError,
-    find_variable_assignment,
-    format_mlir_error,
-    format_python_error,
-)
-from ..dtype_utils import TTNNMemoryConfigProxy, is_ttnn_tensor
-from ..program import CompileKernelRequest, Program
+from ..diagnostics import format_mlir_error
+from ..program import CompileKernelRequest
 from ..settings import settings_ttlang
-from ..ttl_utils import tmp_dir
 
-try:
-    import ttnn  # type: ignore[import-untyped]
-except (ModuleNotFoundError, ImportError):
-    ttnn = None
-
-# Optional: get_ttkernel_names, ttkernel_to_cpp_by_name, get_ttkernel_arg_spec
-from ttmlir.dialects import ttkernel
-from ttmlir.passes import (
-    get_ttkernel_arg_spec,
-    get_ttkernel_names,
-    ttkernel_to_cpp_by_name,
+from .source_collector import get_source_line_offset
+from .thread_compiler import (
+    build_module_from_threads,
+    compile_program_to_threads,
+    resolve_memory_space_and_register_tensors,
 )
-
-from .._src.auto_profile import is_auto_profile_enabled
-from .._src.tensor_registry import register_tensor_name, register_tensor_source
-from ..config import HAS_TT_DEVICE
+from .ttnn_compiler import compile_ttnn_kernel
 
 
 class ThreadRegistryLike(Protocol):
@@ -89,360 +50,38 @@ class ThreadRegistryLike(Protocol):
     def get_and_clear(self) -> list[Callable[..., object]]: ...
 
 
-def _get_source_line_offset(f: Callable[..., object]) -> int:
-    """Get the line offset to convert parsed AST line numbers to actual file lines."""
-    try:
-        raw_lines, start_lineno = inspect.getsourcelines(f)
-        num_decorator_lines = 0
-        for line in raw_lines:
-            stripped = line.strip()
-            if stripped.startswith("@"):
-                num_decorator_lines += 1
-            elif stripped.startswith("def ") or stripped.startswith("async def "):
-                break
-        return start_lineno + num_decorator_lines - 1
-    except (TypeError, OSError):
-        return 0
-
-
-def _has_float32_args(args: tuple[object, ...]) -> bool:
-    """Check if any input tensor uses float32 dtype."""
-    try:
-        for tensor in args:
-            if tensor is None:
-                continue
-            if is_ttnn_tensor(tensor):
-                tensor_dtype = getattr(tensor, "dtype", None)
-                if tensor_dtype is not None:
-                    if (
-                        hasattr(tensor_dtype, "name")
-                        and "float32" in str(tensor_dtype.name).lower()
-                    ):
-                        return True
-                    if "float32" in str(tensor_dtype).lower():
-                        return True
-            elif hasattr(tensor, "dtype"):
-                import torch  # noqa: PLC0415
-
-                if tensor.dtype == torch.float32:
-                    return True
-    except (AttributeError, TypeError, ImportError):
-        pass
-    return False
-
-
-def _build_config_for_thread(request: ThreadConfigBuildRequest) -> tuple[object, dict[str, str]]:
-    """Build (config, thread_to_kernel_entries) from a single Pydantic request."""
-    return request.build_config_and_entries()
-
-
-def _write_kernel_to_tmp(req: KernelWriteRequest) -> str:
-    """Write kernel source to req.base_dir or /tmp/{user} and return the file path."""
-    import hashlib
-    import os
-
-    content_hash = hashlib.md5(req.source.encode()).hexdigest()[:8]
-    if req.base_dir is not None:
-        req.base_dir.mkdir(parents=True, exist_ok=True)
-        path = req.base_dir / f"ttlang_kernel_{req.name}_{content_hash}.cpp"
-    else:
-        user = settings_ttlang.user
-        path = Path(f"/tmp/{user}/ttlang_kernel_{req.name}_{content_hash}.cpp")
-        os.makedirs(f"/tmp/{user}", exist_ok=True)
-    with path.open("w") as f:
-        f.write(req.source)
-    print(f"=== {req.name} kernel written to {path} ===")
-    print(req.source)
-    print("=" * 60)
-    return str(path)
-
-
-class ThreadWrapperView(BaseModel):
-    """Typed view of a decorated thread: wrapped callable and its closure."""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
-
-    wrapped: Callable[..., object] | None = None
-    closure: tuple[CellType, ...] | None = None
-
-    @classmethod
-    def from_callable(cls, thread_fn: Callable[..., object]) -> ThreadWrapperView:
-        wrapped = getattr(thread_fn, "__wrapped__", None)
-        closure = getattr(wrapped, "__closure__", None) if wrapped else None
-        if closure is not None:
-            closure = tuple(closure)
-        return cls(wrapped=wrapped, closure=closure)
-
-
-def _collect_cb_configs(
-    threads: list[Callable[..., object]],
-) -> list[CircularBuffer | None]:
-    """Extract CircularBuffer objects from thread closures, indexed by cb_index."""
-    cb_configs_dict: dict[int, CircularBuffer] = {}
-    for thread_fn in threads:
-        view = ThreadWrapperView.from_callable(thread_fn)
-        if not view.closure:
-            continue
-        for cell in view.closure:
-            val = cell.cell_contents
-            if isinstance(val, CircularBuffer):
-                cb_configs_dict[val._cb_index] = val
-    if not cb_configs_dict:
-        return []
-    max_idx = max(cb_configs_dict.keys())
-    return [cb_configs_dict.get(i) for i in range(max_idx + 1)]
-
-
-def _collect_source_info_from_threads(
-    threads: list[TTLGenericCompiler],
-) -> tuple[dict[str, str], dict[str, list[str]], dict[str, int]]:
-    """Build all_source_files, all_source_lines, kernel_line_offsets from compiled threads."""
-    all_source_files: dict[str, str] = {}
-    all_source_lines: dict[str, list[str]] = {}
-    kernel_line_offsets: dict[str, int] = {}
-    for ct in threads:
-        info = ct.source_info
-        all_source_files[ct.name] = info.source_file
-        all_source_lines[ct.name] = info.source_lines
-        kernel_line_offsets[ct.name] = info.line_offset
-    return all_source_files, all_source_lines, kernel_line_offsets
-
-
-def _track_tensor_sources(
-    f_params: object,
-    args: tuple[object, ...],
-    source_file: str,
-) -> None:
-    """Track source locations for tensor arguments."""
-    if source_file == "<unknown>":
-        return
-    try:
-        with open(source_file) as sf:
-            source_lines = sf.read().splitlines()
-    except OSError:
-        return
-    call_line = None
-    for frame_info in inspect.stack():
-        if frame_info.filename == source_file:
-            call_line = frame_info.lineno
-            break
-    if call_line is None:
-        return
-    param_names = list(f_params) if hasattr(f_params, "__iter__") and not isinstance(f_params, (str, bytes)) else []
-    for param_name, arg in zip(param_names, args, strict=False):
-        if not is_ttnn_tensor(arg):
-            continue
-        assign_line = find_variable_assignment(source_lines, param_name, call_line)
-        if assign_line:
-            register_tensor_source(arg, source_file, assign_line)
-
-
-def _compile_ttnn_kernel(req: TTNNKernelCompileRequest) -> object | None:
-    """
-    Compile kernel to CompiledTTNNKernel for execution via ttnn.generic_op.
-
-    Builds kernel paths, configs, and CB descriptors from compiled MLIR module.
-    """
-    # Validation runs in TTNNKernelCompileRequest model_validator (Pydantic).
-    kernel_info = get_ttkernel_names(req.input.module)
-    opts = req.compile_options or TTNNKernelCompileOptions()
-
-    if opts.verbose:
-        print("=" * 60)
-        print("TTNN INTEROP: Compiling kernel")
-        print("=" * 60)
-        print(f"Found {len(kernel_info)} kernels:")
-        for name, thread_type in kernel_info:
-            print(f"  - {name} ({thread_type})")
-
-    if ttnn is None:
-        print("\nttnn not available - cannot compile for ttnn.generic_op")
-        return None
-
-    core_ranges = CoreRangeSetOptions(grid=req.input.grid).build_ttnn_core_range_set()
-    if opts.verbose:
-        print(f"\nCore range: {core_ranges}")
-
-    kernel_paths: list[tuple[str, str]] = []
-    kernel_configs: list[object] = []
-    kernel_arg_specs: list[object] = []
-    noc_kernel_idx = 0
-    has_f32 = _has_float32_args(req.input.args)
-    thread_to_kernel: dict[str, str] = {}
-
-    base = Path(f"/tmp/{settings_ttlang.user}")
-    base.mkdir(parents=True, exist_ok=True)
-    with tmp_dir(base, lambda: f"ttlang_kernels_{uuid.uuid4().hex[:12]}") as base_dir:
-        for name, thread_type in kernel_info:
-            cpp_source = ttkernel_to_cpp_by_name(req.input.module, name)
-            kernel_path = _write_kernel_to_tmp(
-                KernelWriteRequest(name=name, source=cpp_source, base_dir=base_dir)
-            )
-            kernel_paths.append((kernel_path, thread_type))
-
-            thread_req = ThreadConfigBuildRequest(
-                thread_type=thread_type,
-                name=name,
-                noc_kernel_idx=noc_kernel_idx,
-                compute_opts=opts.compute_config_options(),
-                has_f32=has_f32,
-                verbose=opts.verbose,
-            )
-            config, entries = _build_config_for_thread(thread_req)
-            kernel_configs.append(config)
-            thread_to_kernel.update(entries)
-            if thread_type == "noc":
-                noc_kernel_idx += 1
-
-            arg_spec = get_ttkernel_arg_spec(req.input.module, name)
-            if arg_spec is not None:
-                arg_spec = ttkernel.ir.ArgSpecAttr.maybe_downcast(arg_spec)
-                kernel_arg_specs.append(arg_spec.rt_args if arg_spec else [])
-            else:
-                kernel_arg_specs.append([])
-
-    thread_names = [name for name, _ in kernel_info]
-    raw_cfg = opts.program_config
-    cfg = raw_cfg.model_dump(exclude_none=False) if raw_cfg is not None else {}
-    cfg.setdefault("grid", req.input.grid)
-    cb = req.cache_and_cb
-    prof = req.profiling
-    artifacts = CompiledKernelArtifacts(
-        kernel_paths=kernel_paths,
-        kernel_configs=kernel_configs,
-        kernel_arg_specs=kernel_arg_specs,
-        kernel_tensor_indices=req.input.thread_tensor_indices,
-        thread_to_kernel=thread_to_kernel,
-        thread_names=thread_names,
-    )
-    runtime = CompiledRuntimeContext(
-        num_tensors=len(req.input.args),
-        core_ranges=core_ranges,
-        cb_configs=cb.cb_configs if cb is not None else [],
-        program_hash=cb.program_hash if cb is not None else None,
-        program_config=cfg,
-    )
-    profiling = None
-    if prof and (
-        prof.source_lines is not None
-        or prof.all_source_lines
-        or prof.kernel_line_offsets
-    ):
-        profiling = CompiledProfilingSource(
-            source_lines=prof.source_lines,
-            all_source_lines=prof.all_source_lines or {},
-            kernel_line_offsets=prof.kernel_line_offsets or {},
-        )
-    compiled_kernel = CompiledTTNNKernel(
-        artifacts=artifacts, runtime=runtime, profiling=profiling
-    )
-
-    if opts.verbose:
-        print(f"\nCompiled kernel ready (compiled {len(kernel_paths)} threads)")
-        print("=" * 60)
-
-    return compiled_kernel
-
-
 def _compile_kernel(req: CompileKernelRequest) -> object | None:
     """
     Compile kernel function to MLIR and return CompiledTTNNKernel.
 
     Single request object bundles program, args/kwargs, compile params, and thread registry.
+    Orchestrates thread_compiler, pass manager, stages, and ttnn_compiler.
     """
-    f = req.program
-    args = req.args
-    kwargs = dict(req.kwargs)
     request = req.compile_request
-    thread_registry = req.thread_registry
     engine_config = req.engine_config
 
-    memory_space = request.options.memory_space  # may be updated from tensor
-    f_params = inspect.signature(f).parameters
-
-    try:
-        kernel_source_file = inspect.getfile(f)
-        kernel_line_offset = _get_source_line_offset(f)
-    except (TypeError, OSError):
-        kernel_source_file = "<unknown>"
-        kernel_line_offset = 0
-
-    has_ttnn_tensors = any(is_ttnn_tensor(arg) for arg in args)
-    if has_ttnn_tensors:
-        first_ttnn_tensor = next((arg for arg in args if is_ttnn_tensor(arg)), None)
-        if first_ttnn_tensor is not None:
-            proxy = TTNNMemoryConfigProxy(tensor=first_ttnn_tensor, default=memory_space)
-            detected = proxy.memory_space
-            if detected in SUPPORTED_MEMORY_SPACES:
-                memory_space = detected
-                print(f"[TTNN interop] Detected {memory_space} memory space")
-
-    for idx, (param_name, arg) in enumerate(zip(f_params, args, strict=False)):
-        register_tensor_name(arg, param_name, index=idx)
-    _track_tensor_sources(f_params, args, kernel_source_file)
-
-    run_config = ProgramRunConfig(
-        grid=list(request.grid),
-        memory_space=memory_space,
-        tiled=request.options.tiled,
-        debug_locations=True,
+    memory_space, kernel_source_file, kernel_line_offset = (
+        resolve_memory_space_and_register_tensors(req)
     )
-    run_config.inject_into_kwargs(kwargs, set(f_params))
-
-    from ..circular_buffer import _reset_cb_counter
-    from ..operators import _set_current_grid
-
-    _reset_cb_counter()
-    _set_current_grid(request.grid)
-
-    thread_registry.clear()
-    f(*args, **kwargs)
-    threads = thread_registry.get_and_clear()
-
-    if not threads:
-        raise ValueError(
-            "No threads found. Define at least one @ttl.compute() or "
-            "@ttl.datamovement() function inside your kernel."
-        )
-
-    cb_configs = _collect_cb_configs(threads)
-    program = Program(*threads, args=args, run_config=run_config)
-    print_debug_locations = settings_ttlang.debug_locations
 
     ctx = Context()
     loc = Location.unknown(ctx)
     with ctx, loc:
-        compiled_threads: list[TTLGenericCompiler] = []
-        thread_tensor_indices: list[list[int]] = []
-
-        for compile_thread in program.threads:
-            try:
-                ct = compile_thread(*program.args, **program.kwargs)
-            except TTLangCompileError as e:
-                raise type(e)(e.format()) from None
-            except (ValueError, TypeError) as e:
-                formatted = format_python_error(
-                    e, kernel_source_file, kernel_line_offset
-                )
-                raise type(e)(formatted) from None
-            compiled_threads.append(ct)
-            thread_tensor_indices.append(ct._tensor_accessor_global_indices)
-
-            base_cta = get_cb_count()
-            ct.func_entry.attributes["ttl.base_cta_index"] = IntegerAttr.get(
-                IntegerType.get_signless(32, ctx), base_cta
-            )
-            crta_indices = ct._tensor_accessor_global_indices
-            ct.func_entry.attributes["ttl.crta_indices"] = ArrayAttr.get(
-                [
-                    IntegerAttr.get(IntegerType.get_signless(32, ctx), idx)
-                    for idx in crta_indices
-                ],
-                ctx,
-            )
-
-        all_source_files, all_source_lines, kernel_line_offsets = (
-            _collect_source_info_from_threads(compiled_threads)
+        (
+            compiled_threads,
+            thread_tensor_indices,
+            all_source_files,
+            all_source_lines,
+            kernel_line_offsets,
+            cb_configs,
+            program,
+        ) = compile_program_to_threads(
+            req,
+            memory_space,
+            ctx,
+            loc,
+            kernel_source_file,
+            kernel_line_offset,
         )
 
         if settings_ttlang.use_scheduler:
@@ -461,13 +100,17 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
                 ]
                 op_graph = build_op_graph_from_threads(thread_infos)
                 topology = build_topology_from_grid(request.grid)
-                plan = schedule_stub(op_graph, topology, request.options.program_config_dict)
+                plan = schedule_stub(
+                    op_graph, topology, request.options.program_config_dict
+                )
                 assert (
                     plan.grid_cols == topology.grid_cols
                     and plan.grid_rows == topology.grid_rows
                 )
                 for nid in op_graph.node_ids_in_order():
-                    assert plan.core_for(nid) == (0, 0), f"stub plan mismatch for {nid}"
+                    assert plan.core_for(nid) == (0, 0), (
+                        f"stub plan mismatch for {nid}"
+                    )
             elif getattr(engine_cfg, "backend", None) == "tenstorrent":
                 thread_infos = [
                     (ct.name, ct.kernel_type or "dm") for ct in compiled_threads
@@ -478,24 +121,27 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
                     if hasattr(engine_cfg, "get_topology_grid")
                     else None
                 )
-                grid_for_topology = topo_grid if topo_grid is not None else request.grid
+                grid_for_topology = (
+                    topo_grid if topo_grid is not None else request.grid
+                )
                 topology = build_topology_from_grid(grid_for_topology)
-                plan = schedule_stub(op_graph, topology, request.options.program_config_dict)
+                plan = schedule_stub(
+                    op_graph, topology, request.options.program_config_dict
+                )
                 assert (
                     plan.grid_cols == topology.grid_cols
                     and plan.grid_rows == topology.grid_rows
                 )
                 for nid in op_graph.node_ids_in_order():
-                    assert plan.core_for(nid) == (0, 0), f"stub plan mismatch for {nid}"
+                    assert plan.core_for(nid) == (0, 0), (
+                        f"stub plan mismatch for {nid}"
+                    )
             else:
                 validate_topology_connectivity(engine_cfg)
                 schedule_toy_stub(engine_cfg)
 
-        module = Module.create(loc)
-        with InsertionPoint(module.body):
-            for ct in compiled_threads:
-                ct.func_entry.operation.detach_from_parent()
-                module.body.append(ct.func_entry)
+        module = build_module_from_threads(compiled_threads, loc, ctx)
+        print_debug_locations = settings_ttlang.debug_locations
 
         from .stages import CompileStageContext, get_initial_stages, run_stages
 
@@ -535,15 +181,22 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
         if is_auto_profile_enabled():
             st = settings_ttlang
             if st.profile_csv:
-                cb_flow_json = str(Path(st.profile_csv).parent / "cb_flow_graph.json")
+                cb_flow_json = str(
+                    Path(st.profile_csv).parent / "cb_flow_graph.json"
+                )
             else:
                 tt_metal_home = st.tt_metal_home
                 if not tt_metal_home:
                     raise ValueError(
-                        "TTLANG_AUTO_PROFILE=1 requires TT_METAL_HOME or TTLANG_PROFILE_CSV to be set"
+                        "TTLANG_AUTO_PROFILE=1 requires TT_METAL_HOME or "
+                        "TTLANG_PROFILE_CSV to be set"
                     )
-                cb_flow_json = f"{tt_metal_home}/generated/profiler/.logs/cb_flow_graph.json"
-            pipeline_passes.append(f'ttl-dump-cb-flow-graph{{output="{cb_flow_json}"}}')
+                cb_flow_json = (
+                    f"{tt_metal_home}/generated/profiler/.logs/cb_flow_graph.json"
+                )
+            pipeline_passes.append(
+                f'ttl-dump-cb-flow-graph{{output="{cb_flow_json}"}}'
+            )
         pipeline_passes += ["convert-ttl-to-ttkernel"]
         if is_auto_profile_enabled():
             pipeline_passes.append("ttl-lower-signpost-to-emitc")
@@ -562,6 +215,7 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
         pm.enable_verifier(verify)
         try:
             from ttmlir._mlir_libs._ttmlir import enable_pretty_stack_traces
+
             enable_pretty_stack_traces(pm._CAPIPtr)
         except Exception:
             pass
@@ -586,7 +240,9 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
                 first_thread = next(iter(all_source_lines.keys()))
                 source_lines = all_source_lines[first_thread]
                 source_file = all_source_files.get(first_thread)
-            formatted = format_mlir_error(error_msg, source_lines, source_file)
+            formatted = format_mlir_error(
+                error_msg, source_lines, source_file
+            )
             raise RuntimeError(formatted) from None
 
         from .stages import CompileStageContext, get_final_stages, run_stages
@@ -605,7 +261,7 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
 
         compile_input = TTNNCompileInput(
             module=module,
-            args=args,
+            args=req.args,
             grid=request.grid,
             num_outs=request.options.num_outs,
             thread_tensor_indices=thread_tensor_indices,
@@ -636,7 +292,12 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
             cache_and_cb=cache_and_cb,
             profiling=profiling_input,
         )
-        return _compile_ttnn_kernel(compile_req)
+        return compile_ttnn_kernel(compile_req)
+
+
+# Backward compatibility: same names as before refactor
+_compile_ttnn_kernel = compile_ttnn_kernel
+_get_source_line_offset = get_source_line_offset
 
 
 __all__ = [
