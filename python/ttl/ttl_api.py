@@ -47,7 +47,6 @@ from .program import (
     Program,
     ProgramDecoratorParams,
     ProgramOptions,
-    RunRequest,
     _resolve_grid,
 )
 from .program.cache_key import make_cache_key
@@ -125,36 +124,6 @@ PLACEMENT_VALUES = ("auto", "manual")
 # Marker set on @ttl.program-decorated wrappers so run() can accept
 # (program, *args, grid=...).
 _TTL_PROGRAM_ATTR = "_ttl_program"
-
-
-def execute_if_needed(
-    compiled: CompiledTTNNKernel | None,
-    req: RunRequest,
-) -> object | None:
-    """Execute compiled kernel if not None and not compile-only mode."""
-    if compiled is None:
-        return None
-    if _should_execute():
-        return compiled(*req.args)
-    return None
-
-
-def execute_and_maybe_profile(
-    compiled: CompiledTTNNKernel | None,
-    args: tuple[object, ...],
-) -> object | None:
-    """Execute compiled kernel if not None and not compile-only; profile if enabled."""
-    if compiled is None or not _should_execute():
-        return None
-    result = compiled(*args)
-    if is_auto_profile_enabled() and compiled.all_source_lines:
-        run_profiling_after_execute(
-            args,
-            compiled.all_source_lines,  # type: ignore[arg-type]
-            compiled.thread_to_kernel,
-            compiled.kernel_line_offsets,  # type: ignore[arg-type]
-        )
-    return result
 
 
 def build_compile_request(ctx: RunContext) -> CompileKernelRequest:
@@ -286,7 +255,11 @@ def run(ctx: RunContext) -> object | None:
     """
     if ctx.req is None:
         raise RuntimeError("run() invariant: ctx.req must be set")
-    return execute_if_needed(ctx.compiled, ctx.req)
+    if ctx.compiled is None:
+        return None
+    if not _should_execute():
+        return None
+    return ctx.compiled(*ctx.req.args)
 
 
 @_pykernel_gen_params_adapter
@@ -311,7 +284,17 @@ def pykernel_gen(
             )
             ctx = compile_cached(ctx)
             _wrapper._last_compiled_kernel = ctx.compiled  # type: ignore[attr-defined]
-            return execute_and_maybe_profile(ctx.compiled, ctx.args)
+            if ctx.compiled is None or not _should_execute():
+                return None
+            result = ctx.compiled(*ctx.args)
+            if is_auto_profile_enabled() and ctx.compiled.all_source_lines:
+                run_profiling_after_execute(
+                    ctx.args,
+                    ctx.compiled.all_source_lines,  # type: ignore[arg-type]
+                    ctx.compiled.thread_to_kernel,
+                    ctx.compiled.kernel_line_offsets,  # type: ignore[arg-type]
+                )
+            return result
 
         setattr(_wrapper, _TTL_PROGRAM_ATTR, True)
         return _wrapper
