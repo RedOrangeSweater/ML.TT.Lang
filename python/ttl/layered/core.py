@@ -17,9 +17,9 @@ produce diagnostics.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable
 from typing import TypeVar
-
 
 Ctx = TypeVar("Ctx")
 Out = TypeVar("Out")
@@ -28,7 +28,21 @@ Handler = Callable[[Ctx], Out]
 Middleware = Callable[[Handler[Ctx, Out]], Handler[Ctx, Out]]
 
 
-def compose(handler: Handler[Ctx, Out], middlewares: list[Middleware[Ctx, Out]]) -> Handler[Ctx, Out]:
+def middleware(
+    fn: Callable[[Ctx, Handler[Ctx, Out]], Out],
+) -> Middleware[Ctx, Out]:
+    """Wrap a function (ctx, next) -> out into a Middleware for use with compose()."""
+    @functools.wraps(fn)
+    def mw(next_handler: Handler[Ctx, Out]) -> Handler[Ctx, Out]:
+        def handler(ctx: Ctx) -> Out:
+            return fn(ctx, next_handler)
+        return handler
+    return mw
+
+
+def compose(
+    handler: Handler[Ctx, Out], middlewares: list[Middleware[Ctx, Out]]
+) -> Handler[Ctx, Out]:
     """Compose middlewares around a handler (left-to-right order)."""
     wrapped = handler
     for mw in reversed(middlewares):
@@ -40,5 +54,6 @@ __all__ = [
     "Handler",
     "Middleware",
     "compose",
+    "middleware",
 ]
 
