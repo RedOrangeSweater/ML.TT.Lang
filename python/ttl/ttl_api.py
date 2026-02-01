@@ -15,12 +15,7 @@ from __future__ import annotations
 import functools
 import random
 from collections.abc import Callable
-from pathlib import Path
-from typing import TYPE_CHECKING, Literal
-
-if TYPE_CHECKING:
-    from .scheduler import AbstractEngineConfig
-
+from typing import Literal
 
 try:
     import ttnn
@@ -38,11 +33,12 @@ from .descriptor_options import (
 from .layered.context import ProgramInvocationContext, RunContext
 from .layered.program.compile_cached import compile_cached
 from .layered.run_decorators import (
-    build_compile_request_ctx,
-    compile_kernel_ctx,
-    ensure_run_request_ctx,
-    require_ttl_program_attr_ctx,
-    resolve_engine_config_ctx,
+    ctx_compile_build_compile_request,
+    ctx_compile_compile_kernel,
+    ctx_config_resolve_engine_config,
+    ctx_program_require_ttl_program_attr,
+    ctx_request_build_run_context,
+    ctx_request_ensure_run_request,
 )
 from .operators import CopyTransferHandler, TensorBlock, copy
 from .program import (
@@ -157,15 +153,13 @@ def execute_and_maybe_profile(
     return result
 
 
-def run(
-    req: RunRequest | Callable[..., object],
-    *args: object,
-    engine_config_path: str | Path | None = None,
-    engine_config: AbstractEngineConfig | None = None,
-    grid: (tuple[int, ...] | list[int] | Callable[..., object]) | None = None,
-    options: ProgramOptions | None = None,
-    **kwargs: object,
-) -> object | None:
+@ctx_request_build_run_context
+@ctx_request_ensure_run_request
+@ctx_config_resolve_engine_config
+@ctx_program_require_ttl_program_attr(_TTL_PROGRAM_ATTR)
+@ctx_compile_build_compile_request
+@ctx_compile_compile_kernel
+def run(ctx: RunContext) -> object | None:
     """
     Compile and run kernel. Ideal UX entry point.
 
@@ -177,28 +171,9 @@ def run(
     Optional engine_config_path or engine_config: abstract engine config for scheduler.
     See docs/sdlc/00_Main/00_Ideas/20_nickel_mlir_config_abstract_engine.md.
     """
-    ctx = RunContext(
-        raw_req=req,
-        raw_args=args,
-        raw_kwargs=kwargs,
-        engine_config_path=engine_config_path,
-        engine_config=engine_config,
-        grid=grid,
-        options=options,
-    )
-
-    def _run_impl(ctx: RunContext) -> object | None:
-        if ctx.req is None:
-            raise RuntimeError("run() invariant: ctx.req must be set")
-        return execute_if_needed(ctx.compiled, ctx.req)
-
-    _run_impl = ensure_run_request_ctx(_run_impl)
-    _run_impl = resolve_engine_config_ctx(_run_impl)
-    _run_impl = require_ttl_program_attr_ctx(_TTL_PROGRAM_ATTR)(_run_impl)
-    _run_impl = build_compile_request_ctx(_run_impl)
-    _run_impl = compile_kernel_ctx(_run_impl)
-
-    return _run_impl(ctx)
+    if ctx.req is None:
+        raise RuntimeError("run() invariant: ctx.req must be set")
+    return execute_if_needed(ctx.compiled, ctx.req)
 
 
 def pykernel_gen(

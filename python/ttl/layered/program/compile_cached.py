@@ -78,14 +78,16 @@ def _compile_body(ctx: ProgramInvocationContext) -> CompiledTTNNKernel | None:
     return _compile_kernel_impl(compile_req)
 
 
-_compile_cached_impl = _store_compiled_to_ctx(skip_if_set=True)(
-    _cache_by_cache_key(_compile_body)
-)
+@_store_compiled_to_ctx(skip_if_set=True)
+@_cache_by_cache_key
+def _compile_cached(ctx: ProgramInvocationContext) -> CompiledTTNNKernel | None:
+    """Compile-body wrapped with cache + store decorators."""
+    return _compile_body(ctx)
 
 
 def compile_cached(ctx: ProgramInvocationContext) -> ProgramInvocationContext:
     """Compile with per-kernel cache; wrapping logic is in decorators."""
-    return _compile_cached_impl(ctx)
+    return _compile_cached(ctx)
 
 
 __all__ = ["compile_cached"]

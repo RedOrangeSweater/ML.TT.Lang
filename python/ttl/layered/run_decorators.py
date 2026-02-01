@@ -37,24 +37,58 @@ def _wrap_step(
     return decorator
 
 
-ensure_run_request_ctx = _wrap_step(ensure_run_request)
-resolve_engine_config_ctx = _wrap_step(resolve_engine_config)
-build_compile_request_ctx = _wrap_step(build_compile_request)
-compile_kernel_ctx = _wrap_step(compile_kernel)
+ctx_request_ensure_run_request = _wrap_step(ensure_run_request)
+ctx_config_resolve_engine_config = _wrap_step(resolve_engine_config)
+ctx_compile_build_compile_request = _wrap_step(build_compile_request)
+ctx_compile_compile_kernel = _wrap_step(compile_kernel)
 
 
-def require_ttl_program_attr_ctx(
+def ctx_program_require_ttl_program_attr(
     attr_name: str,
 ) -> Callable[[RunFn[Out_co]], RunFn[Out_co]]:
     """Decorator: enforce TTL program marker on ctx.req.spec.program."""
     return _wrap_step(require_ttl_program_attr(attr_name))
 
 
+def ctx_request_build_run_context(
+    fn: Callable[[RunContext], object | None],
+) -> Callable[..., object | None]:
+    """
+    Decorator: build RunContext from run() args/kwargs and call fn(ctx).
+
+    This is the outermost decorator for the public ttl_api.run entrypoint.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(
+        req: object,
+        *args: object,
+        engine_config_path: object | None = None,
+        engine_config: object | None = None,
+        grid: object | None = None,
+        options: object | None = None,
+        **kwargs: object,
+    ) -> object | None:
+        ctx = RunContext(
+            raw_req=req,  # type: ignore[arg-type]
+            raw_args=args,
+            raw_kwargs=kwargs,
+            engine_config_path=engine_config_path,  # type: ignore[arg-type]
+            engine_config=engine_config,
+            grid=grid,  # type: ignore[arg-type]
+            options=options,  # type: ignore[arg-type]
+        )
+        return fn(ctx)
+
+    return wrapper
+
+
 __all__ = [
-    "build_compile_request_ctx",
-    "compile_kernel_ctx",
-    "ensure_run_request_ctx",
-    "require_ttl_program_attr_ctx",
-    "resolve_engine_config_ctx",
+    "ctx_compile_build_compile_request",
+    "ctx_compile_compile_kernel",
+    "ctx_config_resolve_engine_config",
+    "ctx_program_require_ttl_program_attr",
+    "ctx_request_build_run_context",
+    "ctx_request_ensure_run_request",
 ]
 
