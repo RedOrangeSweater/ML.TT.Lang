@@ -54,4 +54,3 @@ Practical sanity check: after edits, run quick parsing + reference validation (d
 
 - When the user asks “how to run”, answer with **which Run config to pick** (and what it starts).
 - If a background service is needed, provide a Run config for it.
-

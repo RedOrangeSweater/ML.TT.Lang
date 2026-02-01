@@ -28,4 +28,3 @@ If the user **reminds** about something that should happen by default (commit+pu
 - There is a concrete rule or command update that would have prevented the same correction.
 - The change is minimal and scoped to the mistake category.
 - No policy regressions (e.g. do not introduce auto-push unless explicitly requested).
-
