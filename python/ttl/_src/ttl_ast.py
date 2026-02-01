@@ -6,154 +6,30 @@ from __future__ import annotations
 
 import ast
 import inspect
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from ..compile.source_context import CompilationSourceContext
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import *
 
 from pykernel._src.kernel_ast import TTCompilerBase
 
-from ..constants import DEFAULT_TILE_SIZE, SUPPORTED_MEMORY_SPACES, MemorySpace
+from ..constants import DEFAULT_TILE_SIZE
 from ..diagnostics import TTLangCompileError
 from ..dialects import ttl
 from ..dtype_utils import TensorDtype, is_ttnn_tensor
-from ..layouts import TTNNLayoutConfig, create_ttnn_layout
 from ..ttl_utils import get_thread_type_string
 from .auto_profile import (
     get_line_mapper,
     is_auto_profile_enabled,
 )
-from .tensor_registry import get_tensor_global_index, get_tensor_source
-
-
-def _make_file_loc(ctx, source_file: str, node, line_offset: int = 0) -> Location:
-    """Create an MLIR file location from an AST node."""
-    if not hasattr(node, "lineno"):
-        raise ValueError(f"AST node {type(node).__name__} has no line number")
-    return Location.file(
-        source_file, node.lineno + line_offset, node.col_offset + 1, ctx
-    )
-
-
-def _get_annotation_name(annotation):
-    """Extract the type name from an annotation node.
-
-    Handles both simple names (CircularBuffer) and qualified names (ttl.CircularBuffer).
-    Returns the simple type name (e.g., 'CircularBuffer') in both cases.
-    """
-    if isinstance(annotation, ast.Name):
-        return annotation.id
-    elif isinstance(annotation, ast.Attribute):
-        return annotation.attr
-    else:
-        raise TypeError(f"Unsupported annotation type: {type(annotation)}")
-
-
-def _raise_tensor_error(tensor, message: str):
-    """Raise TTLangCompileError with tensor source location if available."""
-    source_info = get_tensor_source(tensor)
-    if source_info:
-        source_file, line = source_info
-        raise TTLangCompileError(message, source_file=source_file, line=line)
-    raise ValueError(message)
-
-
-def _build_tensor_type(ctx, tensor, grid, tiled, memory_space: MemorySpace):
-    """Build MLIR tensor type for a ttnn tensor with TTNNLayoutAttr."""
-    if not tiled:
-        raise ValueError("Only tiled tensors supported for TTNN interop")
-    if memory_space not in SUPPORTED_MEMORY_SPACES:
-        raise ValueError(f"Only L1 or DRAM memory space supported, got {memory_space}")
-    if len(grid) != 2:
-        raise ValueError(f"Only 2D grids supported, got grid {tuple(grid)}")
-    if len(tensor.shape) != 2:
-        _raise_tensor_error(
-            tensor, f"Only 2D tensors supported, got shape {tensor.shape}"
-        )
-
-    tensor_rows, tensor_cols = tensor.shape
-
-    layout = create_ttnn_layout(
-        ctx,
-        TTNNLayoutConfig(
-            logical_shape=tensor.shape,
-            grid=grid,
-            dtype=tensor.dtype,
-        ),
-    )
-
-    ttcore_dtype = TensorDtype(dtype=tensor.dtype).ttcore_dtype
-    element_type = ttcore.ir.TileType.get(
-        ctx, DEFAULT_TILE_SIZE, DEFAULT_TILE_SIZE, ttcore_dtype
-    )
-
-    # Device shape: 2D tile counts [tiles_y, tiles_x] based on logical shape
-    total_row_tiles = (tensor_rows + DEFAULT_TILE_SIZE - 1) // DEFAULT_TILE_SIZE
-    total_col_tiles = (tensor_cols + DEFAULT_TILE_SIZE - 1) // DEFAULT_TILE_SIZE
-    device_shape = [total_row_tiles, total_col_tiles]
-
-    return RankedTensorType.get(device_shape, element_type, layout)
-
-
-class CompilerContext(BaseModel):
-    """Immutable compilation context for TTL kernels."""
-
-    model_config = ConfigDict(frozen=True)
-
-    grid: list[int] = Field(..., description="Grid dimensions (cols, rows)")
-    memory_space: MemorySpace = Field(..., description="L1 or DRAM")
-    tiled: bool = Field(..., description="Whether to use tiled layout")
-
-
-class TTLCompilerConfig(BaseModel):
-    """Pydantic config for TTLGenericCompiler; built from source_context + kwargs."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    source_context: CompilationSourceContext | None = None
-    grid: list[int] = Field(default_factory=lambda: [1, 1])
-    memory_space: MemorySpace = MemorySpace.L1
-    tiled: bool = True
-    debug_locations: bool = False
-    source_file: str = Field("<unknown>", validation_alias="_source_file")
-    source_lines: list[str] = Field(
-        default_factory=list, validation_alias="_source_lines"
-    )
-    line_offset: int = Field(0, validation_alias="_line_offset")
-    fn_globals: dict[str, object] = Field(
-        default_factory=dict, validation_alias="_globals"
-    )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _inject_source_context(cls, data: object) -> object:
-        """Fill source fields from source_context when provided; kwargs override."""
-        if not isinstance(data, dict):
-            return data
-        ctx = data.get("source_context")
-        if ctx is None:
-            return data
-        from ..compile.source_context import CompilationSourceContext
-
-        if not isinstance(ctx, CompilationSourceContext):
-            return data
-        data.setdefault("_source_file", ctx.source_file)
-        data.setdefault("_source_lines", ctx.source_lines)
-        data.setdefault("_line_offset", ctx.line_offset)
-        data.setdefault("debug_locations", ctx.debug_locations)
-        data.setdefault("_globals", ctx.fn_globals)
-        return data
-
-
-class ThreadSourceInfo(BaseModel):
-    """Structured source info for a compiled thread. Exposed via TTLGenericCompiler.source_info."""
-
-    source_file: str = "<unknown>"
-    source_lines: list[str] = Field(default_factory=list)
-    line_offset: int = 0
+from .context import (
+    CompilerContext,
+    TTLCompilerConfig,
+    ThreadSourceInfo,
+    make_file_loc as _make_file_loc,
+)
+from .tensor_registry import get_tensor_global_index
+from .type_builder import build_tensor_type as _build_tensor_type
 
 
 class TTLGenericCompiler(TTCompilerBase):
