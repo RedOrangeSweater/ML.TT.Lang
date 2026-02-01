@@ -9,7 +9,6 @@ Smoke tests: primitives package imports; ComposablePrimitive.compose(); Primitiv
 See docs/sdlc/00_Main/02_Architecture/20_IdealDataFlowAndModuleStructure.md (§7).
 """
 
-import pytest
 
 from ttl.primitives import (
     BuildContext,

@@ -12,7 +12,7 @@ See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
 import pytest
 
 from ttl.constants import MemorySpace
-from ttl.program import ProgramBuilder, ProgramOptions, ProgramSpec
+from ttl.program import ProgramBuilder, ProgramSpec
 
 
 def test_program_builder_builds_spec():
