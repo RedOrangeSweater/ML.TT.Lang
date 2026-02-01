@@ -54,7 +54,7 @@ from .diagnostics import (
 )
 from .dtype_utils import (
     TensorDtype,
-    detect_memory_space_from_tensor,
+    TTNNMemoryConfigProxy,
     is_ttnn_tensor,
     tile_bytes_from_dtype,
 )
@@ -134,13 +134,12 @@ class ThreadRegistry:
 _thread_registry = ThreadRegistry()
 
 
-def _get_tensor_cache_info(
-    tensor: object,
-) -> tuple[tuple[int, ...], str, MemorySpace | Literal["unknown"], str]:
+def _get_tensor_cache_info(tensor: object) -> tuple[tuple[int, ...], str, MemorySpace, str]:
     """Extract cache-relevant info from a tensor: (shape, dtype, memory_space, layout)."""
     shape = tuple(tensor.shape)
     dtype = str(tensor.dtype)
-    memory_space = detect_memory_space_from_tensor(tensor, "unknown")
+    proxy = TTNNMemoryConfigProxy(tensor=tensor, default="unknown")
+    memory_space = proxy.memory_space
     layout = str(tensor.layout) if hasattr(tensor, "layout") else "unknown"
     return (shape, dtype, memory_space, layout)
 

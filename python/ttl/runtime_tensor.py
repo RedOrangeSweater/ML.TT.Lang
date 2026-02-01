@@ -7,7 +7,7 @@
 Types are defined here; the rest of the code uses these types, not ttnn.Tensor.
 When ttnn is installed, ttnn.Tensor is registered as a runtime tensor type and
 validated at module load. When ttnn is not installed, no type is registered and
-is_runtime_tensor() returns False. Validation runs only at initialization.
+is_ttnn_tensor() returns False. Validation runs only at initialization.
 """
 
 from __future__ import annotations
@@ -46,8 +46,8 @@ def _validate_runtime_tensor_type(t: type) -> None:
         raise TypeError(f"{t!r} has no callable memory_config()")
 
 
-def is_runtime_tensor(obj: object) -> bool:
-    """Return True if obj is a registered runtime tensor (e.g. ttnn.Tensor when ttnn present).
+def is_ttnn_tensor(obj: object) -> bool:
+    """Return True if obj is a registered TTNN tensor (e.g. ttnn.Tensor when ttnn present).
 
     No ttnn import here; uses _RUNTIME_TENSOR_TYPES populated at module load.
     When ttnn is not installed, set is empty and this always returns False.

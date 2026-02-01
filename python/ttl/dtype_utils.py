@@ -14,18 +14,15 @@ getattr(ttnn.DataType, dtype_name) when needed.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, Literal, Union
+from typing import Annotated, Union
 
 import torch
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, computed_field
 
 from ttmlir.dialects import ttcore
 
 from .constants import MemorySpace
-from .runtime_tensor import is_runtime_tensor
-
-# Alias for backward compatibility; use is_runtime_tensor from ttl.runtime_tensor or ttl.
-is_ttnn_tensor = is_runtime_tensor
+from .runtime_tensor import is_ttnn_tensor
 
 _INTERLEAVED = "INTERLEAVED"
 
@@ -83,38 +80,45 @@ for tc, name, tb in _DTYPE_TABLE:
     _TTCORE_TO_TILE_BYTES[tc] = tb
 
 
-def _buffer_type_str_to_memory_space(buffer_type_str: str) -> MemorySpace | None:
-    """Map buffer_type string to MemorySpace. Returns None if not L1 or DRAM."""
-    if "L1" in buffer_type_str:
-        return "L1"
-    if "DRAM" in buffer_type_str:
-        return "DRAM"
-    return None
+# -----------------------------------------------------------------------------
+# TTNN memory config proxy: Pydantic model deriving memory_space and is_interleaved
+# -----------------------------------------------------------------------------
+class TTNNMemoryConfigProxy(BaseModel):
+    """Pydantic proxy for TTNN tensor memory config.
 
+    Holds tensor and default; derives memory_space from tensor.memory_config().buffer_type
+    and is_interleaved from tensor.memory_config().memory_layout. All string parsing
+    (L1/DRAM/INTERLEAVED) lives inside this model.
+    """
 
-def detect_memory_space_from_tensor(
-    tensor: object,
-    default: MemorySpace | Literal["unknown"] = "L1",
-) -> MemorySpace | Literal["unknown"]:
-    """Detect memory space (L1/DRAM) from a ttnn tensor's buffer type. Returns default if not ttnn or no buffer_type."""
-    if not is_ttnn_tensor(tensor):
-        return default
-    mem_config = tensor.memory_config()
-    if hasattr(mem_config, "buffer_type"):
-        mapped = _buffer_type_str_to_memory_space(str(mem_config.buffer_type))
-        if mapped is not None:
-            return mapped
-    return default
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    tensor: object = Field(..., description="TTNN tensor or any object (non-TTNN uses default).")
+    default: MemorySpace = Field(default="unknown", description="MemorySpace when not TTNN or unparseable.")
 
-def is_interleaved_tensor(tensor: object) -> bool:
-    """Check if a ttnn tensor has interleaved memory layout. Returns False if not ttnn."""
-    if not is_ttnn_tensor(tensor):
+    @computed_field
+    @property
+    def memory_space(self) -> MemorySpace:
+        if not is_ttnn_tensor(self.tensor):
+            return self.default
+        mem_config = self.tensor.memory_config()
+        if hasattr(mem_config, "buffer_type"):
+            s = str(mem_config.buffer_type)
+            if "L1" in s:
+                return "L1"
+            if "DRAM" in s:
+                return "DRAM"
+        return self.default
+
+    @computed_field
+    @property
+    def is_interleaved(self) -> bool:
+        if not is_ttnn_tensor(self.tensor):
+            return False
+        mem_config = self.tensor.memory_config()
+        if hasattr(mem_config, "memory_layout"):
+            return _INTERLEAVED in str(mem_config.memory_layout)
         return False
-    mem_config = tensor.memory_config()
-    if hasattr(mem_config, "memory_layout"):
-        return _INTERLEAVED in str(mem_config.memory_layout)
-    return False
 
 
 def torch_dtype_to_ttcore_datatype(torch_dtype: torch.dtype) -> ttcore.DataType:

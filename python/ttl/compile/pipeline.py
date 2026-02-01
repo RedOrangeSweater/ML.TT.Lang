@@ -56,7 +56,7 @@ from ..diagnostics import (
     format_mlir_error,
     format_python_error,
 )
-from ..dtype_utils import detect_memory_space_from_tensor, is_ttnn_tensor
+from ..dtype_utils import TTNNMemoryConfigProxy, is_ttnn_tensor
 from ..program import KernelCompileRequest, Program
 from ..settings import settings_ttlang
 from ..ttl_utils import tmp_dir
@@ -370,7 +370,8 @@ def _compile_kernel(
     if has_ttnn_tensors:
         first_ttnn_tensor = next((arg for arg in args if is_ttnn_tensor(arg)), None)
         if first_ttnn_tensor is not None:
-            detected = detect_memory_space_from_tensor(first_ttnn_tensor, memory_space)
+            proxy = TTNNMemoryConfigProxy(tensor=first_ttnn_tensor, default=memory_space)
+            detected = proxy.memory_space
             if detected in SUPPORTED_MEMORY_SPACES:
                 memory_space = detected
                 print(f"[TTNN interop] Detected {memory_space} memory space")

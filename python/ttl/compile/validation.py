@@ -15,11 +15,7 @@ from ttmlir.passes import get_ttkernel_names
 
 from ..boundary import MlirModuleLike
 from ..constants import SUPPORTED_MEMORY_SPACES
-from ..dtype_utils import (
-    detect_memory_space_from_tensor,
-    is_interleaved_tensor,
-    is_ttnn_tensor,
-)
+from ..dtype_utils import TTNNMemoryConfigProxy, is_ttnn_tensor
 
 
 def validate_ttnn_tensors_for_request(args: tuple[object, ...]) -> None:
@@ -34,12 +30,12 @@ def validate_ttnn_tensors_for_request(args: tuple[object, ...]) -> None:
     for i, arg in enumerate(args):
         if not is_ttnn_tensor(arg):
             continue
-        mem_space = detect_memory_space_from_tensor(arg, "unknown")
-        if mem_space not in SUPPORTED_MEMORY_SPACES:
+        proxy = TTNNMemoryConfigProxy(tensor=arg, default="unknown")
+        if proxy.memory_space not in SUPPORTED_MEMORY_SPACES:
             raise ValueError(
-                f"TTNN interop requires L1 or DRAM memory space, but tensor {i} is in {mem_space}."
+                f"TTNN interop requires L1 or DRAM memory space, but tensor {i} is in {proxy.memory_space}."
             )
-        if not is_interleaved_tensor(arg):
+        if not proxy.is_interleaved:
             raise ValueError(
                 f"TTNN interop requires interleaved tensors, but tensor {i} is not. "
                 f"Use ttnn.DRAM_MEMORY_CONFIG or ttnn.L1_MEMORY_CONFIG for interleaved tensors."

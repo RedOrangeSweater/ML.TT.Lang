@@ -29,7 +29,7 @@ from ttl._generated_elementwise import __all__ as _elementwise_all
 # Export additional TTL DSL API classes
 from ttl.constants import MemorySpace
 from ttl.operators import signpost
-from ttl.runtime_tensor import is_runtime_tensor
+from ttl.runtime_tensor import is_ttnn_tensor
 from ttl.ttl_api import (
     CircularBuffer,
     CopyTransferHandler,
@@ -41,7 +41,7 @@ __all__ = [
     "CopyTransferHandler",
     "MemorySpace",
     "Program",
-    "is_runtime_tensor",
+    "is_ttnn_tensor",
     "ProgramSpec",
     "TensorBlock",
     "compute",
