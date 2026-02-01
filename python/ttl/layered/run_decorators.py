@@ -7,8 +7,6 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable
 
-from .compile.build_compile_request import build_compile_request
-from .compile.compile_kernel import compile_kernel
 from .context import RunContext
 from .program.require_ttl_program import require_ttl_program_attr
 from .program.resolve_engine_config import resolve_engine_config
@@ -34,32 +32,6 @@ def _wrap_step(
 def ctx_config_resolve_engine_config(fn: RunFn) -> RunFn:
     """Decorator: resolve ctx.engine_config from ctx.engine_config_path."""
     return _wrap_step(resolve_engine_config)(fn)
-def ctx_compile_build_compile_request(
-    fn: RunFn,
-) -> RunFn:
-    """Ensure ctx.compile_req is set, then call fn(ctx)."""
-
-    @functools.wraps(fn)
-    def wrapper(ctx: RunContext) -> object | None:
-        if ctx.compile_req is None:
-            ctx = ctx.model_copy(update={"compile_req": build_compile_request(ctx)})
-        return fn(ctx)
-
-    return wrapper
-
-
-def ctx_compile_compile_kernel(
-    fn: RunFn,
-) -> RunFn:
-    """Ensure ctx.compiled is set, then call fn(ctx)."""
-
-    @functools.wraps(fn)
-    def wrapper(ctx: RunContext) -> object | None:
-        if ctx.compiled is None:
-            ctx = ctx.model_copy(update={"compiled": compile_kernel(ctx)})
-        return fn(ctx)
-
-    return wrapper
 
 
 def ctx_program_require_ttl_program_attr(
@@ -103,8 +75,6 @@ def ctx_request_build_run_context(
 
 
 __all__ = [
-    "ctx_compile_build_compile_request",
-    "ctx_compile_compile_kernel",
     "ctx_config_resolve_engine_config",
     "ctx_program_require_ttl_program_attr",
     "ctx_request_build_run_context",

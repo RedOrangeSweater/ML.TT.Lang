@@ -10,6 +10,7 @@ from typing import Any, TypeVar
 
 Ctx = TypeVar("Ctx")
 Val = TypeVar("Val")
+Out = TypeVar("Out")
 
 
 def require_attr(attr_name: str, *, error: str | None = None):
@@ -78,8 +79,42 @@ def store_to_ctx(field: str, *, skip_if_set: bool = True):
     return decorator
 
 
+def ensure_ctx_field(
+    field: str,
+    compute: Callable[[Ctx], Any],
+    *,
+    skip_if_set: bool = True,
+    when: Callable[[Ctx], bool] | None = None,
+):
+    """
+    Ensure ctx.<field> is set before calling the function.
+
+    This is a common pattern for Pydantic contexts:
+    - if ctx.<field> is None: ctx = ctx.model_copy(update={field: compute(ctx)})
+    - then: return fn(ctx)
+    """
+
+    def decorator(fn: Callable[[Ctx], Out]) -> Callable[[Ctx], Out]:
+        @functools.wraps(fn)
+        def wrapper(ctx: Ctx) -> Out:
+            if when is not None and not when(ctx):
+                return fn(ctx)
+            if skip_if_set and getattr(ctx, field) is not None:
+                return fn(ctx)
+            model_copy = getattr(ctx, "model_copy", None)
+            if model_copy is None:
+                raise TypeError("ensure_ctx_field requires ctx.model_copy(...)")
+            ctx = model_copy(update={field: compute(ctx)})
+            return fn(ctx)
+
+        return wrapper
+
+    return decorator
+
+
 __all__ = [
     "cache_by_key",
+    "ensure_ctx_field",
     "require_attr",
     "store_to_ctx",
 ]

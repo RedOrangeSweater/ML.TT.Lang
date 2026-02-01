@@ -26,27 +26,32 @@ except (ModuleNotFoundError, ImportError):
 from ._src.auto_profile import is_auto_profile_enabled, run_profiling_after_execute
 from .circular_buffer import CircularBuffer
 from .compile.compile_thread import compile_thread as _compile_thread_impl
+from .compile.pipeline import _compile_kernel as _compile_kernel_impl
+from .compile.registry import get_thread_registry
 from .constants import MemorySpace
 from .descriptor_options import (
     CompiledTTNNKernel,
 )
 from .layered.context import ProgramInvocationContext, RunContext
+from .layered.decorators import ensure_ctx_field
 from .layered.program.compile_cached import compile_cached
 from .layered.program.ensure_run_request import ctx_request_ensure_run_request
 from .layered.run_decorators import (
-    ctx_compile_build_compile_request,
-    ctx_compile_compile_kernel,
     ctx_config_resolve_engine_config,
     ctx_program_require_ttl_program_attr,
     ctx_request_build_run_context,
 )
 from .operators import CopyTransferHandler, TensorBlock, copy
 from .program import (
+    CompileKernelRequest,
+    KernelCompileRequest,
     Program,
     ProgramDecoratorParams,
     ProgramOptions,
     RunRequest,
+    _resolve_grid,
 )
+from .program.cache_key import make_cache_key
 from .settings import settings_ttlang
 
 
@@ -153,12 +158,109 @@ def execute_and_maybe_profile(
     return result
 
 
+def build_compile_request(ctx: RunContext) -> CompileKernelRequest:
+    """Business logic: build CompileKernelRequest from ctx.req and ctx.engine_config."""
+    if ctx.req is None:
+        raise RuntimeError("build_compile_request requires ctx.req to be set")
+
+    cache_key = make_cache_key(
+        ctx.req.args,
+        fp32_dest_acc_en=ctx.req.spec.options.fp32_dest_acc_en,
+        dst_full_sync_en=ctx.req.spec.options.dst_full_sync_en,
+    )
+    program_hash = hash((id(ctx.req.spec.program), cache_key))
+    grid = _resolve_grid(ctx.req.spec.grid, ctx.req.args, ctx.req.kwargs)
+    kernel_req = KernelCompileRequest(
+        grid=grid,
+        program_hash=program_hash,
+        indexing_maps=ctx.req.spec.indexing_maps,
+        iterator_types=ctx.req.spec.iterator_types,
+        options=ctx.req.spec.options,
+    )
+    return CompileKernelRequest(
+        program=ctx.req.spec.program,
+        args=ctx.req.args,
+        kwargs=dict(ctx.req.kwargs),
+        compile_request=kernel_req,
+        thread_registry=get_thread_registry(),
+        engine_config=ctx.engine_config,
+    )
+
+
+def compile_kernel(ctx: RunContext) -> CompiledTTNNKernel | None:
+    """Business logic: compile ctx.compile_req and return compiled kernel."""
+    if ctx.compile_req is None:
+        raise RuntimeError("compile_kernel requires ctx.compile_req to be set")
+    return _compile_kernel_impl(ctx.compile_req)
+
+
+def _pykernel_gen_params_adapter(
+    fn: Callable[[ProgramDecoratorParams], Callable],
+) -> Callable:
+    @functools.wraps(fn, assigned=("__module__", "__name__", "__qualname__"))
+    def wrapper(
+        grid: (tuple[int, ...] | Callable[..., object]) | None = None,
+        indexing_maps: list[Callable[..., object]] | None = None,
+        iterator_types: list[str] | None = None,
+        num_outs: int = 1,
+        memory_space: MemorySpace = MemorySpace.L1,
+        tiled: bool = True,
+        fp32_dest_acc_en: bool | None = None,
+        dst_full_sync_en: bool | None = None,
+        objective: Literal["latency", "throughput", "balanced"] | None = None,
+        placement: Literal["auto", "manual"] | None = None,
+    ) -> Callable:
+        """
+        Decorator for generating TTL kernels from Python functions.
+
+        This decorator compiles Python functions into TTL dialect operations,
+        handling thread compilation, stream creation, and pipeline execution.
+        Kernels are compiled to C++ for execution via ttnn.generic_op.
+
+        Args:
+            grid: Grid dimensions as tuple (e.g., (2, 2)) or callable
+            indexing_maps: List of lambda functions for indexing (optional)
+            iterator_types: List of iterator types ("parallel", "reduction")
+            num_outs: Number of output arguments
+            memory_space: MemorySpace (L1 or DRAM)
+            tiled: Whether to use tiled layout
+            fp32_dest_acc_en: Optional override for fp32_dest_acc_en
+            dst_full_sync_en: Optional override for dst_full_sync_en
+            objective: Optional policy \"latency\" | \"throughput\" | \"balanced\"
+                (stored, not used yet)
+            placement: Optional policy "auto" | "manual" (stored, not used yet)
+
+        Returns:
+            Decorated function that compiles and executes the kernel
+
+        Raises:
+            AssertionError: If required parameters are missing or invalid
+        """
+        params = ProgramDecoratorParams(
+            grid=grid,
+            indexing_maps=indexing_maps,  # type: ignore[arg-type]
+            iterator_types=iterator_types,  # type: ignore[arg-type]
+            options=ProgramOptions(
+                num_outs=num_outs,
+                memory_space=memory_space,
+                tiled=tiled,
+                fp32_dest_acc_en=fp32_dest_acc_en,
+                dst_full_sync_en=dst_full_sync_en,
+                objective=objective,
+                placement=placement,
+            ),
+        )
+        return fn(params)
+
+    return wrapper
+
+
 @ctx_request_build_run_context
 @ctx_request_ensure_run_request
 @ctx_config_resolve_engine_config
 @ctx_program_require_ttl_program_attr(_TTL_PROGRAM_ATTR)
-@ctx_compile_build_compile_request
-@ctx_compile_compile_kernel
+@ensure_ctx_field("compile_req", build_compile_request)
+@ensure_ctx_field("compiled", compile_kernel)
 def run(ctx: RunContext) -> object | None:
     """
     Compile and run kernel. Ideal UX entry point.
@@ -176,62 +278,10 @@ def run(ctx: RunContext) -> object | None:
     return execute_if_needed(ctx.compiled, ctx.req)
 
 
+@_pykernel_gen_params_adapter
 def pykernel_gen(
-    grid: (tuple[int, ...] | Callable[..., object]) | None = None,
-    indexing_maps: list[Callable[..., object]] | None = None,
-    iterator_types: list[str] | None = None,
-    num_outs: int = 1,
-    memory_space: MemorySpace = MemorySpace.L1,
-    tiled: bool = True,
-    fp32_dest_acc_en: bool | None = None,
-    dst_full_sync_en: bool | None = None,
-    objective: Literal["latency", "throughput", "balanced"] | None = None,
-    placement: Literal["auto", "manual"] | None = None,
+    params: ProgramDecoratorParams,
 ) -> Callable:
-    """
-    Decorator for generating TTL kernels from Python functions.
-
-    This decorator compiles Python functions into TTL dialect operations,
-    handling thread compilation, stream creation, and pipeline execution.
-    Kernels are compiled to C++ for execution via ttnn.generic_op.
-
-    Args:
-        grid: Grid dimensions as tuple (e.g., (2, 2)) or callable
-        indexing_maps: List of lambda functions for indexing (optional)
-        iterator_types: List of iterator types ("parallel", "reduction")
-        num_outs: Number of output arguments
-        memory_space: MemorySpace (L1 or DRAM)
-        tiled: Whether to use tiled layout
-        fp32_dest_acc_en: Optional override for fp32_dest_acc_en
-        dst_full_sync_en: Optional override for dst_full_sync_en
-        objective: Optional policy \"latency\" | \"throughput\" | \"balanced\"
-            (stored, not used yet)
-        placement: Optional policy "auto" | "manual" (stored, not used yet)
-
-    Returns:
-        Decorated function that compiles and executes the kernel
-
-    Raises:
-        AssertionError: If required parameters are missing or invalid
-    """
-    params = ProgramDecoratorParams(
-        grid=grid,
-        indexing_maps=indexing_maps,  # type: ignore[arg-type]
-        iterator_types=iterator_types,  # type: ignore[arg-type]
-        options=ProgramOptions(
-            num_outs=num_outs,
-            memory_space=memory_space,
-            tiled=tiled,
-            fp32_dest_acc_en=fp32_dest_acc_en,
-            dst_full_sync_en=dst_full_sync_en,
-            objective=objective,
-            placement=placement,
-        ),
-    )
-    return pykernel_from_params(params)
-
-
-def pykernel_from_params(params: ProgramDecoratorParams) -> Callable:
     """Decorator entrypoint for pre-built ProgramDecoratorParams."""
 
     def _decorator(f):
@@ -256,6 +306,11 @@ def pykernel_from_params(params: ProgramDecoratorParams) -> Callable:
         return _wrapper
 
     return _decorator
+
+
+def pykernel_from_params(params: ProgramDecoratorParams) -> Callable:
+    """Decorator entrypoint for pre-built ProgramDecoratorParams."""
+    return pykernel_gen(params)
 
 
 # Alias for backward compatibility
