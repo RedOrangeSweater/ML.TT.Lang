@@ -57,7 +57,7 @@ from .settings import settings_ttlang
 # For kernel body: TensorAccessor and dma (alias for copy) used in examples
 # TensorAccessor(tensor) returns the tensor so it is captured; compiler treats
 # subscript access (accessor[i,j]) as tensor accessor in MLIR (see ttl_ast).
-def TensorAccessor(tensor):
+def TensorAccessor(tensor):  # noqa: N802
     """Wrap a tensor for use as accessor in DM threads (e.g. accessor[i, j] in copy)."""
     return tensor
 
@@ -122,7 +122,8 @@ PLACEMENT_VALUES = ("auto", "manual")
 # Program layer types live in ttl.program; see kernel_runner for Runtime layer.
 # -----------------------------------------------------------------------------
 
-# Marker set on @ttl.program-decorated wrappers so run() can accept (program, *args, grid=...).
+# Marker set on @ttl.program-decorated wrappers so run() can accept
+# (program, *args, grid=...).
 _TTL_PROGRAM_ATTR = "_ttl_program"
 
 
@@ -130,7 +131,7 @@ def execute_if_needed(
     compiled: CompiledTTNNKernel | None,
     req: RunRequest,
 ) -> object | None:
-    """Execute compiled kernel if not None and not compile-only mode; else return None."""
+    """Execute compiled kernel if not None and not compile-only mode."""
     if compiled is None:
         return None
     if _should_execute():
@@ -142,7 +143,7 @@ def execute_and_maybe_profile(
     compiled: CompiledTTNNKernel | None,
     args: tuple[object, ...],
 ) -> object | None:
-    """Execute compiled kernel if not None and not compile-only; run profiling if enabled."""
+    """Execute compiled kernel if not None and not compile-only; profile if enabled."""
     if compiled is None or not _should_execute():
         return None
     result = compiled(*args)
@@ -230,7 +231,8 @@ def pykernel_gen(
         tiled: Whether to use tiled layout
         fp32_dest_acc_en: Optional override for fp32_dest_acc_en
         dst_full_sync_en: Optional override for dst_full_sync_en
-        objective: Optional policy "latency" | "throughput" | "balanced" (stored, not used yet)
+        objective: Optional policy \"latency\" | \"throughput\" | \"balanced\"
+            (stored, not used yet)
         placement: Optional policy "auto" | "manual" (stored, not used yet)
 
     Returns:
@@ -282,7 +284,8 @@ def pykernel_gen(
 # Alias for backward compatibility
 kernel = pykernel_gen
 
-# Preferred name: one program may compile to one or more device kernels (Reader/Compute/Writer etc.)
+# Preferred name: one program may compile to one or more device kernels
+# (Reader/Compute/Writer etc.).
 program = pykernel_gen
 
 

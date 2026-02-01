@@ -18,8 +18,10 @@ def require_ttl_program_attr(attr_name: str):
             raise NotImplementedError(
                 "run() with a raw callable (e.g. lambda) is not yet implemented: "
                 "inference from parameters and return type is planned. "
-                "Use @ttl.program to define the kernel and pass RunRequest.from_program(program, *args, grid=...). "
-                "See docs/sdlc/00_Main/02_Architecture/20_IdealDataFlowAndModuleStructure.md "
+                "Use @ttl.program to define the kernel and pass "
+                "RunRequest.from_program(program, *args, grid=...). "
+                "See docs/sdlc/00_Main/02_Architecture/"
+                "20_IdealDataFlowAndModuleStructure.md "
                 "(lambda + inference)."
             )
         return ctx
