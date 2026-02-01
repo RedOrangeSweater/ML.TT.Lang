@@ -4,17 +4,15 @@
 import itertools
 import math
 from collections import namedtuple
-from typing import List, Tuple
-from collections import namedtuple
 
 import sympy
 
 
-def remove_leading_ones(grid: Tuple[int, ...]) -> Tuple[int, ...]:
+def remove_leading_ones(grid: tuple[int, ...]) -> tuple[int, ...]:
     return tuple(itertools.dropwhile(lambda x: x == 1, grid))
 
 
-def get_number_of_cores(grid: Tuple[int, ...]) -> int:
+def get_number_of_cores(grid: tuple[int, ...]) -> int:
     core_count = 1
     for dim in grid:
         assert dim > 0, "grid dimensions must be positive"
@@ -23,8 +21,8 @@ def get_number_of_cores(grid: Tuple[int, ...]) -> int:
 
 
 def filter_factor_pairs_by_2d_grid(
-    factor_pairs: list[Tuple[int, int]], grid: Tuple[int, int]
-) -> list[Tuple[int, int]]:
+    factor_pairs: list[tuple[int, int]], grid: tuple[int, int]
+) -> list[tuple[int, int]]:
     valid_pairs = []
     for pair in factor_pairs:
         if pair[0] <= grid[0] and pair[1] <= grid[1]:
@@ -35,11 +33,11 @@ def filter_factor_pairs_by_2d_grid(
 
 
 def num_cores_to_grid_ranges(
-    start_coord: Tuple[int, ...],
+    start_coord: tuple[int, ...],
     target_num_cores: int,
-    grid_size: Tuple[int, ...],
+    grid_size: tuple[int, ...],
     row_wise: bool = True,
-) -> List[Tuple[Tuple[int, ...], Tuple[int, ...]]]:
+) -> list[tuple[tuple[int, ...], tuple[int, ...]]]:
     """
     Generate a list of grid ranges covering target_num_cores cores starting from start_coord.
     Similar to num_cores_to_corerangeset but returns simple tuples.
@@ -150,11 +148,11 @@ def num_cores_to_grid_ranges(
 
 
 def split_work_to_cores(
-    grid_size: Tuple[int, ...], units_to_divide: int, row_wise: bool = True
-) -> Tuple[
+    grid_size: tuple[int, ...], units_to_divide: int, row_wise: bool = True
+) -> tuple[
     int,
-    Tuple[Tuple[int, ...], Tuple[int, ...]],
-    Tuple[Tuple[int, ...], Tuple[int, ...]],
+    tuple[tuple[int, ...], tuple[int, ...]],
+    tuple[tuple[int, ...], tuple[int, ...]],
     int,
     int,
 ]:
@@ -289,7 +287,7 @@ def split_work_to_cores(
                 )
 
 
-def get_prime_factors_with_multiplicity(n: int) -> List[int]:
+def get_prime_factors_with_multiplicity(n: int) -> list[int]:
     factors_with_multiplicity = []
     factor_dict = sympy.factorint(n)
     # Extend the list for each factor according to its count
@@ -299,7 +297,7 @@ def get_prime_factors_with_multiplicity(n: int) -> List[int]:
     return sorted(factors_with_multiplicity)
 
 
-def get_possible_products(factors: List[int]) -> List[int]:
+def get_possible_products(factors: list[int]) -> list[int]:
     """
     Generate all possible products from a list of factors.
     This function computes all unique products that can be formed by taking
