@@ -122,9 +122,9 @@ def test_copy_operations_with_dm_context(api: CBAPI) -> None:
     This replaces the old test_copy_operations that was disabled due to lack of thread context.
     """
     from python.sim.block import (
-        _set_current_thread_type,
-        _clear_current_thread_type,
         ThreadType,
+        _clear_current_thread_type,
+        _set_current_thread_type,
     )
 
     # Set DM thread context (required for copy operations)
@@ -160,7 +160,6 @@ def test_copy_operations_with_dm_context(api: CBAPI) -> None:
         assert output_tensor.shape == TILE_SHAPE
         # The output tensor should now contain the data from the circular buffer
         # Verify at least some data was copied (non-zero)
-        import torch
 
         assert output_tensor.to_torch().sum() != 0
 
@@ -211,9 +210,9 @@ def test_copy_in_dm_thread_context(api: CBAPI) -> None:
     - Switch to COMPUTE thread for consumption (wait + read + pop)
     """
     from python.sim.block import (
-        _set_current_thread_type,
-        _clear_current_thread_type,
         ThreadType,
+        _clear_current_thread_type,
+        _set_current_thread_type,
     )
 
     try:
@@ -283,7 +282,7 @@ def test_copy_in_dm_thread_context(api: CBAPI) -> None:
 
 def test_single_pending_reserve_constraint(api: CBAPI) -> None:
     """Test that only one reserve() is allowed before push()."""
-    from python.sim.block import _set_current_thread_type, ThreadType
+    from python.sim.block import ThreadType, _set_current_thread_type
     from python.sim.copy import copy
 
     _set_current_thread_type(ThreadType.DM)
@@ -326,7 +325,7 @@ def test_single_pending_reserve_constraint(api: CBAPI) -> None:
 
 def test_single_pending_wait_constraint(api: CBAPI) -> None:
     """Test that only one wait() is allowed before pop()."""
-    from python.sim.block import _set_current_thread_type, ThreadType
+    from python.sim.block import ThreadType, _set_current_thread_type
     from python.sim.copy import copy
 
     _set_current_thread_type(ThreadType.COMPUTE)
@@ -384,7 +383,8 @@ def test_reserve_store_push_pop_workflow(api: CBAPI) -> None:
     using copy (which requires DM thread context).
     """
     import torch
-    from python.sim import ttnn, TILE_SHAPE
+
+    from python.sim import TILE_SHAPE, ttnn
 
     # Create circular buffer
     element = make_zeros_tile()
@@ -724,7 +724,8 @@ def test_store_accumulate_first_assigns(api: CBAPI) -> None:
     with cb.reserve() as block:
         # Create test values
         import torch
-        from python.sim import ttnn, TILE_SHAPE
+
+        from python.sim import TILE_SHAPE, ttnn
 
         values1 = [
             ttnn.Tensor(torch.full(TILE_SHAPE, 5.0)),
@@ -762,7 +763,8 @@ def test_store_accumulate_vs_regular_store(api: CBAPI) -> None:
     cb = CircularBuffer(element=element, shape=(2, 1), buffer_factor=2, api=api)
 
     import torch
-    from python.sim import ttnn, TILE_SHAPE
+
+    from python.sim import TILE_SHAPE, ttnn
 
     # Test 1: Regular store() followed by push (cannot use store(acc=True) after)
     with cb.reserve() as block1:
@@ -806,7 +808,8 @@ def test_block_state_machine_restrictions(api: CBAPI) -> None:
     cb = CircularBuffer(element=element, shape=(1, 1), buffer_factor=2, api=api)
 
     import torch
-    from python.sim import ttnn, TILE_SHAPE
+
+    from python.sim import TILE_SHAPE, ttnn
 
     # Test: Cannot read from WO (Write-Only) state before first store
     block = cb.reserve()
@@ -843,6 +846,9 @@ def test_block_state_machine_restrictions(api: CBAPI) -> None:
 
 def test_copy_sets_block_to_na_state(api: CBAPI) -> None:
     """Test that copy operations set blocks to NA (No Access) state."""
+    import torch
+
+    from python.sim import ttnn
     from python.sim.block import (
         Block,
         BlockAcquisition,
@@ -850,8 +856,6 @@ def test_copy_sets_block_to_na_state(api: CBAPI) -> None:
         _set_current_thread_type,
     )
     from python.sim.typedefs import Span
-    import torch
-    from python.sim import ttnn
 
     # Set thread type to DM (required for copy operations)
     _set_current_thread_type(ThreadType.DM)
@@ -905,10 +909,7 @@ def test_push_validates_expected_state(api: CBAPI) -> None:
     (not wait() blocks) and only when PUSH is in the expected operations.
     """
     from python.sim.block import (
-        Block,
-        BlockAcquisition,
         ThreadType,
-        ExpectedOp,
         _set_current_thread_type,
     )
 

@@ -14,8 +14,8 @@ import os
 
 import pytest
 import torch
+
 import ttl
-import ttnn
 from ttl.program import ProgramOptions
 
 

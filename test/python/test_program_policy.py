@@ -15,6 +15,7 @@ os.environ["TTLANG_COMPILE_ONLY"] = "1"
 
 import pytest
 import torch
+
 import ttl
 
 

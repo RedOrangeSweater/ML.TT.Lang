@@ -20,6 +20,7 @@ import os
 os.environ["TTLANG_COMPILE_ONLY"] = "1"
 
 import ttnn
+
 import ttl
 
 
@@ -94,6 +95,7 @@ def multicore_add(lhs, rhs, out):
 
 if __name__ == "__main__":
     import torch
+
     from ttlang_test_utils import require_hardware
 
     print("=== Multicore Add Kernel Test ===")

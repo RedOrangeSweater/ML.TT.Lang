@@ -21,12 +21,12 @@ if str(_examples) not in sys.path:
 from lazy_boot import (  # type: ignore[import-not-found]
     LazyLoadRequired,
     LazyWrapper,
-    install_lazy_slot,
-    make_placeholder,
     make_load_and_patch,
-    make_dir_resolver,
+    make_placeholder,
 )
-from lazy_boot.loader import load_callable_from_module_path  # type: ignore[import-not-found]
+from lazy_boot.loader import (
+    load_callable_from_module_path,  # type: ignore[import-not-found]
+)
 
 
 def test_lazy_load_required_attributes() -> None:
@@ -66,7 +66,7 @@ def test_load_and_patch_retry(tmp_path: Path) -> None:
     load_and_patch = make_load_and_patch(resolve)
     placeholder = make_placeholder(mod, "my_impl")
     wrapper = LazyWrapper(mod, "my_impl", placeholder, load_and_patch)
-    setattr(mod, "my_impl", wrapper)
+    mod.my_impl = wrapper
 
     result = mod.my_impl(3, 4)
     assert result == 12

@@ -4,7 +4,6 @@
 
 # RUN: %python %s | FileCheck %s
 
-from ttmlir.dialects import ttcore, ttir
 from ttmlir.ir import *
 
 with Context() as ctx:

@@ -121,6 +121,8 @@ Pytests:
 cmake --build build --target check-ttlang-pytest
 ```
 
+**Run configs (VSCode/Cursor):** `.vscode/launch.json` and `.vscode/tasks.json` define run configs for pytest (e.g. "TTL: Pytest dialect layers", "TTL: Pytest nn API") and examples. They set `PYTHONPATH` to `build/python_packages:python:test` so the built `ttl` package is used. Ensure the project is built (`cmake --build build`) before using these configs. For the most reliable pytest run, use the CMake target: `cmake --build build --target check-ttlang-pytest`.
+
 Python binding unit tests:
 
 ```bash

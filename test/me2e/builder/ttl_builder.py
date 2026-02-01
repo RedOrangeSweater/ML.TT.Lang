@@ -13,28 +13,29 @@ Two modes:
 2. Full ME2E: Reader, compute, and writer functions (for device execution).
 """
 
-from typing import Callable, List
+from collections.abc import Callable
 
 import torch
+from ttmlir.dialects import func, ttcore
 from ttmlir.ir import (
     Context,
+    FunctionType,
+    InsertionPoint,
     Location,
     Module,
-    InsertionPoint,
-    FunctionType,
     RankedTensorType,
+)
+from ttmlir.ir import (
     Type as MLIRType,
 )
-from ttmlir.dialects import func
-from ttmlir.dialects import ttcore
 
 import ttl.dialects.ttl as ttl
 
 from ..config import E2EConfig
-from .thread_builder import generate_layout_attrs
-from .dm_builder import DMThreadBuilder
 from .compute_builder import ComputeThreadBuilder
+from .dm_builder import DMThreadBuilder
 from .dtype_utils import torch_dtype_to_mlir_str, torch_dtype_to_ttcore_datatype
+from .thread_builder import generate_layout_attrs
 
 
 def _get_tile_type(ctx: Context, dtype: torch.dtype):
@@ -61,7 +62,7 @@ def build_ttl_module(
     op_str: str,
     arity: int,
     config: E2EConfig,
-    torch_inputs: List[torch.Tensor],
+    torch_inputs: list[torch.Tensor],
 ) -> Module:
     """
     Build a compute-only TTL module for the given operation.
@@ -250,7 +251,7 @@ def build_e2e_module_mlir_custom(
     arity: int,
     num_outputs: int,
     config: E2EConfig,
-    compute_fn: Callable[[List, "ComputeThreadBuilder"], List],
+    compute_fn: Callable[[list, "ComputeThreadBuilder"], list],
 ) -> str:
     """
     Build ME2E MLIR module with custom compute function.

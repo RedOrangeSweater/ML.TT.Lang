@@ -12,8 +12,9 @@ Test classes are auto-generated from TTLElementwiseOps.def.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, cast
+from typing import Any, Dict, List, Optional, Tuple, Type, cast
 
 import pytest
 import torch
@@ -22,9 +23,8 @@ from torch import Tensor
 from ..base import ME2ETestBase
 from ..config import E2EConfig
 
-
 # Map op names to torch reference functions.
-OP_TORCH_MAP: Dict[str, Callable[..., Tensor]] = {
+OP_TORCH_MAP: dict[str, Callable[..., Tensor]] = {
     "add": torch.add,
     "sub": torch.sub,
     "mul": torch.mul,
@@ -41,14 +41,14 @@ OP_TORCH_MAP: Dict[str, Callable[..., Tensor]] = {
 }
 
 # Domain constraints for ops that require specific input ranges.
-OP_INPUT_RANGES: Dict[str, Tuple[float, float]] = {
+OP_INPUT_RANGES: dict[str, tuple[float, float]] = {
     "log": (0.01, 10.0),  # log requires positive inputs
     "sqrt": (0.01, 10.0),  # sqrt requires positive inputs
     "rsqrt": (0.01, 10.0),  # rsqrt requires positive inputs
 }
 
 
-def _parse_elementwise_ops_def() -> Dict[str, int]:
+def _parse_elementwise_ops_def() -> dict[str, int]:
     """
     Parse TTLElementwiseOps.def to get op name -> arity.
 
@@ -63,7 +63,7 @@ def _parse_elementwise_ops_def() -> Dict[str, int]:
     if not def_path.exists():
         return {}
 
-    ops: Dict[str, int] = {}
+    ops: dict[str, int] = {}
     with open(def_path) as f:
         for line in f:
             # Match TTL_BINARY_TILE_OP(Add, AddTileOp, ...) or TTL_BINARY_TILE_OP_SPECIAL(Max, ...)
@@ -79,7 +79,7 @@ def _parse_elementwise_ops_def() -> Dict[str, int]:
 
 
 # Parse ops from .def file at module load time.
-ELEMENTWISE_OPS: Dict[str, int] = _parse_elementwise_ops_def()
+ELEMENTWISE_OPS: dict[str, int] = _parse_elementwise_ops_def()
 
 
 class OpTestBase(ME2ETestBase):
@@ -97,14 +97,14 @@ class OpTestBase(ME2ETestBase):
     INPUT_DTYPE = torch.bfloat16
 
     # Comparison tolerance (auto-computed from dtype if None)
-    ULP_THRESHOLD: Optional[float] = None
+    ULP_THRESHOLD: float | None = None
 
     # Input value range
     MIN_VALUE = -1.0
     MAX_VALUE = 1.0
 
     # Override for ops with domain constraints (e.g., sqrt requires positive inputs)
-    INPUT_RANGE: Optional[Tuple[float, float]] = None
+    INPUT_RANGE: tuple[float, float] | None = None
 
     @pytest.fixture(scope="class")
     def torch_op(self) -> Callable[..., Tensor]:
@@ -122,7 +122,7 @@ class OpTestBase(ME2ETestBase):
         )
 
     @pytest.fixture(scope="class")
-    def input_range(self) -> Tuple[float, float]:
+    def input_range(self) -> tuple[float, float]:
         """Get input value range."""
         return self.INPUT_RANGE or (self.MIN_VALUE, self.MAX_VALUE)
 
@@ -130,11 +130,12 @@ class OpTestBase(ME2ETestBase):
     def test_build_module(
         self,
         config: E2EConfig,
-        input_range: Tuple[float, float],
+        input_range: tuple[float, float],
         torch_op: Callable[..., Tensor],
     ) -> None:
         """Build full ME2E TTL module (reader, compute, writer) from OP_STR."""
         import os
+
         from ..builder.ttl_builder import build_e2e_module_mlir
 
         # Set seed for reproducible test inputs.
@@ -143,7 +144,7 @@ class OpTestBase(ME2ETestBase):
 
         # Generate random inputs.
         lo, hi = input_range
-        torch_inputs: List[Tensor] = []
+        torch_inputs: list[Tensor] = []
         for _ in range(self.ARITY):
             t = torch.rand(config.tensor_shape, dtype=config.dtype) * (hi - lo) + lo
             torch_inputs.append(t)
@@ -187,7 +188,7 @@ class BinaryOpTestBase(OpTestBase):
     ARITY = 2
 
 
-def generate_op_test_classes() -> Dict[str, Type[OpTestBase]]:
+def generate_op_test_classes() -> dict[str, type[OpTestBase]]:
     """
     Auto-generate test classes from TTLElementwiseOps.def.
 
@@ -196,7 +197,7 @@ def generate_op_test_classes() -> Dict[str, Type[OpTestBase]]:
     Returns:
         Dict mapping class name (e.g., "TestAddBfloat16", "TestAddFloat32") to the generated class.
     """
-    generated: Dict[str, Type[OpTestBase]] = {}
+    generated: dict[str, type[OpTestBase]] = {}
 
     # Test dtypes.
     test_dtypes = [
@@ -206,12 +207,12 @@ def generate_op_test_classes() -> Dict[str, Type[OpTestBase]]:
 
     for op_name, arity in ELEMENTWISE_OPS.items():
         # Determine base class from arity.
-        base: Type[OpTestBase] = UnaryOpTestBase if arity == 1 else BinaryOpTestBase
+        base: type[OpTestBase] = UnaryOpTestBase if arity == 1 else BinaryOpTestBase
 
         # Generate a test class for each dtype.
         for dtype, dtype_suffix in test_dtypes:
             # Build class attributes.
-            attrs: Dict[str, Any] = {
+            attrs: dict[str, Any] = {
                 "OP_STR": op_name,
                 "INPUT_DTYPE": dtype,
             }
@@ -222,10 +223,10 @@ def generate_op_test_classes() -> Dict[str, Type[OpTestBase]]:
             class_name = f"Test{op_name.capitalize()}{dtype_suffix}"
             test_class = type(class_name, (base,), attrs)
 
-            generated[class_name] = cast(Type[OpTestBase], test_class)
+            generated[class_name] = cast(type[OpTestBase], test_class)
 
     return generated
 
 
 # Auto-generated test classes from .def file.
-GENERATED_OP_TESTS: Dict[str, Type[OpTestBase]] = generate_op_test_classes()
+GENERATED_OP_TESTS: dict[str, type[OpTestBase]] = generate_op_test_classes()

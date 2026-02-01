@@ -101,6 +101,7 @@ def signpost_test_kernel(inp, out):
 
 if __name__ == "__main__":
     import torch
+
     from ttlang_test_utils import require_hardware
 
     print("=== Auto-Profile Signpost Test ===")

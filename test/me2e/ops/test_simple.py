@@ -12,8 +12,8 @@ can be built correctly for each operation.
 import pytest
 import torch
 
-from ..config import DTYPE_TO_MLIR, E2EConfig, get_dtype_ids, get_test_dtypes
 from ..builder.ttl_builder import build_ttl_module
+from ..config import DTYPE_TO_MLIR, E2EConfig, get_dtype_ids, get_test_dtypes
 
 
 class TestMLIRGeneration:

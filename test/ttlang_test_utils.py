@@ -25,9 +25,7 @@ import sys
 # Check device availability: env vars first (for simulator), then CMake config.
 _hardware_available = False
 
-if os.environ.get("TT_METAL_SIMULATOR"):
-    _hardware_available = True
-elif os.environ.get("TTLANG_HAS_DEVICE") == "1":
+if os.environ.get("TT_METAL_SIMULATOR") or os.environ.get("TTLANG_HAS_DEVICE") == "1":
     _hardware_available = True
 else:
     try:

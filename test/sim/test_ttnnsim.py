@@ -375,7 +375,7 @@ def test_core_coord():
     assert c1.y == 5
 
     # Test repr
-    assert "CoreCoord(x=3, y=5)" == repr(c1)
+    assert repr(c1) == "CoreCoord(x=3, y=5)"
 
     # Test equality
     c2 = ttnn.CoreCoord(3, 5)

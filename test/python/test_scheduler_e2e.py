@@ -16,6 +16,7 @@ os.environ["TTLANG_USE_SCHEDULER"] = "1"
 
 import pytest
 import torch
+
 import ttl
 
 

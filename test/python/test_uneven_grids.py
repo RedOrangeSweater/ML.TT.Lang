@@ -26,6 +26,7 @@ import torch
 ttnn = pytest.importorskip("ttnn", exc_type=ImportError)
 
 from conftest import temp_kernel_files
+
 from ttlang_test_utils import to_dram
 
 TILE_SIZE = 32

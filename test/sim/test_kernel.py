@@ -5,10 +5,10 @@
 Tests for kernel.py module (kernel decorator, grid_size, etc.).
 """
 
-import torch
 from typing import cast
 
 import pytest
+import torch
 from test_utils import make_zeros_tensor
 
 from python.sim import ttl, ttnn

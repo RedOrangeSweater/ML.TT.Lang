@@ -16,14 +16,15 @@ to create specific thread types with minimal boilerplate.
 """
 
 from abc import ABC
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any
 
-import torch
+from ttmlir.dialects import arith, func, scf, ttcore
 from ttmlir.ir import (
-    Attribute,
     ArrayAttr,
+    Attribute,
     Context,
     FunctionType,
     IndexType,
@@ -34,8 +35,6 @@ from ttmlir.ir import (
     Module,
     RankedTensorType,
 )
-from ttmlir.dialects import arith, func, scf
-from ttmlir.dialects import ttcore
 
 import ttl.dialects.ttl as ttl
 
@@ -219,12 +218,12 @@ class ThreadBuilder(ABC):
     def _create_function(
         self,
         name: str,
-        arg_types: List,
-        result_types: List,
+        arg_types: list,
+        result_types: list,
         thread_type: ThreadType,
-        crta_indices: List[int],
-        base_cta_index: Optional[int] = None,
-    ) -> Tuple[func.FuncOp, List]:
+        crta_indices: list[int],
+        base_cta_index: int | None = None,
+    ) -> tuple[func.FuncOp, list]:
         """
         Create a function with thread attributes.
 
@@ -267,9 +266,9 @@ class ThreadBuilder(ABC):
     def _build_compute_thread(
         self,
         name: str,
-        input_cbs: List[int],
-        output_cbs: List[int],
-        compute_fn: Callable[[List], List],
+        input_cbs: list[int],
+        output_cbs: list[int],
+        compute_fn: Callable[[list], list],
     ) -> None:
         """
         Build a complete compute thread function.
@@ -320,7 +319,7 @@ class ThreadBuilder(ABC):
                     # Attach results to output CBs.
                     if not isinstance(results, list):
                         results = [results]
-                    for result, cb in zip(results, output_cb_vals):
+                    for result, cb in zip(results, output_cb_vals, strict=False):
                         self._attach_cb(result, cb)
 
                     # Push outputs, pop inputs.
@@ -409,7 +408,7 @@ class StringBasedThreadBuilder:
     # Loop Generation
     # =========================================================================
 
-    def _generate_loop_start(self) -> Tuple[str, str, str, str]:
+    def _generate_loop_start(self) -> tuple[str, str, str, str]:
         """
         Generate loop start code and index variables.
 

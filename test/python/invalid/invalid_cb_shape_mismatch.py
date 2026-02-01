@@ -17,6 +17,7 @@ import os
 os.environ["TTLANG_COMPILE_ONLY"] = "1"
 
 import ttnn
+
 import ttl
 
 
@@ -55,6 +56,7 @@ def mismatched_shape_kernel(a, b, out):
 
 if __name__ == "__main__":
     import torch
+
     from ttlang_test_utils import to_l1
 
     device = ttnn.open_device(device_id=0)

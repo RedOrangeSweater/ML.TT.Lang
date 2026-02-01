@@ -12,9 +12,10 @@ Follows the elementwise example pattern.
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import torch
+
 from utils.correctness import assert_with_ulp
 
 from .builder.kernels import (
@@ -30,11 +31,11 @@ from .config_specs import TestConfig
 from .op_specs import ComputeOpSpec
 
 # Kernel cache to avoid redundant compilation.
-_kernel_cache: Dict[str, str] = {}
+_kernel_cache: dict[str, str] = {}
 
 
 def get_compute_kernel(
-    op: ComputeOpSpec, config: TestConfig, device: Optional[Any] = None
+    op: ComputeOpSpec, config: TestConfig, device: Any | None = None
 ) -> str:
     """
     Generate or retrieve cached compute kernel C++ source.

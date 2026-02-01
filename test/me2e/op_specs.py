@@ -9,8 +9,9 @@ Defines ComputeOpSpec dataclass and COMPUTE_OPS registry for all elementwise ope
 COMPUTE_OPS is auto-generated from TTLElementwiseOps.def to keep tests in sync with the dialect.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Tuple
+from typing import Any
 
 import torch
 
@@ -79,7 +80,7 @@ class ComputeOpSpec:
     arity: int
     golden: Callable[..., Any]
     reader_type: str
-    input_range: Optional[Tuple[float, float]] = None
+    input_range: tuple[float, float] | None = None
 
 
 # Special cases for ops that need custom golden functions (not in OP_TORCH_MAP or need different implementation).

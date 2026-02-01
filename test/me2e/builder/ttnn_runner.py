@@ -9,27 +9,28 @@ Runs compiled kernels on Tenstorrent devices using ttnn.generic_op.
 Uses the shared kernel_runner module to build kernel descriptors and execute kernels.
 """
 
-from pathlib import Path
-from typing import List, Any, Optional, Tuple
 import sys
+from pathlib import Path
+from typing import Any
 
 import torch
 import ttnn
 
 # Import test_helpers from test/python.
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
-from ttlang_test_utils import to_dram
+from ttl.circular_buffer import CircularBuffer
 
 # Import shared kernel runner from ttl package.
 from ttl.kernel_runner import (
     KernelSpec as RunnerKernelSpec,
+)
+from ttl.kernel_runner import (
     RunKernelRequest,
     run_kernel_on_device,
 )
-from ttl.circular_buffer import CircularBuffer
+from ttlang_test_utils import to_dram
 
 from .kernels import KernelSpec
-
 
 # Tile dimensions.
 TILE_HEIGHT = 32
@@ -38,7 +39,7 @@ TILE_WIDTH = 32
 
 def run_binary_op(
     device: Any,
-    noc_kernels: List[KernelSpec],
+    noc_kernels: list[KernelSpec],
     compute_kernel: KernelSpec,
     input_a: torch.Tensor,
     input_b: torch.Tensor,
@@ -69,7 +70,7 @@ def run_binary_op(
 
 def run_unary_op(
     device: Any,
-    noc_kernels: List[KernelSpec],
+    noc_kernels: list[KernelSpec],
     compute_kernel: KernelSpec,
     input_a: torch.Tensor,
     kernel_dir: Path,
@@ -98,9 +99,9 @@ def run_unary_op(
 
 def _run_op(
     device: Any,
-    noc_kernels: List[KernelSpec],
+    noc_kernels: list[KernelSpec],
     compute_kernel: KernelSpec,
-    inputs: List[torch.Tensor],
+    inputs: list[torch.Tensor],
     kernel_dir: Path,
 ) -> torch.Tensor:
     """
@@ -176,7 +177,7 @@ def _run_op(
 
     # Build CB configs: CircularBuffer objects for each tensor.
     # Shape is (1, 1) for single tile, buffer_factor is 1 for single buffering.
-    cb_configs: List[CircularBuffer] = [
+    cb_configs: list[CircularBuffer] = [
         CircularBuffer(tensor=tensor, shape=(1, 1), buffer_factor=1)
         for tensor in io_tensors
     ]

@@ -18,6 +18,7 @@ import os
 os.environ["TTLANG_COMPILE_ONLY"] = "1"
 
 import ttnn
+
 import ttl
 
 

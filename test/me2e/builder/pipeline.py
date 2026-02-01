@@ -9,7 +9,7 @@ Provides compilation from TTL dialect to TTKernel dialect.
 """
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 from ttmlir.ir import Module
 from ttmlir.passmanager import PassManager
@@ -19,7 +19,7 @@ from .device_arch import get_mock_arch_from_device
 
 def compile_ttl_to_ttkernel(
     module: Module,
-    device: Optional[Any] = None,
+    device: Any | None = None,
     use_trid_barriers: bool = False,
 ) -> Module:
     """

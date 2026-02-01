@@ -20,6 +20,7 @@ from cb_configs rather than the tensor argument count.
 
 import pytest
 import torch
+
 import ttl
 from ttlang_test_utils import assert_allclose, to_l1
 

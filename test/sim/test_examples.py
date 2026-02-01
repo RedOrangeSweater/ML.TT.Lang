@@ -127,7 +127,7 @@ def test_eltwise_add2_fails_with_expected_error() -> None:
     code, out = run_ttlang_sim_and_capture(EXAMPLES_DIR / "eltwise_add_error.py")
     assert (
         code != 0
-    ), f"Expected eltwise_add_error.py to fail, but it exited with code 0"
+    ), "Expected eltwise_add_error.py to fail, but it exited with code 0"
     # Check for the core error message (shape mismatch)
     assert (
         "Tensor shape (32, 32) (=(1, 1) tiles) does not match Block shape (2, 2) tiles"
@@ -159,7 +159,7 @@ def test_copy_lock_error_fails_with_expected_error() -> None:
     message should clearly indicate the access violation.
     """
     code, out = run_ttlang_sim_and_capture(EXAMPLES_DIR / "copy_lock_error.py")
-    assert code != 0, f"Expected copy_lock_error.py to fail, but it exited with code 0"
+    assert code != 0, "Expected copy_lock_error.py to fail, but it exited with code 0"
     # Check for the core error message (copy access violation)
     assert (
         "Cannot write to Block: Block has no access (NA state)" in out
@@ -192,8 +192,8 @@ def test_demo_one_deadlock_detection() -> None:
     3. Which CircularBuffer they're waiting for
     4. The source location where they're blocked (with accurate line numbers)
     """
-    import tempfile
     import re
+    import tempfile
 
     # Read the original tutorial/multicore_grid_auto.py
     source_file = EXAMPLES_DIR / "tutorial/multicore_grid_auto.py"
@@ -247,7 +247,7 @@ def test_demo_one_deadlock_detection() -> None:
         # Should fail with non-zero exit code
         assert (
             code != 0
-        ), f"Expected modified tutorial/multicore_grid_auto.py to fail, but it exited with code 0"
+        ), "Expected modified tutorial/multicore_grid_auto.py to fail, but it exited with code 0"
 
         # Check for deadlock detection message
         assert (

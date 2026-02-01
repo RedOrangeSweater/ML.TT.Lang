@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from ttl import run
 from ttl.program import ProgramOptions, ProgramSpec, RunRequest
 from ttl.scheduler import (
     AbstractEngineConfig,
@@ -21,7 +22,6 @@ from ttl.scheduler import (
     load_abstract_engine_config,
     validate_topology_connectivity,
 )
-from ttl import run
 
 
 def test_load_abstract_engine_config_from_json():
@@ -98,8 +98,9 @@ def _minimal_add_impl(lhs, rhs, out):
 
 def test_run_with_engine_config_tenstorrent_uses_topology():
     """run(..., engine_config=tenstorrent with topology_grid) uses config topology (use_scheduler)."""
-    import ttl
     import torch
+
+    import ttl
 
     minimal_add = ttl.program(grid=(2, 2))(_minimal_add_impl)
     lhs = torch.full((32, 32), 2.0, dtype=torch.bfloat16)
@@ -137,8 +138,9 @@ def test_run_with_engine_config_tenstorrent_uses_topology():
 
 def test_run_with_engine_config_toy_completes():
     """run(..., engine_config=toy_shops with topology_graph) runs schedule_toy_stub (use_scheduler)."""
-    import ttl
     import torch
+
+    import ttl
 
     minimal_add = ttl.program(grid=(1, 1))(_minimal_add_impl)
     lhs = torch.full((32, 32), 2.0, dtype=torch.bfloat16)

@@ -12,27 +12,27 @@ dialects and transformations. See docs/sdlc/00_Main/02_Architecture/08_PythonDia
 import pytest
 from pydantic import ValidationError
 
-from ttl.program import (
-    CompileKernelRequest,
-    KernelCompileRequest,
-    ProgramOptions,
-    ProgramSpec,
-    RunRequest,
-    _resolve_grid,
-)
+from ttl import run
 from ttl.descriptor_options import (
     ComputeConfigOptions,
     CoreRangeSetOptions,
-    NocConfigOptions,
     ThreadConfigBuildRequest,
 )
 from ttl.kernel_runner import (
     CBDescriptorBuildRequest,
     KernelDescriptorBuildRequest,
-    KernelSpec,
     RunKernelRequest,
-    build_kernel_descriptors,
     build_cb_descriptors,
+    build_kernel_descriptors,
+)
+from ttl.program import (
+    CompileKernelRequest,
+    KernelCompileRequest,
+    ProgramDecoratorParams,
+    ProgramOptions,
+    ProgramSpec,
+    RunRequest,
+    _resolve_grid,
 )
 from ttl.ttnn_proxy import (
     ComputeConfigProxy,
@@ -42,12 +42,32 @@ from ttl.ttnn_proxy import (
     ReaderConfigProxy,
     WriterConfigProxy,
 )
-from ttl import run
-
 
 # -----------------------------------------------------------------------------
 # Program layer (no ttnn required)
 # -----------------------------------------------------------------------------
+
+
+def test_program_decorator_params_indexing_maps_dims_match_iterator_types():
+    """ProgramDecoratorParams raises when indexing_map params count != len(iterator_types)."""
+    # Two-arg map but three iterator_types -> validation error
+    map_2 = lambda i, j: (i, j)
+    with pytest.raises(ValidationError, match="Number of dimensions.*must match iterator_types"):
+        ProgramDecoratorParams(
+            grid=(1, 1),
+            indexing_maps=[map_2],
+            iterator_types=["parallel", "parallel", "reduction"],
+            options=ProgramOptions(),
+        )
+    # Two-arg map and two iterator_types -> ok
+    params = ProgramDecoratorParams(
+        grid=(1, 1),
+        indexing_maps=[map_2],
+        iterator_types=["parallel", "parallel"],
+        options=ProgramOptions(),
+    )
+    assert len(params.indexing_maps) == 1
+    assert len(params.iterator_types) == 2
 
 
 def test_program_spec_build_compile_request():
@@ -56,7 +76,7 @@ def test_program_spec_build_compile_request():
     def _dummy_program(_x):
         pass
 
-    options = ProgramOptions(memory_space="L1", tiled=True)
+    options = ProgramOptions()
     spec = ProgramSpec(program=_dummy_program, grid=(2, 2), options=options)
     req = spec.build_compile_request((), {}, program_hash=42)
     assert isinstance(req, KernelCompileRequest)
@@ -118,6 +138,88 @@ def test_run_with_spec_accepts():
     # Will fail at _compile_kernel (no threads) but run() accepts req and proceeds
     with pytest.raises(ValueError, match="No threads found"):
         run(req)
+
+
+def test_program_cache_key_empty_args():
+    """make_cache_key((), None, None) returns key tuple (empty tensor_key, None, None)."""
+    from ttl.program.cache_key import make_cache_key
+
+    key = make_cache_key((), fp32_dest_acc_en=None, dst_full_sync_en=None)
+    assert isinstance(key, tuple)
+    assert len(key) == 3
+    assert key[0] == ()
+    assert key[1] is None
+    assert key[2] is None
+
+
+def test_compile_registry_get_and_clear():
+    """get_thread_registry() returns registry with clear() and get_and_clear()."""
+    from ttl.compile.registry import get_thread_registry
+
+    reg = get_thread_registry()
+    reg.clear()
+    threads = reg.get_and_clear()
+    assert threads == []
+
+
+def test_compile_stages_save_initial_mlir_disabled():
+    """run_stages with SaveInitialMlirStage when settings.initial_mlir is None does not write."""
+    from ttl.compile.stages import (
+        CompileStageContext,
+        get_initial_stages,
+        run_stages,
+    )
+
+    class SettingsNoInitial:
+        initial_mlir = None
+
+    ctx = CompileStageContext(module=None, initial_mlir_path=None)
+    run_stages(get_initial_stages(), ctx, SettingsNoInitial())
+    # No file written; no exception
+
+
+def test_compile_stages_context_and_run():
+    """CompileStageContext and run_stages accept context; stages run when enabled."""
+    from ttl.compile.stages import (
+        CompileStageContext,
+        get_initial_stages,
+        run_stages,
+    )
+
+    stages = get_initial_stages()
+    assert len(stages) >= 1
+    assert stages[0].name == "save_initial_mlir"
+    ctx = CompileStageContext(module=None, initial_mlir_path=None)
+    run_stages(stages, ctx, type("S", (), {"initial_mlir": None})())
+    # No file (path None); no exception
+
+
+def test_compile_stages_save_initial_mlir_enabled_writes_file(tmp_path):
+    """When initial_mlir is set, SaveInitialMlirStage runs and writes module to file."""
+    from ttl.compile.stages import (
+        CompileStageContext,
+        get_initial_stages,
+        run_stages,
+    )
+
+    out_path = tmp_path / "initial.mlir"
+
+    class MockOp:
+        def print(self, *, file, enable_debug_info=False, print_generic_op_form=True):
+            file.write("module { }\n")
+            file.flush()
+
+    class MockModule:
+        operation = MockOp()
+
+    settings = type("S", (), {"initial_mlir": str(out_path)})()
+    ctx = CompileStageContext(
+        module=MockModule(),
+        initial_mlir_path=str(out_path),
+    )
+    run_stages(get_initial_stages(), ctx, settings)
+    assert out_path.exists()
+    assert out_path.read_text().strip() == "module { }"
 
 
 def test_compile_kernel_request_compile_only_path():

@@ -12,6 +12,7 @@
 
 import torch
 import ttnn
+
 import ttl
 from ttlang_test_utils import to_l1
 
@@ -86,7 +87,7 @@ def main():
     expected = torch.full((32, 32), 7.0, dtype=torch.bfloat16)
 
     print(f"Result unique values: {torch.unique(result).tolist()}")
-    print(f"Expected: all 7.0")
+    print("Expected: all 7.0")
 
     if torch.allclose(result.float(), expected.float(), rtol=1e-2, atol=1e-2):
         print("PASS")

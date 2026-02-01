@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 import torch
+
 from utils.correctness import assert_with_ulp
 
 from .config import get_maximum_ulp_threshold
@@ -59,8 +60,9 @@ class ME2ETestBase:
     @pytest.mark.order(2)
     def test_compile_to_ttkernel(self):
         """Run TTL-to-TTKernel pass pipeline on the generated module."""
-        import ttl.dialects.ttl as ttl
         from ttmlir.ir import Context, Module
+
+        import ttl.dialects.ttl as ttl
 
         from .builder.pipeline import compile_ttl_to_ttkernel
 
@@ -91,8 +93,9 @@ class ME2ETestBase:
     @pytest.mark.order(3)
     def test_translate_to_cpp(self):
         """Translate TTKernel ops to C++ kernel sources."""
-        import ttl.dialects.ttl as ttl
         from ttmlir.ir import Context, Module
+
+        import ttl.dialects.ttl as ttl
 
         from .builder.kernels import translate_module_to_kernels, write_kernels
 

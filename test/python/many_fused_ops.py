@@ -15,7 +15,6 @@ Uses bounded ops (sigmoid, tanh, relu, abs, neg) to avoid overflow.
 Sequential chain avoids multiple uses of intermediate values.
 """
 
-import os
 
 import ttl
 

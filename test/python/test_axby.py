@@ -32,9 +32,8 @@ import torch
 
 ttnn = pytest.importorskip("ttnn", exc_type=ImportError)
 
-from ttlang_test_utils import assert_allclose, to_dram
-
 from ttl import ttl
+from ttlang_test_utils import assert_allclose, to_dram
 
 
 @ttl.kernel(grid=(1, 1))

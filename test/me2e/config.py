@@ -11,7 +11,6 @@ memory layouts, and buffering options.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Tuple
 
 import torch
 
@@ -47,7 +46,7 @@ class E2EConfig:
     tile_w: int = 32
 
     # Grid shape in tiles (rows, cols).
-    grid_shape: Tuple[int, int] = (2, 2)
+    grid_shape: tuple[int, int] = (2, 2)
 
     # Data type.
     dtype: torch.dtype = torch.bfloat16
@@ -68,7 +67,7 @@ class E2EConfig:
         return self.grid_shape[0] * self.grid_shape[1]
 
     @property
-    def tensor_shape(self) -> Tuple[int, int]:
+    def tensor_shape(self) -> tuple[int, int]:
         """Tensor shape in elements (height, width)."""
         return (self.grid_shape[0] * self.tile_h, self.grid_shape[1] * self.tile_w)
 
@@ -98,7 +97,7 @@ def get_test_dtypes():
 
 def get_dtype_ids():
     """Get list of dtype IDs for pytest parametrization."""
-    return [str(dt).split(".")[-1] for dt in DTYPE_TO_MLIR.keys()]
+    return [str(dt).split(".")[-1] for dt in DTYPE_TO_MLIR]
 
 
 def get_maximum_ulp_threshold(dtype: torch.dtype) -> int:

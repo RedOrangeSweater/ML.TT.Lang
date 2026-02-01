@@ -19,6 +19,7 @@ import os
 os.environ["TTLANG_COMPILE_ONLY"] = "1"
 
 import ttnn
+
 import ttl
 
 
@@ -134,6 +135,7 @@ def add_loop_kernel(lhs, rhs, out):
 
 if __name__ == "__main__":
     import torch
+
     from ttlang_test_utils import require_hardware
 
     print("=== Loop Add Kernel Test ===")

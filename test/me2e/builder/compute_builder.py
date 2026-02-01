@@ -9,13 +9,10 @@ Provides builders for compute threads that execute elementwise operations
 on data in circular buffers. Uses Python MLIR bindings for type safety.
 """
 
-from typing import Callable, List
-
-from ttmlir.ir import Context, Location, Module
+from collections.abc import Callable
 
 import ttl.dialects.ttl as ttl
 
-from ..config import E2EConfig
 from .thread_builder import ThreadBuilder
 
 
@@ -42,7 +39,7 @@ class ComputeThreadBuilder(ThreadBuilder):
         input_cbs = list(range(arity))
         output_cbs = list(range(arity, arity + num_outputs))
 
-        def compute_fn(inputs: List) -> List:
+        def compute_fn(inputs: list) -> list:
             op_func = getattr(ttl, op_str, None)
             if op_func is None:
                 raise ValueError(f"Unknown TTL op: ttl.{op_str}")
@@ -68,9 +65,9 @@ class ComputeThreadBuilder(ThreadBuilder):
     def build_compute_custom(
         self,
         name: str,
-        input_cbs: List[int],
-        output_cbs: List[int],
-        compute_fn: Callable[[List], List],
+        input_cbs: list[int],
+        output_cbs: list[int],
+        compute_fn: Callable[[list], list],
     ) -> None:
         """
         Build compute thread with custom/fused operations via callback.

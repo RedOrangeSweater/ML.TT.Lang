@@ -65,7 +65,8 @@ class TestCopyValidationErrors:
     def test_non_2d_tensor_to_block_fails(self, api: "CBAPI") -> None:
         """Test that copying a non-2D tensor to Block raises ValueError."""
         import torch
-        from python.sim.block import _set_current_thread_type, ThreadType
+
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -85,7 +86,7 @@ class TestCopyValidationErrors:
 
     def test_tile_count_mismatch_tensor_to_block(self, api: "CBAPI") -> None:
         """Test that tile count mismatch raises ValueError (Tensor -> Block)."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -109,7 +110,7 @@ class TestPipeErrorHandling:
 
     def test_pipe_receive_timeout_no_sender(self, api: "CBAPI") -> None:
         """Test that receiving from pipe with no sender times out."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -128,7 +129,7 @@ class TestPipeErrorHandling:
 
     def test_pipe_length_mismatch(self, api: "CBAPI") -> None:
         """Test that pipe receive fails when Block length doesn't match sent data."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -166,7 +167,7 @@ class TestPipeMulticast:
 
     def test_pipe_multiple_receivers(self, api: "CBAPI") -> None:
         """Test that pipe correctly handles multiple receivers."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -221,8 +222,8 @@ class TestTileCountUtility:
 
     def test_tile_count_basic(self) -> None:
         """Test basic tile counting."""
-        from python.sim.copyhandlers import tile_count
         from python.sim.constants import TILE_SHAPE
+        from python.sim.copyhandlers import tile_count
 
         # 64x64 tensor with 32x32 tiles = 4 tiles (2x2 grid)
         assert tile_count((64, 64), TILE_SHAPE) == 4
@@ -255,7 +256,7 @@ class TestContextManagerHandlers:
 
     def test_tensor_to_reserve_context(self, api: "CBAPI") -> None:
         """Test Tensor → ReserveContext handler delegation."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -280,7 +281,7 @@ class TestContextManagerHandlers:
 
     def test_wait_context_to_tensor(self, api: "CBAPI") -> None:
         """Test WaitContext → Tensor handler delegation."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -306,7 +307,7 @@ class TestContextManagerHandlers:
 
     def test_pipe_to_reserve_context(self, api: "CBAPI") -> None:
         """Test Pipe → ReserveContext handler delegation."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -344,7 +345,7 @@ class TestContextManagerHandlers:
 
     def test_wait_context_to_pipe(self, api: "CBAPI") -> None:
         """Test WaitContext → Pipe handler delegation."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -382,7 +383,7 @@ class TestContextManagerHandlers:
 
     def test_reserve_context_to_pipe(self, api: "CBAPI") -> None:
         """Test ReserveContext → Pipe handler delegation."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -426,7 +427,7 @@ class TestPipeCoreRangeTypes:
 
     def test_pipe_single_core_int(self, api: "CBAPI") -> None:
         """Test pipe with single 1D core (int)."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -466,7 +467,7 @@ class TestPipeCoreRangeTypes:
 
     def test_pipe_single_core_tuple(self, api: "CBAPI") -> None:
         """Test pipe with single multi-dimensional core (tuple)."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -508,7 +509,7 @@ class TestPipeCoreRangeTypes:
 
     def test_pipe_rectangular_range(self, api: "CBAPI") -> None:
         """Test pipe with rectangular range (2x2 = 4 receivers)."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -554,7 +555,7 @@ class TestCanWaitBehavior:
 
     def test_tensor_to_block_can_wait_immediate(self, api: "CBAPI") -> None:
         """Test that Tensor → Block copy can_wait returns True immediately."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -573,7 +574,7 @@ class TestCanWaitBehavior:
 
     def test_block_to_tensor_can_wait_immediate(self, api: "CBAPI") -> None:
         """Test that Block → Tensor copy can_wait returns True immediately."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -599,7 +600,7 @@ class TestCanWaitBehavior:
 
     def test_block_to_pipe_can_wait_immediate(self, api: "CBAPI") -> None:
         """Test that Block → Pipe copy can_wait returns True immediately."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -625,7 +626,7 @@ class TestCanWaitBehavior:
 
     def test_pipe_to_block_can_wait_blocks_until_data(self, api: "CBAPI") -> None:
         """Test that Pipe → Block copy can_wait blocks until data is available."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 

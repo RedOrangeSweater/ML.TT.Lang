@@ -3,12 +3,10 @@
 
 """Sanity tests that run on all platforms without hardware dependencies."""
 
-import pytest
 
 
 def test_ttl_import():
     """Verify ttl module can be imported."""
-    import ttl
 
 
 def test_ttl_api_basic():

@@ -4,7 +4,6 @@
 
 import threading
 import time
-from typing import List, Tuple
 
 import pytest
 from test_utils import make_full_tensor, tensors_exact_equal
@@ -38,7 +37,7 @@ def api() -> CBAPI:
 
 
 @pytest.fixture
-def configured_cb(api: CBAPI) -> Tuple[CBAPI, CBID]:
+def configured_cb(api: CBAPI) -> tuple[CBAPI, CBID]:
     """Create a configured CB with capacity 4."""
     cb_id = 0
     api.host_configure_cb(cb_id, 4, shape=(1, 1))
@@ -46,7 +45,7 @@ def configured_cb(api: CBAPI) -> Tuple[CBAPI, CBID]:
 
 
 @pytest.fixture
-def configured_cb8(api: CBAPI) -> Tuple[CBAPI, CBID]:
+def configured_cb8(api: CBAPI) -> tuple[CBAPI, CBID]:
     """Create a configured CB with capacity 8."""
     cb_id = 0
     api.host_configure_cb(cb_id, 8, shape=(1, 1))
@@ -59,7 +58,7 @@ def timeout_api() -> CBAPI:
     return CBAPI(timeout=0.1)
 
 
-def test_circular_buffer_basic_flow(configured_cb8: Tuple[CBAPI, CBID]):
+def test_circular_buffer_basic_flow(configured_cb8: tuple[CBAPI, CBID]):
     api, cb0 = configured_cb8
     stats = api.cb_stats(cb0)
     assert stats.capacity == 8
@@ -122,9 +121,9 @@ def test_per_instance_timeout_effect():
     assert elapsed < 0.4
 
 
-def test_threaded_produce_consume(configured_cb: Tuple[CBAPI, CBID]):
+def test_threaded_produce_consume(configured_cb: tuple[CBAPI, CBID]):
     api, cb0 = configured_cb
-    result: List[List[CBSlot]] = []
+    result: list[list[CBSlot]] = []
 
     def consumer():
         api.cb_wait_front(cb0, 4)
@@ -154,7 +153,7 @@ def test_threaded_produce_consume(configured_cb: Tuple[CBAPI, CBID]):
         assert tensors_exact_equal(val, test_tensors[i])
 
 
-def test_cb_pages_nonblocking(configured_cb8: Tuple[CBAPI, CBID]):
+def test_cb_pages_nonblocking(configured_cb8: tuple[CBAPI, CBID]):
     api, cb2 = configured_cb8
 
     # No pages initially; test non-error behavior
@@ -182,20 +181,20 @@ def test_cb_pages_nonblocking(configured_cb8: Tuple[CBAPI, CBID]):
 
 
 # Focused error tests for page operations
-def test_cb_pages_available_out_of_range_error(configured_cb: Tuple[CBAPI, CBID]):
+def test_cb_pages_available_out_of_range_error(configured_cb: tuple[CBAPI, CBID]):
     api, cb = configured_cb
     with pytest.raises(CBContractError, match="num_tiles must be <= capacity"):
         api.cb_pages_available_at_front(cb, 5)
 
 
-def test_cb_pages_reservable_out_of_range_error(configured_cb: Tuple[CBAPI, CBID]):
+def test_cb_pages_reservable_out_of_range_error(configured_cb: tuple[CBAPI, CBID]):
     api, cb = configured_cb
     with pytest.raises(CBContractError, match="num_tiles must be <= capacity"):
         api.cb_pages_reservable_at_back(cb, 5)
 
 
 def test_cb_pages_reservable_divisibility_error(
-    configured_cb8: Tuple[CBAPI, CBID],
+    configured_cb8: tuple[CBAPI, CBID],
 ):
     api, cb = configured_cb8
     with pytest.raises(
@@ -204,7 +203,7 @@ def test_cb_pages_reservable_divisibility_error(
         api.cb_pages_reservable_at_back(cb, 5)
 
 
-def test_cb_pages_available_divisibility_error(configured_cb8: Tuple[CBAPI, CBID]):
+def test_cb_pages_available_divisibility_error(configured_cb8: tuple[CBAPI, CBID]):
     api, cb = configured_cb8
     api.cb_reserve_back(cb, 4)
     ptr = api.get_write_ptr(cb)
@@ -218,7 +217,7 @@ def test_cb_pages_available_divisibility_error(configured_cb8: Tuple[CBAPI, CBID
 
 
 # Pointer requirement error tests
-def test_get_read_ptr_requires_wait(configured_cb: Tuple[CBAPI, CBID]):
+def test_get_read_ptr_requires_wait(configured_cb: tuple[CBAPI, CBID]):
     api, cb = configured_cb
     with pytest.raises(
         CBContractError, match="get_read_ptr requires prior cb_wait_front"
@@ -226,7 +225,7 @@ def test_get_read_ptr_requires_wait(configured_cb: Tuple[CBAPI, CBID]):
         api.get_read_ptr(cb)
 
 
-def test_get_write_ptr_requires_reserve(configured_cb: Tuple[CBAPI, CBID]):
+def test_get_write_ptr_requires_reserve(configured_cb: tuple[CBAPI, CBID]):
     api, cb = configured_cb
     with pytest.raises(
         CBContractError, match="get_write_ptr requires prior cb_reserve_back"
@@ -238,7 +237,7 @@ def test_multiple_consumers_error(timeout_api: CBAPI):
     api = timeout_api
     cb = 0
     api.host_configure_cb(cb, 4, shape=(1, 1))
-    errors: List[str] = []
+    errors: list[str] = []
 
     def consumer():
         try:
@@ -261,7 +260,7 @@ def test_multiple_producers_error(timeout_api: CBAPI):
     api = timeout_api
     cb = 0
     api.host_configure_cb(cb, 4, shape=(1, 1))
-    errors: List[str] = []
+    errors: list[str] = []
 
     def producer():
         try:
@@ -294,7 +293,7 @@ def test_allocate_cb_id(api: CBAPI):
 
 def test_allocate_cb_id_thread_safe(api: CBAPI):
     """Test that allocate_cb_id is thread-safe."""
-    allocated_ids: List[CBID] = []
+    allocated_ids: list[CBID] = []
     lock = threading.Lock()
 
     def allocate():

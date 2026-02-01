@@ -8,7 +8,6 @@ Tests the copy transfer functionality between tensors and Blocks,
 including error handling and edge cases.
 """
 
-from typing import List
 
 import pytest
 from test_utils import (
@@ -47,7 +46,7 @@ class TestCopyTransaction:
             CopyTransaction(tensor1, tensor2)
 
         # Block → Block not supported
-        buf: List[CBSlot] = [None, None]
+        buf: list[CBSlot] = [None, None]
         block1 = Block(
             buf,
             2,
@@ -77,7 +76,7 @@ class TestTensorToBlockCopy:
         """Test that mismatched tile count raises ValueError."""
         # 3 tiles in tensor but block expects 2 tiles
         source = make_rand_tensor(96, 32)  # 3x1 tiles
-        buf: List[CBSlot] = [None, None, None]
+        buf: list[CBSlot] = [None, None, None]
         block = Block(
             buf,
             3,
@@ -100,7 +99,7 @@ class TestBlockToTensorCopy:
         """Test that shape mismatch between Block and tensor raises ValueError."""
         tile0 = make_ones_tile()
         tile1 = make_zeros_tile()
-        buf: List[CBSlot] = [tile0, tile1]
+        buf: list[CBSlot] = [tile0, tile1]
         block = Block(
             buf,
             2,
@@ -137,7 +136,7 @@ class TestCopyErrorHandling:
     def test_copy_with_empty_block(self) -> None:
         """Test copy behavior with zero-length Block."""
         source = make_ones_tile()
-        buf: List[CBSlot] = []
+        buf: list[CBSlot] = []
         block = Block(
             buf,
             0,
@@ -170,7 +169,7 @@ class TestCopySourceLocking:
     def test_cannot_write_to_block_source_before_wait(self) -> None:
         """Test that writing to Block source before wait() raises RuntimeError."""
         # Create source block with data
-        buf: List[CBSlot] = [make_ones_tile(), make_zeros_tile()]
+        buf: list[CBSlot] = [make_ones_tile(), make_zeros_tile()]
         source_block = Block(
             buf,
             2,
@@ -216,7 +215,7 @@ class TestCopyDestinationLocking:
         source_tensor = make_rand_tensor(64, 32)
 
         # Create destination block (needs to have slots initialized for read to work)
-        buf: List[CBSlot] = [make_ones_tile(), make_zeros_tile()]
+        buf: list[CBSlot] = [make_ones_tile(), make_zeros_tile()]
         dest_block = Block(
             buf,
             2,
@@ -247,7 +246,7 @@ class TestCopyDestinationLocking:
         source_tensor = make_rand_tensor(64, 32)
 
         # Create destination block
-        buf: List[CBSlot] = [None, None]
+        buf: list[CBSlot] = [None, None]
         dest_block = Block(
             buf,
             2,
@@ -283,7 +282,7 @@ class TestMultipleCopyOperations:
     def test_cannot_use_same_block_as_source_and_destination(self) -> None:
         """Test that a block cannot be both source and destination simultaneously."""
         # Create block
-        buf: List[CBSlot] = [make_ones_tile(), make_zeros_tile()]
+        buf: list[CBSlot] = [make_ones_tile(), make_zeros_tile()]
         block = Block(
             buf,
             2,
@@ -637,7 +636,7 @@ class TestCopyTransactionProperties:
 
     def test_is_completed_property(self, api: "CBAPI") -> None:
         """Test that is_completed property correctly reflects transaction state."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -665,7 +664,7 @@ class TestCopyTransactionProperties:
 
     def test_multiple_wait_on_completed_transaction(self, api: "CBAPI") -> None:
         """Test that calling wait() multiple times on completed transaction is safe."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -695,7 +694,7 @@ class TestCopyTransactionProperties:
 
     def test_can_wait_reflects_handler_behavior(self, api: "CBAPI") -> None:
         """Test that can_wait() correctly delegates to handler."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -722,7 +721,7 @@ class TestCopyContextManagerExtraction:
 
     def test_copy_with_context_managers(self, api: "CBAPI") -> None:
         """Test copy operations using context managers with Pipe."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -764,7 +763,7 @@ class TestCopyContextManagerExtraction:
 
     def test_mixed_context_managers_and_tensors(self, api: "CBAPI") -> None:
         """Test mixing context managers with raw tensors."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
         from python.sim.copy import copy
 
@@ -794,9 +793,9 @@ class TestCopyErrorConditions:
 
     def test_copy_creates_transaction_immediately(self, api: "CBAPI") -> None:
         """Test that copy() creates transaction immediately, not on wait()."""
-        from python.sim.block import _set_current_thread_type, ThreadType
+        from python.sim.block import ThreadType, _set_current_thread_type
         from python.sim.cb import CircularBuffer
-        from python.sim.copy import copy, CopyTransaction
+        from python.sim.copy import CopyTransaction, copy
 
         _set_current_thread_type(ThreadType.DM)
 

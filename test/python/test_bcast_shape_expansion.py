@@ -19,9 +19,8 @@ import torch
 
 ttnn = pytest.importorskip("ttnn", exc_type=ImportError)
 
-from ttlang_test_utils import assert_allclose, to_l1
-
 import ttl
+from ttlang_test_utils import assert_allclose, to_l1
 
 TILE_SIZE = 32
 

@@ -12,11 +12,10 @@ Extracts tensor indices from compiled MLIR for proper argument building.
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import List, Tuple
 
-from ttmlir.ir import Module, ArrayAttr, IntegerAttr
-from ttmlir.passes import ttkernel_to_cpp_by_name, get_ttkernel_names
 from ttmlir.dialects import func
+from ttmlir.ir import ArrayAttr, IntegerAttr, Module
+from ttmlir.passes import get_ttkernel_names, ttkernel_to_cpp_by_name
 
 
 class ThreadType(Enum):
@@ -33,12 +32,12 @@ class KernelSpec:
     name: str
     thread_type: ThreadType
     source: str  # C++ source code
-    tensor_indices: List[int] = field(default_factory=list)  # Global tensor indices
-    compile_args: List[int] = field(default_factory=list)
-    runtime_args: List[int] = field(default_factory=list)
+    tensor_indices: list[int] = field(default_factory=list)  # Global tensor indices
+    compile_args: list[int] = field(default_factory=list)
+    runtime_args: list[int] = field(default_factory=list)
 
 
-def _get_kernel_tensor_indices(module: Module, kernel_name: str) -> List[int]:
+def _get_kernel_tensor_indices(module: Module, kernel_name: str) -> list[int]:
     """
     Extract tensor indices from a kernel function's ttl.crta_indices attribute.
 
@@ -66,7 +65,7 @@ def _get_kernel_tensor_indices(module: Module, kernel_name: str) -> List[int]:
 
 def translate_module_to_kernels(
     module: Module,
-) -> Tuple[List[KernelSpec], KernelSpec]:
+) -> tuple[list[KernelSpec], KernelSpec]:
     """
     Translate compiled TTKernel module to C++ kernel specs.
 
@@ -120,7 +119,7 @@ def translate_module_to_kernels(
 
 
 def write_kernels(
-    noc_kernels: List[KernelSpec],
+    noc_kernels: list[KernelSpec],
     compute_kernel: KernelSpec,
     output_dir: Path,
 ) -> dict:

@@ -9,11 +9,8 @@ Provides exception types, comparison functions, and helper utilities.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
-import numpy as np
 import torch
-
 
 # =============================================================================
 # Custom Exceptions for Failure Classification
@@ -120,7 +117,7 @@ class ComparisonResult:
 def compare_tensors(
     golden: torch.Tensor,
     calculated: torch.Tensor,
-    ulp_threshold: Optional[float] = None,
+    ulp_threshold: float | None = None,
 ) -> ComparisonResult:
     """
     Compare two tensors using ULP (Units of Least Precision).

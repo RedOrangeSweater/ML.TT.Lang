@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 
 import torch
+
 from utils.correctness import assert_with_ulp
 
 from ..builder.ttl_builder import build_ttl_module
@@ -74,7 +75,7 @@ class TestAddOperation:
             assert "ttl.tile_add" in output, "Expected ttl.tile_add in compute body"
             assert "#map = affine_map" in output, "Expected affine maps"
 
-            print(f"\n✅ Successfully lowered add to ttl.compute with ttl.tile_add")
+            print("\n✅ Successfully lowered add to ttl.compute with ttl.tile_add")
             print(f"   Output size: {len(output)} chars")
 
         finally:
@@ -94,7 +95,7 @@ class TestAddOperation:
         expected = torch.tensor([5.0, 7.0, 9.0])
         assert_with_ulp(expected, result)
 
-        print(f"\n✅ Torch reference for add works correctly")
+        print("\n✅ Torch reference for add works correctly")
 
     def test_add_different_shapes(self):
         """Verify add works with different grid shapes."""
@@ -110,7 +111,7 @@ class TestAddOperation:
             # Verify grid shape appears in CB types.
             assert f"[{grid_shape[0]}, {grid_shape[1]}]" in mlir_str
 
-        print(f"\n✅ Add operation works with shapes: 1x1, 2x2, 4x4")
+        print("\n✅ Add operation works with shapes: 1x1, 2x2, 4x4")
 
     def test_add_different_dtypes(self):
         """Verify add works with different data types."""
@@ -129,7 +130,7 @@ class TestAddOperation:
             # Verify dtype appears in tile types.
             assert f"tile<32x32, {mlir_dtype}>" in mlir_str
 
-        print(f"\n✅ Add operation works with dtypes: bf16, f32")
+        print("\n✅ Add operation works with dtypes: bf16, f32")
 
 
 if __name__ == "__main__":

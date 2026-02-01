@@ -9,9 +9,8 @@ Tests ULP computation and comparison functions without requiring hardware.
 """
 
 import torch
-import pytest
 
-from .utils import ulp, get_default_ulp_threshold, compare_tensors
+from .utils import compare_tensors, get_default_ulp_threshold, ulp
 
 
 class TestULP:

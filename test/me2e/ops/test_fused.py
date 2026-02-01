@@ -15,20 +15,19 @@ These tests use MLIR string templates to build ttl.compute regions with
 multiple tile operations fused together.
 """
 
-from typing import Tuple
 
 import pytest
 import torch
 from torch import Tensor
 from ttmlir.ir import Context, Module
 
+import ttl.dialects.ttl as ttl
+
 from ..base import ME2ETestBase
-from ..config import E2EConfig
+from ..builder.dm_builder import DMThreadBuilder
 from ..builder.dtype_utils import torch_dtype_to_mlir_str
 from ..builder.thread_builder import generate_layout_attrs
-from ..builder.dm_builder import DMThreadBuilder
-
-import ttl.dialects.ttl as ttl
+from ..config import E2EConfig
 
 
 class FusedOpTestBase(ME2ETestBase):
@@ -45,9 +44,9 @@ class FusedOpTestBase(ME2ETestBase):
     ARITY: int  # Number of inputs
     # Use 1x1 grid for fused tests since they don't have loop support yet.
     # TODO: Add loop support for multi-tile fused operations.
-    INPUT_SHAPE: Tuple[int, int] = (1, 1)
+    INPUT_SHAPE: tuple[int, int] = (1, 1)
     INPUT_DTYPE: torch.dtype = torch.bfloat16
-    INPUT_RANGE: Tuple[float, float] = (-1.0, 1.0)
+    INPUT_RANGE: tuple[float, float] = (-1.0, 1.0)
 
     @pytest.fixture(scope="class")
     def config(self) -> E2EConfig:

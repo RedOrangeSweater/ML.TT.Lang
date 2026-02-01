@@ -20,7 +20,7 @@ Total test cases: 13 ops x 5 shapes = 65 tests
 
 import importlib.util
 import tempfile
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 import torch
@@ -28,6 +28,7 @@ import torch
 ttnn = pytest.importorskip("ttnn", exc_type=ImportError)
 
 from conftest import temp_kernel_files
+
 from ttlang_test_utils import assert_allclose, to_dram
 
 # =============================================================================

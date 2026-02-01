@@ -10,7 +10,6 @@ between DRAM and circular buffers. These are minimal wrappers around the
 base StringBasedThreadBuilder.
 """
 
-from typing import List, Optional
 
 from .thread_builder import StringBasedThreadBuilder
 
@@ -23,7 +22,7 @@ class DMThreadBuilder(StringBasedThreadBuilder):
     Uses string-based generation due to DRAM tensor layout attributes.
     """
 
-    def build_reader(self, num_inputs: int, total_cbs: Optional[int] = None) -> str:
+    def build_reader(self, num_inputs: int, total_cbs: int | None = None) -> str:
         """
         Build reader thread: DRAM tensors -> CBs 0..num_inputs-1.
 
@@ -86,7 +85,7 @@ func.func @{name}({args})
 """
 
     def build_writer(
-        self, output_cbs: List[int], total_cbs: Optional[int] = None
+        self, output_cbs: list[int], total_cbs: int | None = None
     ) -> str:
         """
         Build writer thread: CBs -> DRAM tensors.
