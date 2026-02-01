@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from typing import Literal, Self, cast
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
 from ..constants import MemorySpace
 from ..descriptor_options import (
@@ -26,11 +26,28 @@ from ..descriptor_options import (
 from ..dtype_utils import is_ttnn_tensor
 
 
+def _as_int_grid(grid: tuple[object, ...] | list[object]) -> tuple[int, ...] | list[int]:
+    """Normalize a tuple/list-like grid to int values."""
+    if isinstance(grid, tuple):
+        out: list[int] = []
+        for x in grid:
+            out.append(int(x))  # type: ignore[arg-type]
+        return tuple(out)
+    out = []
+    for x in grid:
+        out.append(int(x))  # type: ignore[arg-type]
+    return out
+
+
 def _resolve_grid(grid, args, kwargs) -> tuple[int, ...] | list[int]:
     """Resolve grid, evaluating callable or 'auto' if needed. Returns concrete grid tuple/list."""
     if callable(grid):
         resolved = grid(*args, **kwargs)
-        return cast(tuple[int, ...] | list[int], resolved)
+        if not isinstance(resolved, (tuple, list)):
+            raise TypeError(
+                f"grid callable must return tuple/list, got {type(resolved).__name__}"
+            )
+        return _as_int_grid(resolved)
     if grid == "auto":
         for arg in args:
             if is_ttnn_tensor(arg) and hasattr(arg, "device"):
@@ -41,7 +58,20 @@ def _resolve_grid(grid, args, kwargs) -> tuple[int, ...] | list[int]:
             "grid='auto' requires at least one ttnn tensor argument "
             "to determine device compute grid"
         )
-    return cast(tuple[int, ...] | list[int], grid)
+    if not isinstance(grid, (tuple, list)):
+        raise TypeError(
+            f"grid must be tuple/list/callable/'auto', got {type(grid).__name__}"
+        )
+    return _as_int_grid(grid)
+
+
+def _none_to_list(v: object) -> list[object]:
+    """Pydantic BeforeValidator: normalize None to empty list."""
+    return [] if v is None else v  # type: ignore[return-value]
+
+
+IndexingMaps = Annotated[list[Callable[..., object]], BeforeValidator(_none_to_list)]
+IteratorTypes = Annotated[list[str], BeforeValidator(_none_to_list)]
 
 
 class ProgramOptions(BaseModel):
@@ -94,18 +124,12 @@ class ProgramDecoratorParams(BaseModel):
         default=None,
         description="Grid dimensions or callable (required for TTNN run)",
     )
-    indexing_maps: list[Callable[..., object]] | None = Field(
-        default=None, description="Indexing maps (normalized to [] if None)"
+    indexing_maps: IndexingMaps = Field(
+        default_factory=list, description="Indexing maps (None normalized to [])"
     )
-    iterator_types: list[str] | None = Field(
-        default=None, description="Iterator types (normalized to [] if None)"
+    iterator_types: IteratorTypes = Field(
+        default_factory=list, description="Iterator types (None normalized to [])"
     )
-
-    @field_validator("indexing_maps", "iterator_types", mode="before")
-    @classmethod
-    def _none_to_list(cls, v: object) -> list[object]:
-        """Normalize None to empty list so fields are always list after validation."""
-        return [] if v is None else v  # type: ignore[return-value]
     options: ProgramOptions = Field(
         default_factory=lambda: ProgramOptions(),
         description="Program options (num_outs, memory_space, tiled, etc.)",
