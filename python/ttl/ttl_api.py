@@ -33,8 +33,7 @@ from .descriptor_options import (
     CompiledTTNNKernel,
 )
 from .layered.context import ProgramInvocationContext, RunContext
-from .layered.decorators import ensure_ctx_field
-from .layered.program.compile_cached import compile_cached
+from .layered.decorators import cache_by_key, ensure_ctx_field, store_to_ctx
 from .layered.program.ensure_run_request import ctx_request_ensure_run_request
 from .layered.run_decorators import (
     ctx_config_resolve_engine_config,
@@ -194,6 +193,43 @@ def compile_kernel(ctx: RunContext) -> CompiledTTNNKernel | None:
     return _compile_kernel_impl(ctx.compile_req)
 
 
+def _compute_program_cache_key(ctx: ProgramInvocationContext) -> tuple[object, ...]:
+    return make_cache_key(
+        ctx.args,
+        fp32_dest_acc_en=ctx.params.options.fp32_dest_acc_en,
+        dst_full_sync_en=ctx.params.options.dst_full_sync_en,
+    )
+
+
+@ensure_ctx_field(
+    "cache_key",
+    _compute_program_cache_key,
+    when=lambda ctx: ctx.compiled is None,
+)
+@store_to_ctx("compiled", skip_if_set=True)
+@cache_by_key("cache", "cache_key")
+def compile_cached(ctx: ProgramInvocationContext) -> CompiledTTNNKernel | None:
+    """Compile with per-kernel cache; wrapping logic is handled by decorators."""
+    program_hash = ctx.program_hash
+    grid = _resolve_grid(ctx.params.grid, ctx.args, ctx.kwargs)
+    kernel_req = KernelCompileRequest(
+        grid=grid,
+        program_hash=program_hash,
+        indexing_maps=ctx.params.indexing_maps,
+        iterator_types=ctx.params.iterator_types,
+        options=ctx.params.options,
+    )
+    compile_req = CompileKernelRequest(
+        program=ctx.program,
+        args=ctx.args,
+        kwargs=ctx.kwargs,
+        compile_request=kernel_req,
+        thread_registry=get_thread_registry(),
+        engine_config=None,
+    )
+    return _compile_kernel_impl(compile_req)
+
+
 def _pykernel_gen_params_adapter(
     fn: Callable[[ProgramDecoratorParams], Callable],
 ) -> Callable:
@@ -210,32 +246,7 @@ def _pykernel_gen_params_adapter(
         objective: Literal["latency", "throughput", "balanced"] | None = None,
         placement: Literal["auto", "manual"] | None = None,
     ) -> Callable:
-        """
-        Decorator for generating TTL kernels from Python functions.
-
-        This decorator compiles Python functions into TTL dialect operations,
-        handling thread compilation, stream creation, and pipeline execution.
-        Kernels are compiled to C++ for execution via ttnn.generic_op.
-
-        Args:
-            grid: Grid dimensions as tuple (e.g., (2, 2)) or callable
-            indexing_maps: List of lambda functions for indexing (optional)
-            iterator_types: List of iterator types ("parallel", "reduction")
-            num_outs: Number of output arguments
-            memory_space: MemorySpace (L1 or DRAM)
-            tiled: Whether to use tiled layout
-            fp32_dest_acc_en: Optional override for fp32_dest_acc_en
-            dst_full_sync_en: Optional override for dst_full_sync_en
-            objective: Optional policy \"latency\" | \"throughput\" | \"balanced\"
-                (stored, not used yet)
-            placement: Optional policy "auto" | "manual" (stored, not used yet)
-
-        Returns:
-            Decorated function that compiles and executes the kernel
-
-        Raises:
-            AssertionError: If required parameters are missing or invalid
-        """
+        """Public @ttl.program API: build ProgramDecoratorParams and delegate."""
         params = ProgramDecoratorParams(
             grid=grid,
             indexing_maps=indexing_maps,  # type: ignore[arg-type]
