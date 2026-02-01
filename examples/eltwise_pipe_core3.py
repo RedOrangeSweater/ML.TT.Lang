@@ -3,10 +3,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # type: ignore
 import math
-import ttl
+
 import ttnn
-from sim.typedefs import Pipe
+
+import ttl
 from sim.testing import assert_pcc
+from sim.typedefs import Pipe
 
 
 @ttl.kernel(

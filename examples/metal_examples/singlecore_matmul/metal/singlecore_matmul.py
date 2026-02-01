@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 import pytest
 import torch
+import ttnn
 
 from utils.correctness import assert_with_ulp
-import ttnn
 
 
 @pytest.mark.parametrize(

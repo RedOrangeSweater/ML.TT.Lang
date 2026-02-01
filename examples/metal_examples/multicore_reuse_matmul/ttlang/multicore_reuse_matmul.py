@@ -4,8 +4,9 @@
 import pytest
 import torch
 import ttnn
+
 from metal_examples.utils import assert_with_ulp
-from ttl import Program, copy, core, make_circular_buffer_like
+from ttl import copy, make_circular_buffer_like
 
 
 @ttl.kernel(grid=(13, 10))

@@ -10,8 +10,9 @@ from the start of the augmented function with the same arguments.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
 
 class LazyLoadRequired(Exception):

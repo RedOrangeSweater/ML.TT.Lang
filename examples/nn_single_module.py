@@ -10,8 +10,9 @@ but using the modular API. Minimal boilerplate: wrap program + grid, then call.
 """
 
 import torch
-import ttl
 import ttnn
+
+import ttl
 
 
 @ttl.program(grid=(1, 1))

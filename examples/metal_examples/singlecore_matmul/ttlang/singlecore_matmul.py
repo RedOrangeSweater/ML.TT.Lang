@@ -2,15 +2,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 # up to tt-lang spec, not intended to compile or run currently
-import sys
-from pathlib import Path
-import ttnn
-import pytest
 import torch
+import ttnn
 
 import ttl
-from ttl import Program, make_circular_buffer_like, copy
-
+from ttl import copy, make_circular_buffer_like
 from utils.correctness import assert_with_ulp
 
 

@@ -9,8 +9,8 @@ defined in the DSL are materialized as stream_layout ops immediately
 in the Python-generated IR, rather than being added later by a pass.
 """
 import torch
+
 from ttl.ttl_api import *
-from utils.correctness import assert_allclose
 
 
 @pykernel_gen(

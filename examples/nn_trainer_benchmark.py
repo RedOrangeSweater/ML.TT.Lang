@@ -10,6 +10,7 @@ is available, TTLANG_COMPILE_ONLY=1 is used so the example still runs.
 """
 
 import torch
+
 import ttl
 import ttl.nn
 

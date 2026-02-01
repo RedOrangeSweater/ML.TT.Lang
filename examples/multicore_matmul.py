@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # type: ignore
 
-import ttl
 import ttnn
+
+import ttl
 from sim.testing import assert_pcc
 
 
@@ -149,7 +150,7 @@ def main() -> None:
     print(f"Matrix multiplication: ({M}, {K}) @ ({K}, {N}) = ({M}, {N})")
     print(f"Tiles: A={M//32}x{K//32}, B={K//32}x{N//32}, Out={M//32}x{N//32}")
     print(f"Total output tiles: {(M//32) * (N//32)}")
-    print(f"Grid: 8x8 = 64 cores")
+    print("Grid: 8x8 = 64 cores")
 
     tt_lang_multicore_matmul(a, b, out)
 

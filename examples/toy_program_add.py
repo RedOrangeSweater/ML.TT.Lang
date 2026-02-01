@@ -11,8 +11,9 @@ decorator name differs (program instead of kernel).
 """
 
 import torch
-import ttl
 import ttnn
+
+import ttl
 
 
 @ttl.program(grid=(1, 1))

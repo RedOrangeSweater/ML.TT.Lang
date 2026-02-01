@@ -4,13 +4,12 @@
 # up to tt-lang spec, not intended to compile or run currently
 import pytest
 import torch
-
 import ttnn
-import ttl
-from ttl import Program, make_circular_buffer_like, copy
 
-from utils.correctness import assert_with_ulp
+import ttl
+from ttl import copy, make_circular_buffer_like
 from utils.block_allocation import split_work_to_cores
+from utils.correctness import assert_with_ulp
 
 
 def get_number_of_cores(grid_range):

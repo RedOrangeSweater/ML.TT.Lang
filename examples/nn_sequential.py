@@ -12,8 +12,9 @@ Sequential(module0, module1, ...) and call with initial tensors.
 """
 
 import torch
-import ttl
 import ttnn
+
+import ttl
 
 
 @ttl.program(grid=(1, 1))

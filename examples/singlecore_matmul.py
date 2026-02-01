@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # type: ignore
 
-import ttl
 import ttnn
+
+import ttl
 from sim.testing import assert_pcc
 
 

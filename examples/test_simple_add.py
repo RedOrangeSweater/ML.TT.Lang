@@ -9,6 +9,7 @@ Tests the complete data path: host → L1 → compute → L1 → host
 """
 
 import torch
+
 from ttl.ttl_api import *
 
 
@@ -74,7 +75,7 @@ if __name__ == "__main__":
     print(f"out[0:3, 0:3] =\n{out[0:3, 0:3]}")
     print(f"expected[0:3, 0:3] =\n{expected[0:3, 0:3]}")
 
-    print(f"\nStats:")
+    print("\nStats:")
     print(
         f"  out min/max/mean: {out.min().item():.4f} / {out.max().item():.4f} / {out.mean().item():.4f}"
     )

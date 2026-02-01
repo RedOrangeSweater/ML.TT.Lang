@@ -11,8 +11,9 @@ Same pattern as test/python/simple_bcast.py; decorator is @ttl.program.
 """
 
 import torch
-import ttl
 import ttnn
+
+import ttl
 
 
 @ttl.program(grid=(1, 1))

@@ -11,8 +11,9 @@ as examples/tutorial/multicore_grid_auto.py; decorator is @ttl.program.
 """
 
 import torch
-import ttl
 import ttnn
+
+import ttl
 
 TILE_SIZE = 32
 GRANULARITY = 4

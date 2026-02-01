@@ -1,11 +1,10 @@
 # SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
 #
 # SPDX-License-Identifier: Apache-2.0
-import matplotlib.pyplot as plt
-import numpy as np
 import pytest
 import torch
 import ttnn
+
 from ttl.utils.block_allocation import get_large_matmul_params
 from ttl.utils.correctness import assert_with_ulp
 

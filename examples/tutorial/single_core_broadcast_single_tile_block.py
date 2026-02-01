@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
 #
 # SPDX-License-Identifier: Apache-2.0
-import ttnn
 import torch
+import ttnn
 
 
 def from_torch(tensor: ttnn.Tensor):

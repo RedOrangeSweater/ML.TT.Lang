@@ -37,8 +37,8 @@ def run() -> None:
     install_lazy_slot(boot_module, "bar", load_and_patch)
 
     # Get the lazy slots (wrappers) and call them; first call loads from impls/
-    foo = getattr(boot_module, "foo")
-    bar = getattr(boot_module, "bar")
+    foo = boot_module.foo
+    bar = boot_module.bar
 
     result_foo = foo(2, 3)  # placeholder -> load foo from impls/foo.py -> retry -> 5
     result_bar = bar(

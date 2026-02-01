@@ -4,8 +4,9 @@
 # type: ignore
 import math
 
-import ttl
 import ttnn
+
+import ttl
 from sim.testing import assert_pcc
 
 
