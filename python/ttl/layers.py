@@ -16,13 +16,12 @@ See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
 
 from __future__ import annotations
 
-# Program layer: spec and compile request
-from .program import (
-    KernelCompileRequest,
-    ProgramOptions,
-    ProgramSpec,
+# Compile layer: compile requests and options
+from .compile import (
+    ThreadConfigBuildRequest,
+    TTNNKernelCompileOptions,
+    TTNNKernelCompileRequest,
 )
-from .ttl_api import run
 
 # Graph layer: op graph and schedule plan
 from .graph import (
@@ -31,11 +30,11 @@ from .graph import (
     Topology,
 )
 
-# Compile layer: compile requests and options
-from .compile import (
-    ThreadConfigBuildRequest,
-    TTNNKernelCompileOptions,
-    TTNNKernelCompileRequest,
+# Program layer: spec and compile request
+from .program import (
+    KernelCompileRequest,
+    ProgramOptions,
+    ProgramSpec,
 )
 
 # Runtime layer: kernel spec and run request
@@ -45,6 +44,7 @@ from .runtime import (
     KernelSpec,
     RunKernelRequest,
 )
+from .ttl_api import run
 
 __all__ = [
     # Program

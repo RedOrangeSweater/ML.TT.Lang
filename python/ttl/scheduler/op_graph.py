@@ -11,9 +11,7 @@ Optional resource annotation (color) per node: NOC, SFPU, FPU, etc.
 
 from __future__ import annotations
 
-
 from pydantic import BaseModel, Field
-
 
 # Thread type to op_type/resource mapping (avoids long if-chains in build_op_graph_from_threads)
 _THREAD_TYPE_TO_OP: dict[str, tuple[str, str]] = {

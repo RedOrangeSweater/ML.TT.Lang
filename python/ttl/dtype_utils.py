@@ -14,11 +14,10 @@ getattr(ttnn.DataType, dtype_name) when needed.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, Union
+from typing import Annotated
 
 import torch
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, computed_field
-
 from ttmlir.dialects import ttcore
 
 from .constants import MemorySpace
@@ -94,7 +93,10 @@ class TTNNMemoryConfigProxy(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     tensor: object = Field(..., description="TTNN tensor or any object (non-TTNN uses default).")
-    default: MemorySpace = Field(default="unknown", description="MemorySpace when not TTNN or unparseable.")
+    default: MemorySpace = Field(
+        default=MemorySpace.UNKNOWN,
+        description="MemorySpace when not TTNN or unparseable.",
+    )
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -105,9 +107,9 @@ class TTNNMemoryConfigProxy(BaseModel):
         if hasattr(mem_config, "buffer_type"):
             s = str(mem_config.buffer_type)
             if "L1" in s:
-                return "L1"
+                return MemorySpace.L1
             if "DRAM" in s:
-                return "DRAM"
+                return MemorySpace.DRAM
         return self.default
 
     @computed_field  # type: ignore[prop-decorator]
@@ -168,7 +170,7 @@ def _name_to_ttcore(name: str) -> ttcore.DataType:
 
 
 def _coerce_to_ttcore(
-    v: Union[torch.dtype, ttcore.DataType, str, object],
+    v: torch.dtype | ttcore.DataType | str | object,
 ) -> ttcore.DataType:
     """Coerce torch/ttcore/name/object-with-.name to ttcore.DataType. No ttnn."""
     if isinstance(v, ttcore.DataType):
@@ -179,14 +181,14 @@ def _coerce_to_ttcore(
         return _name_to_ttcore(v)
     # Accept any object with .name that matches a canonical dtype (e.g. ttnn.DataType at boundary).
     if hasattr(v, "name"):
-        name = getattr(v, "name")
+        name = v.name
         if isinstance(name, str) and name.upper() in _NAME_TO_TTCORE:
             return _NAME_TO_TTCORE[name.upper()]
     raise ValueError(f"Cannot coerce to ttcore.DataType: {v}")
 
 
 def _coerce_to_dtype_name(
-    v: Union[torch.dtype, ttcore.DataType, str, DTypeName, object],
+    v: torch.dtype | ttcore.DataType | str | DTypeName | object,
 ) -> DTypeName:
     """Coerce to DTypeName. No ttnn."""
     if isinstance(v, DTypeName):
@@ -205,13 +207,13 @@ def _coerce_to_dtype_name(
         tc = _coerce_to_ttcore(v)
         return DTypeName(_TTCORE_TO_NAME[tc])
     if hasattr(v, "name"):
-        name = getattr(v, "name")
+        name = v.name
         if isinstance(name, str):
             return DTypeName(name.upper())
     raise ValueError(f"Cannot coerce to DTypeName: {v}")
 
 
-def _coerce_to_tile_bytes(v: Union[torch.dtype, ttcore.DataType, str, object]) -> int:
+def _coerce_to_tile_bytes(v: torch.dtype | ttcore.DataType | str | object) -> int:
     """Coerce to tile size in bytes. No ttnn."""
     tc = _coerce_to_ttcore(v)
     if tc in _TTCORE_TO_TILE_BYTES:

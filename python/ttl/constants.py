@@ -6,10 +6,18 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from enum import StrEnum
 
-MemorySpace = Literal["L1", "DRAM", "unknown"]
-# Device-supported memory spaces only (L1/DRAM); "unknown" is for non-TTNN or unparseable.
-SUPPORTED_MEMORY_SPACES: frozenset[Literal["L1", "DRAM"]] = frozenset({"L1", "DRAM"})
+
+class MemorySpace(StrEnum):
+    """Memory space for tensors: L1, DRAM, or unknown (non-TTNN/unparseable)."""
+
+    L1 = "L1"
+    DRAM = "DRAM"
+    UNKNOWN = "unknown"
+
+
+# Device-supported memory spaces only (L1/DRAM).
+SUPPORTED_MEMORY_SPACES: frozenset[MemorySpace] = frozenset({MemorySpace.L1, MemorySpace.DRAM})
 
 DEFAULT_TILE_SIZE = 32

@@ -11,7 +11,6 @@ Output: plan (placement of each op on core); stub always assigns all to (0,0) fo
 
 from __future__ import annotations
 
-
 from pydantic import BaseModel, Field
 
 from .op_graph import OpGraph

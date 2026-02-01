@@ -11,14 +11,13 @@ source code snippets with ASCII arrows pointing to the error location.
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Tuple
 
 from .settings import settings_ttlang
 
 
 def find_variable_assignment(
-    source_lines: List[str], var_name: str, before_line: int
-) -> Optional[int]:
+    source_lines: list[str], var_name: str, before_line: int
+) -> int | None:
     """Find the line where a variable was assigned, searching backwards.
 
     Args:
@@ -55,7 +54,7 @@ class SourceDiagnostic:
            |
     """
 
-    def __init__(self, source_lines: List[str], filename: str):
+    def __init__(self, source_lines: list[str], filename: str):
         """Initialize with source code and filename.
 
         Args:
@@ -72,7 +71,7 @@ class SourceDiagnostic:
         message: str,
         label: str = "error",
         span_length: int = 1,
-        note: Optional[str] = None,
+        note: str | None = None,
     ) -> str:
         """Format an error with source context.
 
@@ -115,7 +114,7 @@ class SourceDiagnostic:
         return "\n".join(result)
 
     def format_error_chain(
-        self, errors: List[Tuple[int, int, str, Optional[str]]]
+        self, errors: list[tuple[int, int, str, str | None]]
     ) -> str:
         """Format multiple related errors.
 
@@ -134,7 +133,7 @@ class SourceDiagnostic:
         return "\n\n".join(results)
 
 
-def parse_mlir_location(loc_str: str) -> Optional[Tuple[str, int, int]]:
+def parse_mlir_location(loc_str: str) -> tuple[str, int, int] | None:
     """Parse an MLIR location string to extract file, line, and column.
 
     MLIR locations can appear in several formats:
@@ -161,7 +160,7 @@ def parse_mlir_location(loc_str: str) -> Optional[Tuple[str, int, int]]:
     return None
 
 
-def extract_location_from_mlir_error(error_msg: str) -> Optional[Tuple[str, int, int]]:
+def extract_location_from_mlir_error(error_msg: str) -> tuple[str, int, int] | None:
     """Extract source location from an MLIR error message.
 
     MLIR errors often include location information like:
@@ -189,19 +188,19 @@ def extract_location_from_mlir_error(error_msg: str) -> Optional[Tuple[str, int,
     return None
 
 
-def _read_file_lines(filepath: str) -> Optional[List[str]]:
+def _read_file_lines(filepath: str) -> list[str] | None:
     """Read source lines from a file if it exists."""
     try:
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             return f.read().splitlines()
-    except (IOError, OSError):
+    except OSError:
         return None
 
 
 def format_mlir_error(
     error_msg: str,
-    source_lines: Optional[List[str]] = None,
-    source_file: Optional[str] = None,
+    source_lines: list[str] | None = None,
+    source_file: str | None = None,
 ) -> str:
     """Format an MLIR error with source context if location is available.
 
@@ -261,7 +260,7 @@ def _extract_core_message(error_msg: str) -> str:
     return error_msg.split("\n")[0].strip()
 
 
-def _extract_note(error_msg: str) -> Optional[str]:
+def _extract_note(error_msg: str) -> str | None:
     """Extract any note from the MLIR error message."""
     match = re.search(r"note: (.+?)(?:\n|$)", error_msg)
     if match:
@@ -273,7 +272,7 @@ def format_python_error(
     error: Exception,
     source_file: str,
     line: int,
-    source_lines: Optional[List[str]] = None,
+    source_lines: list[str] | None = None,
 ) -> str:
     """Format a Python error with source context.
 
@@ -311,10 +310,10 @@ class TTLangCompileError(Exception):
     def __init__(
         self,
         message: str,
-        source_file: Optional[str] = None,
-        line: Optional[int] = None,
-        col: Optional[int] = None,
-        source_lines: Optional[List[str]] = None,
+        source_file: str | None = None,
+        line: int | None = None,
+        col: int | None = None,
+        source_lines: list[str] | None = None,
     ):
         super().__init__(message)
         self.source_file = source_file

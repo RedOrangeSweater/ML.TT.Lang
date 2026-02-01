@@ -21,20 +21,20 @@ Math operations:
     ttl.math.sqrt(), ttl.math.exp(), etc.
 """
 
-from .ttl_api import (
-    ProgramSpec,
-    pykernel_gen as kernel,
-    program,
-    compute,
-    datamovement,
-    Program,
-    run,
-)
-from .circular_buffer import make_circular_buffer_like
-from .operators import copy, core, grid_size
-
 # Math operations namespace
 from . import ttl_math as math
+from .operators import copy, core, grid_size
+from .ttl_api import (
+    Program,
+    ProgramSpec,
+    compute,
+    datamovement,
+    program,
+    run,
+)
+from .ttl_api import (
+    pykernel_gen as kernel,
+)
 
 __all__ = [
     "Program",

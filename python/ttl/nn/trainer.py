@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from .callbacks import Callback, CallbackAdapter
+from .callbacks import Callback
 from .config import TrainerConfig
 from .logger import Logger, StdoutLogger
 

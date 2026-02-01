@@ -6,15 +6,20 @@ from __future__ import annotations
 
 import ast
 import inspect
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..compile.source_context import CompilationSourceContext
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pykernel._src.kernel_ast import TTCompilerBase
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import *
 
-from ..constants import DEFAULT_TILE_SIZE, MemorySpace, SUPPORTED_MEMORY_SPACES
+from pykernel._src.kernel_ast import TTCompilerBase
+
+from ..constants import DEFAULT_TILE_SIZE, SUPPORTED_MEMORY_SPACES, MemorySpace
 from ..diagnostics import TTLangCompileError
 from ..dialects import ttl
-from ..dtype_utils import is_ttnn_tensor, TensorDtype
+from ..dtype_utils import TensorDtype, is_ttnn_tensor
 from ..layouts import TTNNLayoutConfig, create_ttnn_layout
 from ..ttl_utils import get_thread_type_string
 from .auto_profile import (
@@ -108,9 +113,9 @@ class TTLCompilerConfig(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    source_context: CompilationSourceContext | None = None  # lazy: ..compile.source_context
+    source_context: CompilationSourceContext | None = None
     grid: list[int] = Field(default_factory=lambda: [1, 1])
-    memory_space: MemorySpace = "L1"
+    memory_space: MemorySpace = MemorySpace.L1
     tiled: bool = True
     debug_locations: bool = False
     source_file: str = Field("<unknown>", validation_alias="_source_file")
@@ -139,6 +144,7 @@ class TTLCompilerConfig(BaseModel):
         data.setdefault("_source_lines", ctx.source_lines)
         data.setdefault("_line_offset", ctx.line_offset)
         data.setdefault("debug_locations", ctx.debug_locations)
+        data.setdefault("_globals", ctx.fn_globals)
         return data
 
 
@@ -217,7 +223,7 @@ class TTLGenericCompiler(TTCompilerBase):
             )
 
         sym_table = self.symbol_tables[-1]
-        for elt, val in zip(targets, value):
+        for elt, val in zip(targets, value, strict=False):
             if not isinstance(elt, ast.Name):
                 raise ValueError("Tuple unpacking requires simple variable names")
             sym_table[elt.id] = val

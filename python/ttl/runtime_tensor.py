@@ -40,9 +40,9 @@ class RuntimeTensor(Protocol):
 
 def _validate_runtime_tensor_type(t: type) -> None:
     """Check that type t has device() and memory_config(). No ttnn import."""
-    if not hasattr(t, "device") or not callable(getattr(t, "device")):
+    if not hasattr(t, "device") or not callable(t.device):
         raise TypeError(f"{t!r} has no callable device()")
-    if not hasattr(t, "memory_config") or not callable(getattr(t, "memory_config")):
+    if not hasattr(t, "memory_config") or not callable(t.memory_config):
         raise TypeError(f"{t!r} has no callable memory_config()")
 
 

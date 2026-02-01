@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import List, Tuple, Union
+from typing import Union
 
 from ttmlir.dialects import arith
 from ttmlir.ir import RankedTensorType, Type
@@ -28,21 +28,21 @@ def _get_constant_int(val):
 
 
 # Type aliases for common patterns
-CoreCoordinate = Tuple[int, int]
-IndexedTensor = Union["TensorBlock", Tuple["TensorBlock", Tuple[int, ...]]]
+CoreCoordinate = tuple[int, int]
+IndexedTensor = Union["TensorBlock", tuple["TensorBlock", tuple[int, ...]]]
 
 # Module-level grid storage for grid_size() function
 # Sentinel value (-1, -1) makes uninitialized reads obvious
-_current_grid: Tuple[int, int] = (-1, -1)
+_current_grid: tuple[int, int] = (-1, -1)
 
 
-def _set_current_grid(grid: Tuple[int, int]) -> None:
+def _set_current_grid(grid: tuple[int, int]) -> None:
     """Set the current grid dimensions. Called before compiling threads."""
     global _current_grid
     _current_grid = grid
 
 
-def _get_current_grid() -> Tuple[int, int]:
+def _get_current_grid() -> tuple[int, int]:
     """Get the current grid dimensions."""
     return _current_grid
 
@@ -330,7 +330,7 @@ def signpost(name: str):
 
 
 @syntax("broadcast")
-def broadcast(input: TensorBlock, output: TensorBlock, dims: List[int]) -> TensorBlock:
+def broadcast(input: TensorBlock, output: TensorBlock, dims: list[int]) -> TensorBlock:
     """
     Broadcast over specified dimensions.
 

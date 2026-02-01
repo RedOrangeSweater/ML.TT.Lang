@@ -4,9 +4,8 @@
 
 """Layout creation utilities for tensor distribution across cores."""
 
-from ttmlir.dialects import ttcore, ttnn
-
 from pydantic import BaseModel, ConfigDict, Field
+from ttmlir.dialects import ttcore, ttnn
 
 from .constants import DEFAULT_TILE_SIZE
 from .dtype_utils import TensorDtype

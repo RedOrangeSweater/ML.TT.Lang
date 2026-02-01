@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+
 from pydantic import BaseModel
 
-from .op_graph import OpGraph, OpGraphSchema, build_op_graph_from_threads
+from .op_graph import OpGraphSchema, build_op_graph_from_threads
 from .scheduler_stub import SchedulePlan, schedule_stub
 from .topology import Topology, build_topology_from_grid
 

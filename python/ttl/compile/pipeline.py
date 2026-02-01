@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import inspect
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from types import CellType
-from typing import Callable, Protocol
+from typing import Protocol
 
-import ttl._mlir_libs._ttlang  # noqa: F401  # Register tt-lang passes
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from ttmlir.ir import (
     ArrayAttr,
     Context,
@@ -32,6 +32,8 @@ from ttmlir.ir import (
     PassManager,
 )
 
+import ttl._mlir_libs._ttlang  # noqa: F401  # Register tt-lang passes
+
 from .._src.ttl_ast import TTLGenericCompiler
 from ..circular_buffer import CircularBuffer, get_cb_count
 from ..constants import SUPPORTED_MEMORY_SPACES
@@ -39,6 +41,7 @@ from ..descriptor_options import (
     CompiledKernelArtifacts,
     CompiledProfilingSource,
     CompiledRuntimeContext,
+    CompiledTTNNKernel,
     CoreRangeSetOptions,
     KernelWriteRequest,
     ProgramConfig,
@@ -57,21 +60,26 @@ from ..diagnostics import (
     format_python_error,
 )
 from ..dtype_utils import TTNNMemoryConfigProxy, is_ttnn_tensor
-from ..program import CompileKernelRequest, KernelCompileRequest, Program
+from ..program import CompileKernelRequest, Program
 from ..settings import settings_ttlang
 from ..ttl_utils import tmp_dir
+
 try:
     import ttnn  # type: ignore[import-untyped]
 except (ModuleNotFoundError, ImportError):
     ttnn = None
 
+# Optional: get_ttkernel_names, ttkernel_to_cpp_by_name, get_ttkernel_arg_spec
+from ttmlir.dialects import ttkernel
+from ttmlir.passes import (
+    get_ttkernel_arg_spec,
+    get_ttkernel_names,
+    ttkernel_to_cpp_by_name,
+)
+
 from .._src.auto_profile import is_auto_profile_enabled
 from .._src.tensor_registry import register_tensor_name, register_tensor_source
 from ..config import HAS_TT_DEVICE
-
-# Optional: get_ttkernel_names, ttkernel_to_cpp_by_name, get_ttkernel_arg_spec
-from ttmlir.dialects import ttkernel
-from ttmlir.passes import get_ttkernel_arg_spec, get_ttkernel_names, ttkernel_to_cpp_by_name
 
 
 class ThreadRegistryLike(Protocol):
@@ -211,7 +219,7 @@ def _track_tensor_sources(
     try:
         with open(source_file) as sf:
             source_lines = sf.read().splitlines()
-    except (OSError, IOError):
+    except OSError:
         return
     call_line = None
     for frame_info in inspect.stack():
@@ -221,7 +229,7 @@ def _track_tensor_sources(
     if call_line is None:
         return
     param_names = list(f_params) if hasattr(f_params, "__iter__") and not isinstance(f_params, (str, bytes)) else []
-    for param_name, arg in zip(param_names, args):
+    for param_name, arg in zip(param_names, args, strict=False):
         if not is_ttnn_tensor(arg):
             continue
         assign_line = find_variable_assignment(source_lines, param_name, call_line)
@@ -235,10 +243,6 @@ def _compile_ttnn_kernel(req: TTNNKernelCompileRequest) -> object | None:
 
     Builds kernel paths, configs, and CB descriptors from compiled MLIR module.
     """
-    from ..descriptor_options import (
-        CompiledTTNNKernel,
-    )
-
     # Validation runs in TTNNKernelCompileRequest model_validator (Pydantic).
     kernel_info = get_ttkernel_names(req.input.module)
     opts = req.compile_options or TTNNKernelCompileOptions()
@@ -373,7 +377,7 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
                 memory_space = detected
                 print(f"[TTNN interop] Detected {memory_space} memory space")
 
-    for idx, (param_name, arg) in enumerate(zip(f_params, args)):
+    for idx, (param_name, arg) in enumerate(zip(f_params, args, strict=False)):
         register_tensor_name(arg, param_name, index=idx)
     _track_tensor_sources(f_params, args, kernel_source_file)
 
@@ -493,15 +497,14 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
                 ct.func_entry.operation.detach_from_parent()
                 module.body.append(ct.func_entry)
 
-        initial_mlir_path = settings_ttlang.initial_mlir
-        if initial_mlir_path:
-            with open(initial_mlir_path, "w") as fd:
-                module.operation.print(
-                    file=fd,
-                    enable_debug_info=print_debug_locations,
-                    print_generic_op_form=False,
-                )
-            print(f"SAVED INITIAL TO {initial_mlir_path}")
+        from .stages import CompileStageContext, get_initial_stages, run_stages
+
+        stage_ctx = CompileStageContext(
+            module=module,
+            initial_mlir_path=settings_ttlang.initial_mlir,
+            print_debug_locations=print_debug_locations,
+        )
+        run_stages(get_initial_stages(), stage_ctx, settings_ttlang)
 
         verify = True
         set_compute_config_pass = "func.func(ttl-set-compute-kernel-config)"
@@ -586,15 +589,14 @@ def _compile_kernel(req: CompileKernelRequest) -> object | None:
             formatted = format_mlir_error(error_msg, source_lines, source_file)
             raise RuntimeError(formatted) from None
 
-        final_mlir_path = settings_ttlang.final_mlir
-        if final_mlir_path:
-            with open(final_mlir_path, "w") as fd:
-                module.operation.print(
-                    file=fd,
-                    enable_debug_info=print_debug_locations,
-                    print_generic_op_form=False,
-                )
-            print(f"SAVED FINAL TO {final_mlir_path}")
+        from .stages import CompileStageContext, get_final_stages, run_stages
+
+        final_stage_ctx = CompileStageContext(
+            module=module,
+            final_mlir_path=settings_ttlang.final_mlir,
+            print_debug_locations=print_debug_locations,
+        )
+        run_stages(get_final_stages(), final_stage_ctx, settings_ttlang)
 
         profile_source_lines = None
         if all_source_lines:

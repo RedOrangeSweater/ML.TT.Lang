@@ -4,14 +4,13 @@
 
 """Registry for tensor global names, used to track tensor parameter names."""
 
-from typing import Dict, Optional, Tuple
 
 # Registry mapping tensor id to global name (for tensors that don't support attribute assignment)
-_tensor_name_registry: Dict[int, str] = {}
+_tensor_name_registry: dict[int, str] = {}
 # Registry mapping tensor id to global index
-_tensor_index_registry: Dict[int, int] = {}
+_tensor_index_registry: dict[int, int] = {}
 # Registry mapping tensor id to source location (file, line)
-_tensor_source_registry: Dict[int, Tuple[str, int]] = {}
+_tensor_source_registry: dict[int, tuple[str, int]] = {}
 
 
 def register_tensor_name(tensor, name: str, index: int = -1) -> None:
@@ -44,6 +43,6 @@ def register_tensor_source(tensor, source_file: str, line: int) -> None:
     _tensor_source_registry[id(tensor)] = (source_file, line)
 
 
-def get_tensor_source(tensor) -> Optional[Tuple[str, int]]:
+def get_tensor_source(tensor) -> tuple[str, int] | None:
     """Get the source location where a tensor was assigned, if tracked."""
     return _tensor_source_registry.get(id(tensor))

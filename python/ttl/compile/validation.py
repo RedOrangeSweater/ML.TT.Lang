@@ -14,7 +14,7 @@ from __future__ import annotations
 from ttmlir.passes import get_ttkernel_names
 
 from ..boundary import MlirModuleLike
-from ..constants import SUPPORTED_MEMORY_SPACES
+from ..constants import SUPPORTED_MEMORY_SPACES, MemorySpace
 from ..dtype_utils import TTNNMemoryConfigProxy, is_ttnn_tensor
 
 
@@ -30,7 +30,7 @@ def validate_ttnn_tensors_for_request(args: tuple[object, ...]) -> None:
     for i, arg in enumerate(args):
         if not is_ttnn_tensor(arg):
             continue
-        proxy = TTNNMemoryConfigProxy(tensor=arg, default="unknown")
+        proxy = TTNNMemoryConfigProxy(tensor=arg, default=MemorySpace.UNKNOWN)
         if proxy.memory_space not in SUPPORTED_MEMORY_SPACES:
             raise ValueError(
                 f"TTNN interop requires L1 or DRAM memory space, but tensor {i} is in {proxy.memory_space}."

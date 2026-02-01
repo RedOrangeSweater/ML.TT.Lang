@@ -15,7 +15,6 @@ import json
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 
 class Colors:
@@ -58,24 +57,24 @@ class SourceLineMapper:
     """Maps signpost markers back to source code lines."""
 
     def __init__(self):
-        self.signpost_to_line: Dict[str, Tuple[int, str]] = {}
-        self.source_lines: List[str] = []
+        self.signpost_to_line: dict[str, tuple[int, str]] = {}
+        self.source_lines: list[str] = []
         self.line_offset: int = 0
 
     def register_signpost(self, signpost_name: str, lineno: int, source: str):
         """Register a signpost with its source line information."""
         self.signpost_to_line[signpost_name] = (lineno, source)
 
-    def set_source(self, source_lines: List[str]):
+    def set_source(self, source_lines: list[str]):
         """Set the source code lines for display."""
         self.source_lines = source_lines
 
-    def get_line_info(self, signpost_name: str) -> Optional[Tuple[int, str]]:
+    def get_line_info(self, signpost_name: str) -> tuple[int, str] | None:
         """Get line number and source for a signpost."""
         return self.signpost_to_line.get(signpost_name)
 
 
-def parse_signpost_name(signpost: str) -> Tuple[Optional[str], bool]:
+def parse_signpost_name(signpost: str) -> tuple[str | None, bool]:
     """
     Parse op name and implicit flag from signpost name.
 
@@ -116,7 +115,7 @@ class ProfileResult:
         self.op_name, self.implicit = parse_signpost_name(signpost)
 
 
-def generate_signpost_name(operation: str, lineno: int, col: int) -> Tuple[str, str]:
+def generate_signpost_name(operation: str, lineno: int, col: int) -> tuple[str, str]:
     """
     Generate before/after signpost names for an operation.
 
@@ -129,7 +128,7 @@ def generate_signpost_name(operation: str, lineno: int, col: int) -> Tuple[str, 
 
 def parse_device_profile_csv(
     csv_path: Path, line_mapper: SourceLineMapper
-) -> List[ProfileResult]:
+) -> list[ProfileResult]:
     """
     Parse the device profile CSV and extract signpost timing data.
 
@@ -184,13 +183,13 @@ def parse_device_profile_csv(
 
 
 def print_profile_report(
-    results: List[ProfileResult],
-    all_source_lines: Dict[str, List[str]],
-    thread_to_kernel: Dict[str, str],
-    line_mapper: Optional[SourceLineMapper] = None,
-    cb_wait_to_dma: Optional[Dict[Tuple[str, int], Tuple[str, int, int]]] = None,
-    dma_producer_to_cb: Optional[Dict[Tuple[str, int], int]] = None,
-    kernel_line_offsets: Optional[Dict[str, int]] = None,
+    results: list[ProfileResult],
+    all_source_lines: dict[str, list[str]],
+    thread_to_kernel: dict[str, str],
+    line_mapper: SourceLineMapper | None = None,
+    cb_wait_to_dma: dict[tuple[str, int], tuple[str, int, int]] | None = None,
+    dma_producer_to_cb: dict[tuple[str, int], int] | None = None,
+    kernel_line_offsets: dict[str, int] | None = None,
 ):
     """
     Print a profile report organized by thread.
@@ -532,7 +531,7 @@ def print_profile_report(
         roof_line = "─" * marker_pos + "●" + "─" * (roof_width - 1 - marker_pos)
 
         if bound_type == "balanced":
-            print(f"  Perfectly balanced!")
+            print("  Perfectly balanced!")
         else:
             print(f"  {bound_pct:.0f}% {bound_type} bound")
         print(f"  Compute ├{roof_line}┤ Memory")
@@ -550,7 +549,7 @@ def print_profile_report(
 # =============================================================================
 
 
-def load_cb_flow_graph(csv_path: Path) -> Optional[Dict]:
+def load_cb_flow_graph(csv_path: Path) -> dict | None:
     """Load CB flow graph JSON from same directory as CSV."""
     json_path = csv_path.parent / "cb_flow_graph.json"
     if not json_path.exists():
@@ -564,8 +563,8 @@ def load_cb_flow_graph(csv_path: Path) -> Optional[Dict]:
 
 
 def build_cb_wait_to_dma_map(
-    cb_flow: Optional[Dict],
-) -> Dict[Tuple[str, int], Tuple[str, int, int]]:
+    cb_flow: dict | None,
+) -> dict[tuple[str, int], tuple[str, int, int]]:
     """Build mapping from cb_wait locations to DMA barrier locations.
 
     Only maps consumers waiting for DMA reads (data flowing into CB).
@@ -606,8 +605,8 @@ def build_cb_wait_to_dma_map(
 
 
 def build_dma_producer_to_cb_map(
-    cb_flow: Optional[Dict],
-) -> Dict[Tuple[str, int], int]:
+    cb_flow: dict | None,
+) -> dict[tuple[str, int], int]:
     """Build mapping from DMA barrier locations to CB index.
 
     Returns:
@@ -639,3 +638,79 @@ _global_line_mapper = SourceLineMapper()
 def get_line_mapper() -> SourceLineMapper:
     """Get the global line mapper instance."""
     return _global_line_mapper
+
+
+def run_profiling_after_execute(
+    tensors: tuple,
+    all_source_lines: dict[str, list[str]],
+    thread_to_kernel: dict[str, str],
+    kernel_line_offsets: dict[str, int] | None = None,
+) -> None:
+    """
+    Read device profiler data and display profile report.
+
+    Called after kernel execution when auto-profiling is enabled.
+    """
+    if not is_auto_profile_enabled():
+        return
+
+    try:
+        import ttnn
+    except (ModuleNotFoundError, ImportError):
+        print("[Auto-profile] ttnn not available, skipping profiling")
+        return
+
+    from ..dtype_utils import is_ttnn_tensor
+    from ..settings import settings_ttlang
+
+    device = None
+    for tensor in tensors:
+        if is_ttnn_tensor(tensor) and hasattr(tensor, "device"):
+            device = tensor.device()
+            break
+
+    if device is None:
+        print("[Auto-profile] No device found in tensors, skipping profiling")
+        return
+
+    try:
+        ttnn.ReadDeviceProfiler(device)
+    except Exception as e:
+        print(f"[Auto-profile] Failed to read device profiler: {e}")
+        return
+
+    if settings_ttlang.profile_csv:
+        csv_path = Path(settings_ttlang.profile_csv)
+    else:
+        tt_metal_home = settings_ttlang.tt_metal_home
+        if not tt_metal_home:
+            print("[Auto-profile] TT_METAL_HOME not set, cannot find profile CSV")
+            return
+        csv_path = Path(tt_metal_home) / "generated/profiler/.logs/profile_log_device.csv"
+
+    if not csv_path.exists():
+        print(f"[Auto-profile] Profile CSV not found at {csv_path}")
+        print("[Auto-profile] Ensure TT_METAL_DEVICE_PROFILER=1 is set before running")
+        return
+
+    line_mapper = get_line_mapper()
+    cb_flow = load_cb_flow_graph(csv_path)
+    cb_wait_to_dma = build_cb_wait_to_dma_map(cb_flow)
+    dma_producer_to_cb = build_dma_producer_to_cb_map(cb_flow)
+
+    try:
+        results = parse_device_profile_csv(csv_path, line_mapper)
+        if results:
+            print_profile_report(
+                results,
+                all_source_lines,
+                thread_to_kernel,
+                line_mapper,
+                cb_wait_to_dma,
+                dma_producer_to_cb,
+                kernel_line_offsets,
+            )
+        else:
+            print("[Auto-profile] No signpost results found in profile CSV")
+    except Exception as e:
+        print(f"[Auto-profile] Failed to parse profile CSV: {e}")

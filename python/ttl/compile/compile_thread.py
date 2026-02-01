@@ -9,12 +9,11 @@ from __future__ import annotations
 import ast
 import functools
 import inspect
-from typing import Callable
+from collections.abc import Callable
 
 from .._src.ttl_ast import TTLCompilerConfig, TTLGenericCompiler
 from ..diagnostics import format_mlir_error
 from ..verbose_context import verbose_compilation, verbose_print
-
 from .registry import get_thread_registry
 from .source_context import CompilationSourceContext, collect_captures
 
@@ -38,11 +37,7 @@ def compile_thread(
     @functools.wraps(f)
     def _wrapper(*args: object, **kwargs: object) -> object:
         ctx = CompilationSourceContext.from_function(f, verbose=verbose)
-        compiler_config = TTLCompilerConfig(
-            source_context=ctx,
-            _globals=f.__globals__,
-            **kwargs,
-        )
+        compiler_config = TTLCompilerConfig(source_context=ctx, **kwargs)
 
         m = ast.parse(ctx.source_code)
 

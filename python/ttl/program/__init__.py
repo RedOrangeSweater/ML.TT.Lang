@@ -11,7 +11,9 @@ See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
 
 from __future__ import annotations
 
-from typing import Callable, Literal, Self, cast
+import inspect
+from collections.abc import Callable
+from typing import Literal, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -45,7 +47,7 @@ class ProgramOptions(BaseModel):
     """Validated options for @ttl.program decorator. Replaces manual if/raise checks."""
 
     num_outs: int = Field(default=1, ge=1)
-    memory_space: MemorySpace = "L1"
+    memory_space: MemorySpace = MemorySpace.L1
     tiled: bool = True
     fp32_dest_acc_en: bool | None = None
     dst_full_sync_en: bool | None = None
@@ -119,6 +121,25 @@ class ProgramDecoratorParams(BaseModel):
         """Contract: num_outs must be 1 for TTNN run."""
         if self.options.num_outs != 1:
             raise ValueError(f"num_outs must be 1, got {self.options.num_outs}")
+        return self
+
+    @model_validator(mode="after")
+    def indexing_maps_dims_match_iterator_types(self) -> Self:
+        """Contract: each indexing_map's number of parameters must match len(iterator_types)."""
+        if not self.indexing_maps or not self.iterator_types:
+            return self
+        it_len = len(self.iterator_types)
+        for i, indexing_map in enumerate(self.indexing_maps):
+            try:
+                sig = inspect.signature(indexing_map)
+                num_dims = len(list(sig.parameters))
+            except (TypeError, ValueError):
+                continue
+            if num_dims != it_len:
+                raise ValueError(
+                    f"Number of dimensions ({num_dims}) must match iterator_types length ({it_len}) "
+                    f"for indexing_map[{i}]"
+                )
         return self
 
 
@@ -291,7 +312,7 @@ class Program:
     def kwargs(self) -> dict[str, object]:
         return self._kwargs
 
-    def __call__(self, *args: object, **kwargs: object) -> "Program":
+    def __call__(self, *args: object, **kwargs: object) -> Program:
         return Program(*self.threads, args=args, kwargs={**self.kwargs, **kwargs})
 
 

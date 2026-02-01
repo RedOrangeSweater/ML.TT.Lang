@@ -6,9 +6,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Generator, Union
 
 __all__ = ["get_thread_type_string", "tmp_dir"]
 
@@ -42,7 +42,7 @@ _KERNEL_TYPE_TO_THREAD_TYPE = {
 }
 
 
-def get_thread_type_string(input: Union[str, object]) -> str:
+def get_thread_type_string(input: str | object) -> str:
     """Map kernel type to thread type string.
 
     Handles both string kernel types and MLIR ThreadTypeAttr.

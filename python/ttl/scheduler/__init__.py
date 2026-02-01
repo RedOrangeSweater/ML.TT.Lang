@@ -12,28 +12,27 @@ scheduler stub produces plan that reproduces current RCW behavior.
 Abstract engine config (doc 20): load from JSON/YAML for backend/graph/topology/objective.
 """
 
-from .op_graph import OpGraph, OpGraphSchema, OpNode, build_op_graph_from_threads
-from .scheduler_stub import SchedulePlan, schedule_stub
-from .scheduler_toy import schedule_toy_stub
-from .topology import Topology, build_topology_from_grid
 from .config import (
     AbstractEngineConfig,
     GraphSourceSpec,
     PlannerOptions,
     SimulatorOptions,
-    ToyGraphGeneratorSpec,
     TopologyEdgeSpec,
-    TopologyGridSpec,
     TopologyGraphSpec,
+    TopologyGridSpec,
+    ToyGraphGeneratorSpec,
     load_abstract_engine_config,
     validate_topology_connectivity,
 )
-
 from .export import (
     SchedulerInput,
     export_scheduler_input,
     export_scheduler_input_to_json,
 )
+from .op_graph import OpGraph, OpGraphSchema, OpNode, build_op_graph_from_threads
+from .scheduler_stub import SchedulePlan, schedule_stub
+from .scheduler_toy import schedule_toy_stub
+from .topology import Topology, build_topology_from_grid
 
 __all__ = [
     "AbstractEngineConfig",
