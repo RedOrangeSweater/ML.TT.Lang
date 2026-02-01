@@ -32,8 +32,14 @@ def _wrap_step(
     return decorator
 
 
-ctx_request_ensure_run_request = _wrap_step(ensure_run_request)
-ctx_config_resolve_engine_config = _wrap_step(resolve_engine_config)
+def ctx_request_ensure_run_request(fn: RunFn) -> RunFn:
+    """Decorator: ensure ctx.req is populated from raw inputs."""
+    return _wrap_step(ensure_run_request)(fn)
+
+
+def ctx_config_resolve_engine_config(fn: RunFn) -> RunFn:
+    """Decorator: resolve ctx.engine_config from ctx.engine_config_path."""
+    return _wrap_step(resolve_engine_config)(fn)
 def ctx_compile_build_compile_request(
     fn: RunFn,
 ) -> RunFn:
