@@ -47,7 +47,7 @@ from .layered import compose
 from .layered.context import ProgramInvocationContext, RunContext
 from .layered.compile.build_compile_request import build_compile_request
 from .layered.compile.compile_kernel import compile_kernel
-from .layered.program.ensure_run_request import ensure_run_request as mw_ensure_run_request
+from .layered.program.ensure_run_request import ensure_run_request
 from .layered.program.compute_cache_key import compute_cache_key
 from .layered.program.compile_cached import compile_cached
 from .layered.program.require_ttl_program import require_ttl_program_attr
@@ -194,11 +194,11 @@ def run(
     pipeline = compose(
         handler,
         [
-            mw_ensure_run_request(),
-            resolve_engine_config(),
+            ensure_run_request,
+            resolve_engine_config,
             require_ttl_program_attr(_TTL_PROGRAM_ATTR),
-            build_compile_request(),
-            compile_kernel(),
+            build_compile_request,
+            compile_kernel,
         ],
     )
     return pipeline(ctx)
@@ -264,7 +264,7 @@ def pykernel_gen(
             _wrapper._last_compiled_kernel = ctx.compiled  # type: ignore[attr-defined]
             return execute_and_maybe_profile(ctx.compiled, ctx.args)
 
-        pipeline = compose(handler, [compute_cache_key(), compile_cached()])
+        pipeline = compose(handler, [compute_cache_key, compile_cached])
 
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
