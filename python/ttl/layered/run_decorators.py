@@ -10,7 +10,6 @@ from collections.abc import Callable
 from .compile.build_compile_request import build_compile_request
 from .compile.compile_kernel import compile_kernel
 from .context import RunContext
-from .program.ensure_run_request import ensure_run_request
 from .program.require_ttl_program import require_ttl_program_attr
 from .program.resolve_engine_config import resolve_engine_config
 
@@ -30,11 +29,6 @@ def _wrap_step(
         return wrapper
 
     return decorator
-
-
-def ctx_request_ensure_run_request(fn: RunFn) -> RunFn:
-    """Decorator: ensure ctx.req is populated from raw inputs."""
-    return _wrap_step(ensure_run_request)(fn)
 
 
 def ctx_config_resolve_engine_config(fn: RunFn) -> RunFn:
@@ -114,6 +108,5 @@ __all__ = [
     "ctx_config_resolve_engine_config",
     "ctx_program_require_ttl_program_attr",
     "ctx_request_build_run_context",
-    "ctx_request_ensure_run_request",
 ]
 

@@ -4,11 +4,14 @@
 
 from __future__ import annotations
 
+import functools
+from collections.abc import Callable
+
 from ...program import ProgramOptions, RunRequest
 from ..context import RunContext
 
 
-def ensure_run_request(ctx: RunContext) -> RunContext:
+def _ensure_run_request(ctx: RunContext) -> RunContext:
     """Normalize RunContext raw input into RunRequest (Pydantic-first)."""
     if ctx.req is None:
         if isinstance(ctx.raw_req, RunRequest):
@@ -32,4 +35,18 @@ def ensure_run_request(ctx: RunContext) -> RunContext:
     return ctx
 
 
-__all__ = ["ensure_run_request"]
+def ctx_request_ensure_run_request(
+    fn: Callable[[RunContext], object | None],
+) -> Callable[[RunContext], object | None]:
+    """Request-layer decorator: ensure ctx.req is populated before calling fn(ctx)."""
+
+    @functools.wraps(fn)
+    def wrapper(ctx: RunContext) -> object | None:
+        return fn(_ensure_run_request(ctx))
+
+    return wrapper
+
+
+__all__ = [
+    "ctx_request_ensure_run_request",
+]

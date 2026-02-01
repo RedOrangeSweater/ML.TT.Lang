@@ -32,13 +32,13 @@ from .descriptor_options import (
 )
 from .layered.context import ProgramInvocationContext, RunContext
 from .layered.program.compile_cached import compile_cached
+from .layered.program.ensure_run_request import ctx_request_ensure_run_request
 from .layered.run_decorators import (
     ctx_compile_build_compile_request,
     ctx_compile_compile_kernel,
     ctx_config_resolve_engine_config,
     ctx_program_require_ttl_program_attr,
     ctx_request_build_run_context,
-    ctx_request_ensure_run_request,
 )
 from .operators import CopyTransferHandler, TensorBlock, copy
 from .program import (
