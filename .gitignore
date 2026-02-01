@@ -6,6 +6,9 @@ third_party/tt-metal
 third_party/ttnn-python
 .DS_STORE
 .vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
 .cache
 .claude/*
 *pycache*
