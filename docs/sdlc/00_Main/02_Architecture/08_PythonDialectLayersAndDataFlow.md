@@ -80,7 +80,7 @@ flowchart LR
 | ThreadConfigBuildRequest | (config, entries) | `_build_config_for_thread(request)` → descriptor_options + ttnn_proxy. |
 | CompiledTTNNKernel + tensors | run | `ttl.runtime.build_*_descriptors`, `run_kernel_on_device` (реализация в `ttl.runtime.runner`; `ttl.kernel_runner` — тонкий реэкспорт для совместимости). |
 
-Входы и выходы трансформаций — только Pydantic-типы или типы из ttnn_proxy. Логика компиляции: `ttl.compile.pipeline` (_compile_kernel, _compile_ttnn_kernel); логика рантайма: `ttl.runtime.runner`; типы на границе с ttnn/MLIR: `ttl.boundary` (ttnn_types, mlir_types). Контракты run: RunRequest (num_outs == 1), декоратор: ProgramDecoratorParams (grid обязателен, indexing_maps при iterator_types).
+Входы и выходы трансформаций — только Pydantic-типы или типы из ttnn_proxy. Логика компиляции: `ttl.compile.pipeline` (_compile_kernel, _compile_ttnn_kernel); логика рантайма: `ttl.runtime.runner`; типы на границе с ttnn/MLIR: `ttl.boundary` (ttnn_types, mlir_types). Контракты run: RunRequest (num_outs == 1), декоратор: ProgramDecoratorParams (grid обязателен, indexing_maps при iterator_types). Согласованность indexing_maps и iterator_types (число параметров каждого indexing_map = len(iterator_types)) проверяется в ProgramDecoratorParams.model_validator; в ttl_api ад-hoc проверок нет.
 
 ## 5. Реестр Python-диалектов
 
