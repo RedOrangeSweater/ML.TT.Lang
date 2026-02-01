@@ -16,7 +16,7 @@ import functools
 import random
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from .scheduler import AbstractEngineConfig
@@ -31,24 +31,27 @@ except (ModuleNotFoundError, ImportError):
 from ._src.auto_profile import is_auto_profile_enabled, run_profiling_after_execute
 from .circular_buffer import CircularBuffer
 from .compile.compile_thread import compile_thread as _compile_thread_impl
-from .compile.pipeline import _compile_kernel as _compile_kernel_impl
-from .compile.registry import get_thread_registry
 from .constants import MemorySpace
 from .descriptor_options import (
     CompiledTTNNKernel,
 )
 from .operators import CopyTransferHandler, TensorBlock, copy
 from .program import (
-    CompileKernelRequest,
-    KernelCompileRequest,
     Program,
     ProgramDecoratorParams,
     ProgramOptions,
     RunRequest,
-    _resolve_grid,
 )
-from .program.cache_key import make_cache_key
 from .settings import settings_ttlang
+from .layered import compose
+from .layered.context import ProgramInvocationContext, RunContext
+from .layered.compile.build_compile_request import build_compile_request
+from .layered.compile.compile_kernel import compile_kernel
+from .layered.program.ensure_run_request import ensure_run_request as mw_ensure_run_request
+from .layered.program.compute_cache_key import compute_cache_key
+from .layered.program.compile_cached import compile_cached
+from .layered.program.require_ttl_program import require_ttl_program_attr
+from .layered.program.resolve_engine_config import resolve_engine_config
 
 
 # For kernel body: TensorAccessor and dma (alias for copy) used in examples
@@ -123,80 +126,6 @@ PLACEMENT_VALUES = ("auto", "manual")
 _TTL_PROGRAM_ATTR = "_ttl_program"
 
 
-def ensure_run_request(
-    req: RunRequest | Callable[..., object],
-    *args: object,
-    grid: (tuple[int, ...] | list[int] | Callable[..., object]) | None = None,
-    options: ProgramOptions | None = None,
-    **kwargs: object,
-) -> RunRequest:
-    """Normalize run() input to a RunRequest (either pass-through or from_program)."""
-    if isinstance(req, RunRequest):
-        return req
-    program = req
-    if grid is None:
-        raise ValueError(
-            "grid= is required when passing program as first arg; "
-            "e.g. run(add_kernel, lhs, rhs, out, grid=(2, 2))"
-        )
-    return RunRequest.from_program(
-        program, *args, grid=grid, options=options, **kwargs
-    )
-
-
-def _resolve_engine_config(
-    engine_config_path: str | Path | None,
-    engine_config: object | None,
-) -> object | None:
-    """Resolve engine_config from path if given; otherwise return existing config."""
-    if engine_config_path is not None:
-        from .scheduler import load_abstract_engine_config
-
-        return load_abstract_engine_config(engine_config_path)
-    return engine_config
-
-
-def get_or_compile_run(
-    req: RunRequest,
-    engine_config: object | None,
-) -> CompiledTTNNKernel | None:
-    """Build compile request, run pipeline, return compiled kernel (cache is per-run)."""
-    if not getattr(req.spec.program, _TTL_PROGRAM_ATTR, False):
-        raise NotImplementedError(
-            "run() with a raw callable (e.g. lambda) is not yet implemented: "
-            "inference from parameters and return type is planned. "
-            "Use @ttl.program to define the kernel and pass RunRequest.from_program(program, *args, grid=...). "
-            "See docs/sdlc/00_Main/02_Architecture/20_IdealDataFlowAndModuleStructure.md "
-            "(lambda + inference)."
-        )
-    cache_key = make_cache_key(
-        req.args,
-        fp32_dest_acc_en=req.spec.options.fp32_dest_acc_en,
-        dst_full_sync_en=req.spec.options.dst_full_sync_en,
-    )
-    program_hash = hash((id(req.spec.program), cache_key))
-    grid = _resolve_grid(req.spec.grid, req.args, req.kwargs)
-    compile_request = KernelCompileRequest(
-        grid=grid,
-        program_hash=program_hash,
-        indexing_maps=req.spec.indexing_maps,
-        iterator_types=req.spec.iterator_types,
-        options=req.spec.options,
-    )
-    compile_req = CompileKernelRequest(
-        program=req.spec.program,
-        args=req.args,
-        kwargs=dict(req.kwargs),
-        compile_request=compile_request,
-        thread_registry=get_thread_registry(),
-        engine_config=engine_config,
-    )
-    return cast(
-        CompiledTTNNKernel | None,
-        _compile_kernel_impl(compile_req),
-    )
-
-
 def execute_if_needed(
     compiled: CompiledTTNNKernel | None,
     req: RunRequest,
@@ -207,59 +136,6 @@ def execute_if_needed(
     if _should_execute():
         return compiled(*req.args)
     return None
-
-
-def with_program_compile_and_cache(
-    f: Callable[..., object],
-    params: ProgramDecoratorParams,
-    kernel_id: int,
-):
-    """
-    Decorator that builds CompileKernelRequest, does cache lookup/compile, then calls on_compiled.
-
-    Wraps a function on_compiled(compiled, args) -> result. Returns an invoker (args, kwargs) -> result
-    that computes cache_key, builds Pydantic request, get-or-compiles, then calls on_compiled.
-    """
-    cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
-
-    def decorator(on_compiled: Callable[..., object]) -> Callable[..., object]:
-        def invoker(args: tuple[object, ...], kwargs: dict[str, object]) -> object | None:
-            cache_key = make_cache_key(
-                args,
-                fp32_dest_acc_en=params.options.fp32_dest_acc_en,
-                dst_full_sync_en=params.options.dst_full_sync_en,
-            )
-            if cache_key in cache:
-                compiled = cache[cache_key]
-            else:
-                grid = _resolve_grid(params.grid, args, kwargs)
-                program_hash = hash((kernel_id, cache_key))
-                compile_request = KernelCompileRequest(
-                    grid=grid,
-                    program_hash=program_hash,
-                    indexing_maps=cast(list[Callable[..., object]], params.indexing_maps),
-                    iterator_types=cast(list[str], params.iterator_types),
-                    options=params.options,
-                )
-                compile_req = CompileKernelRequest(
-                    program=f,
-                    args=args,
-                    kwargs=kwargs,
-                    compile_request=compile_request,
-                    thread_registry=get_thread_registry(),
-                    engine_config=None,
-                )
-                compiled = cast(
-                    CompiledTTNNKernel | None,
-                    _compile_kernel_impl(compile_req),
-                )
-                if compiled is not None:
-                    cache[cache_key] = compiled
-            return on_compiled(compiled, args)
-
-        return invoker
-
-    return decorator
 
 
 def execute_and_maybe_profile(
@@ -300,13 +176,32 @@ def run(
     Optional engine_config_path or engine_config: abstract engine config for scheduler.
     See docs/sdlc/00_Main/00_Ideas/20_nickel_mlir_config_abstract_engine.md.
     """
-    req = ensure_run_request(req, *args, grid=grid, options=options, **kwargs)
-    engine_config = cast(
-        "AbstractEngineConfig | None",
-        _resolve_engine_config(engine_config_path, engine_config),
+    ctx = RunContext(
+        raw_req=req,
+        raw_args=args,
+        raw_kwargs=kwargs,
+        engine_config_path=engine_config_path,
+        engine_config=engine_config,
+        grid=grid,
+        options=options,
     )
-    compiled = get_or_compile_run(req, engine_config)
-    return execute_if_needed(compiled, req)
+
+    def handler(ctx: RunContext) -> object | None:
+        if ctx.req is None:
+            raise RuntimeError("run() pipeline invariant: ctx.req must be set")
+        return execute_if_needed(ctx.compiled, ctx.req)
+
+    pipeline = compose(
+        handler,
+        [
+            mw_ensure_run_request(),
+            resolve_engine_config(),
+            require_ttl_program_attr(_TTL_PROGRAM_ATTR),
+            build_compile_request(),
+            compile_kernel(),
+        ],
+    )
+    return pipeline(ctx)
 
 
 def pykernel_gen(
@@ -348,8 +243,8 @@ def pykernel_gen(
     """
     params = ProgramDecoratorParams(
         grid=grid,
-        indexing_maps=indexing_maps,
-        iterator_types=iterator_types,
+        indexing_maps=indexing_maps,  # type: ignore[arg-type]
+        iterator_types=iterator_types,  # type: ignore[arg-type]
         options=ProgramOptions(
             num_outs=num_outs,
             memory_space=memory_space,
@@ -363,19 +258,25 @@ def pykernel_gen(
 
     def _decorator(f):
         kernel_id = random.getrandbits(64)
+        cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
 
-        def _on_compiled(
-            compiled: CompiledTTNNKernel | None,
-            args: tuple[object, ...],
-        ) -> object | None:
-            _wrapper._last_compiled_kernel = compiled  # type: ignore[attr-defined]
-            return execute_and_maybe_profile(compiled, args)
+        def handler(ctx: ProgramInvocationContext) -> object | None:
+            _wrapper._last_compiled_kernel = ctx.compiled  # type: ignore[attr-defined]
+            return execute_and_maybe_profile(ctx.compiled, ctx.args)
 
-        _invoker = with_program_compile_and_cache(f, params, kernel_id)(_on_compiled)
+        pipeline = compose(handler, [compute_cache_key(), compile_cached()])
 
         @functools.wraps(f)
         def _wrapper(*args, **kwargs):
-            return _invoker(args, kwargs)
+            ctx = ProgramInvocationContext(
+                program=f,
+                args=args,
+                kwargs=kwargs,
+                params=params,
+                kernel_id=kernel_id,
+                cache=cache,
+            )
+            return pipeline(ctx)
 
         setattr(_wrapper, _TTL_PROGRAM_ATTR, True)
         return _wrapper
