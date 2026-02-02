@@ -47,8 +47,6 @@ class LoopParams(BaseModel):
 
     def _prepare_value(self, val: Any) -> Any:
         """Load from memref and cast to index type if needed."""
-        if val is None:
-            return None
 
         # Load if it's a memref
         if hasattr(val, "type") and isinstance(val.type, memref.MemRefType):
