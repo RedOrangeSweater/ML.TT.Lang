@@ -199,7 +199,7 @@ def _pykernel_gen_params_adapter(
 ) -> Callable:
     @functools.wraps(fn, assigned=("__module__", "__name__", "__qualname__"))
     def wrapper(
-        grid: (tuple[int, ...] | Callable[..., object]) | None = None,
+        grid: tuple[int, ...] | list[int] | Callable[..., object] | str | None = None,
         indexing_maps: Sequence[Callable[..., object]] | None = None,
         iterator_types: Sequence[str] | None = None,
         num_outs: int = 1,
@@ -211,12 +211,10 @@ def _pykernel_gen_params_adapter(
         placement: Placement | None = None,
     ) -> Callable:
         """Public @ttl.program API: build ProgramDecoratorParams and delegate."""
-        indexing_maps_list = [] if indexing_maps is None else list(indexing_maps)
-        iterator_types_list = [] if iterator_types is None else list(iterator_types)
         params = ProgramDecoratorParams(
             grid=grid,
-            indexing_maps=indexing_maps_list,
-            iterator_types=iterator_types_list,
+            indexing_maps=list(indexing_maps) if indexing_maps else [],
+            iterator_types=list(iterator_types) if iterator_types else [],
             options=ProgramOptions(
                 num_outs=num_outs,
                 memory_space=memory_space,
@@ -261,32 +259,32 @@ def run(ctx: RunContext) -> TtnnTensorLike | None:
 
 
 @_pykernel_gen_params_adapter
-def pykernel_gen(
-    params: ProgramDecoratorParams,
-) -> Callable:
+def pykernel_gen(params: ProgramDecoratorParams) -> Callable:
     """Decorator entrypoint for pre-built ProgramDecoratorParams."""
 
-    def _decorator(f):
+    def _decorator(f: Callable) -> Callable:
         kernel_id = random.getrandbits(64)
         cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
 
         @functools.wraps(f)
         def _wrapper(*args: TtnnTensorLike, **kwargs: object) -> TtnnTensorLike | None:
-            ctx = ProgramInvocationContext(
-                program=f,
-                args=args,
-                kwargs=dict(kwargs),
-                params=params,
-                kernel_id=kernel_id,
-                cache=cache,
+            ctx = compile_cached(
+                ProgramInvocationContext(
+                    program=f,
+                    args=args,
+                    kwargs=dict(kwargs),
+                    params=params,
+                    kernel_id=kernel_id,
+                    cache=cache,
+                )
             )
-            ctx = compile_cached(ctx)
             setattr(_wrapper, _LAST_COMPILED_KERNEL_ATTR, ctx.compiled)
-            if ctx.compiled is None:
+
+            if ctx.compiled is None or not _should_execute():
                 return None
-            if not _should_execute():
-                return None
+
             result = ctx.compiled(*ctx.args)
+
             if is_auto_profile_enabled() and ctx.compiled.all_source_lines:
                 run_profiling_after_execute(
                     ctx.args,
@@ -294,7 +292,7 @@ def pykernel_gen(
                     ctx.compiled.thread_to_kernel,
                     ctx.compiled.kernel_line_offsets,
                 )
-            return result
+            return result if isinstance(result, TtnnTensorLike) else None  # type: ignore[arg-type]
 
         setattr(_wrapper, _TTL_PROGRAM_ATTR, True)
         return _wrapper

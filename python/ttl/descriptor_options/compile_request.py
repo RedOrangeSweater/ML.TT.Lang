@@ -7,11 +7,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Self
+from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..boundary import MlirModuleLike
+from ..constants import SUPPORTED_MEMORY_SPACES, MemorySpace
+from ..dtype_utils import TTNNMemoryConfigProxy, is_ttnn_tensor
 from .program_config import ProgramConfig
 from .thread_config import ComputeConfigOptions
 
@@ -38,6 +40,46 @@ class TTNNCompileInput(BaseModel):
     thread_tensor_indices: list[list[int]] = Field(
         ..., description="Tensor indices per thread"
     )
+
+    @model_validator(mode="after")
+    def validate_input(self) -> Self:
+        """Validate tensor types and kernel count."""
+        # 1. Validate tensors
+        ttnn_count = sum(1 for arg in self.args if is_ttnn_tensor(arg))
+        if ttnn_count > 0 and ttnn_count < len(self.args):
+            raise ValueError(
+                f"TTNN interop requires all tensors to be the same type. "
+                f"Got {ttnn_count} TTNN tensors and {len(self.args) - ttnn_count} host tensors."
+            )
+        for i, arg in enumerate(self.args):
+            if not is_ttnn_tensor(arg):
+                continue
+            proxy = TTNNMemoryConfigProxy(tensor=arg, default=MemorySpace.UNKNOWN)
+            if proxy.memory_space not in SUPPORTED_MEMORY_SPACES:
+                raise ValueError(
+                    f"TTNN interop requires L1 or DRAM memory space, but tensor {i} is in {proxy.memory_space}."
+                )
+            if not proxy.is_interleaved:
+                raise ValueError(
+                    f"TTNN interop requires interleaved tensors, but tensor {i} is not."
+                )
+            if hasattr(arg, "layout") and "TILE" not in str(arg.layout):
+                raise ValueError(
+                    f"TTNN interop requires tilized tensors, but tensor {i} has layout {arg.layout}."
+                )
+
+        # 2. Validate kernel count
+        from ttmlir.passes import get_ttkernel_names
+
+        kernel_info = get_ttkernel_names(self.module)
+        if len(kernel_info) != 3:
+            compute_count = sum(1 for _, t in kernel_info if t == "compute")
+            dm_count = sum(1 for _, t in kernel_info if t == "noc")
+            raise ValueError(
+                f"TTNN interop requires exactly 3 kernels (1 compute + 2 data movement), "
+                f"got {len(kernel_info)} kernels ({compute_count} compute, {dm_count} data movement)."
+            )
+        return self
 
 
 class TTNNCompileCacheAndCb(BaseModel):
@@ -111,16 +153,7 @@ class TTNNKernelCompileRequest(BaseModel):
     @model_validator(mode="after")
     def validate_ttnn_interop(self) -> Self:
         """TTNN interop: all tensors same type (TTNN), L1/DRAM, interleaved, tilized; exactly 3 kernels."""
-        from ..compile.validation import (
-            validate_kernel_count_for_request,
-            validate_ttnn_tensors_for_request,
-        )
-
-        args = self.input.args
-        validate_ttnn_tensors_for_request(
-            args if isinstance(args, tuple) else tuple()
-        )
-        validate_kernel_count_for_request(self.input.module)
+        # Logic moved to TTNNCompileInput.validate_input
         return self
 
 

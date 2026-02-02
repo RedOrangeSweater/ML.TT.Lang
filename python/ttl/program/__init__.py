@@ -247,8 +247,8 @@ class CompileKernelRequest(BaseModel):
     args: tuple[object, ...] = Field(
         default_factory=tuple, description="Positional arguments (tensors)"
     )
-    kwargs: dict[str, object] = Field(
-        default_factory=dict, description="Keyword arguments"
+    init_kwargs: dict[str, object] = Field(
+        default_factory=dict, description="Keyword arguments", alias="kwargs"
     )
     compile_request: KernelCompileRequest = Field(
         ..., description="Grid, program_hash, options for this compile"
@@ -303,8 +303,8 @@ class RunRequest(BaseModel):
         ..., description="Program spec (program + grid + options)"
     )
     args: tuple[object, ...] = Field(..., description="Positional arguments (tensors)")
-    kwargs: dict[str, object] = Field(
-        default_factory=dict, description="Keyword arguments"
+    init_kwargs: dict[str, object] = Field(
+        default_factory=dict, description="Keyword arguments", alias="kwargs"
     )
 
     @model_validator(mode="after")

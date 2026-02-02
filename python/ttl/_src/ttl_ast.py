@@ -9,7 +9,7 @@ import contextlib
 import functools
 import inspect
 from collections.abc import Callable, Generator
-from typing import Any, NoReturn, TypeVar
+from typing import Any, NoReturn, Self, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 from ttmlir.dialects import arith, func, ttcore, ttkernel
@@ -102,7 +102,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
     config: TTLCompilerConfig
     captures: dict[str, Any] = Field(default_factory=dict)
     args: tuple[Any, ...] = Field(default_factory=tuple)
-    kwargs: dict[str, Any] = Field(default_factory=dict)
+    init_kwargs: dict[str, Any] = Field(default_factory=dict, alias="kwargs")
     streams: set[str] = Field(default_factory=set)
 
     # Internal state (initialized in validator)
@@ -123,7 +123,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
     def _init_compiler(self) -> Self:
         """Initialize both base classes and internal components."""
         # 1. Initialize TTCompilerBase (non-Pydantic)
-        TTCompilerBase.__init__(self, self.name, self.kernel_type, *self.args, **self.kwargs)
+        TTCompilerBase.__init__(self, self.name, self.kernel_type, *self.args, **self.init_kwargs)
 
         # 2. Setup TTL-specific internals
         self.loc = Location.name(self.name)
@@ -219,7 +219,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
 
     def _emit_marker(self, signpost: Signpost, boundary: SignpostBoundary) -> None:
         """Emit a signpost marker (before or after) for a typed signpost."""
-        ttl.signpost(signpost.get_marker(boundary))
+        ttl.signpost(signpost.get_marker(boundary))  # type: ignore[attr-defined]
 
     def _register_pair(self, signpost: Signpost, source_line: str) -> None:
         """Register before/after signpost pair if line_mapper is active."""
@@ -605,18 +605,18 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
             tensor = self._emit_op_signposts(
                 "cb_reserve",
                 expr_node,
-                lambda tt=tensor_type, cv=cb_val: ttl.cb_reserve(tt, cv),
+                lambda tt=tensor_type, cv=cb_val: ttl.cb_reserve(tt, cv),  # type: ignore[attr-defined, misc]
             )
-            release_info = ("cb_push", ttl.cb_push, cb_val, expr_node)
+            release_info = ("cb_push", ttl.cb_push, cb_val, expr_node)  # type: ignore[attr-defined]
         else:
             tensor = self._emit_op_signposts(
                 "cb_wait",
                 expr_node,
-                lambda tt=tensor_type, cv=cb_val: ttl.cb_wait(tt, cv),
+                lambda tt=tensor_type, cv=cb_val: ttl.cb_wait(tt, cv),  # type: ignore[attr-defined, misc]
             )
-            release_info = ("cb_pop", ttl.cb_pop, cb_val, expr_node)
+            release_info = ("cb_pop", ttl.cb_pop, cb_val, expr_node)  # type: ignore[attr-defined]
 
-        acquire_result = ttl.attach_cb(tensor.type, tensor, cb_val)
+        acquire_result = ttl.attach_cb(tensor.type, tensor, cb_val)  # type: ignore[attr-defined]
         return acquire_result, release_info
 
     def _emit_cb_releases(
@@ -627,7 +627,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
             self._emit_op_signposts(
                 op_name,
                 expr_node,
-                lambda ro=release_op, cv=cb_val: ro(cv),
+                lambda ro=release_op, cv=cb_val: ro(cv),  # type: ignore[misc]
                 implicit=True,
             )
 

@@ -22,6 +22,7 @@ from ttmlir.dialects import ttcore
 
 from .constants import MemorySpace
 from .runtime_tensor import is_ttnn_tensor
+from .boundary.ttnn_types import TtnnTensorLike
 
 _INTERLEAVED = "INTERLEAVED"
 
@@ -103,7 +104,10 @@ class TTNNMemoryConfigProxy(BaseModel):
     def memory_space(self) -> MemorySpace:
         if not is_ttnn_tensor(self.tensor):
             return self.default
-        mem_config = self.tensor.memory_config()
+        
+        # Use TtnnTensorLike protocol for type safety
+        tensor: TtnnTensorLike = self.tensor  # type: ignore[assignment]
+        mem_config = tensor.memory_config()
         if hasattr(mem_config, "buffer_type"):
             s = str(mem_config.buffer_type)
             if "L1" in s:
@@ -117,7 +121,10 @@ class TTNNMemoryConfigProxy(BaseModel):
     def is_interleaved(self) -> bool:
         if not is_ttnn_tensor(self.tensor):
             return False
-        mem_config = self.tensor.memory_config()
+        
+        # Use TtnnTensorLike protocol for type safety
+        tensor: TtnnTensorLike = self.tensor  # type: ignore[assignment]
+        mem_config = tensor.memory_config()
         if hasattr(mem_config, "memory_layout"):
             return _INTERLEAVED in str(mem_config.memory_layout)
         return False

@@ -11,7 +11,7 @@ ttnn_proxy remains the only module that returns Any (from .build_ttnn()).
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -43,11 +43,24 @@ TtnnCoreRangeSetLike = CoreRangeSetLike
 
 
 @runtime_checkable
+class TtnnMemoryConfigLike(Protocol):
+    """Protocol for ttnn memory config (buffer_type, memory_layout)."""
+
+    @property
+    def buffer_type(self) -> Any: ...
+    @property
+    def memory_layout(self) -> Any: ...
+
+
+@runtime_checkable
 class TtnnTensorLike(Protocol):
     """Protocol for ttnn tensor: buffer_address for descriptors, device for grid."""
 
     def buffer_address(self) -> object: ...
     def device(self) -> TtnnDeviceLike: ...
+    def memory_config(self) -> TtnnMemoryConfigLike: ...
+    @property
+    def layout(self) -> Any: ...
 
 
 @runtime_checkable
