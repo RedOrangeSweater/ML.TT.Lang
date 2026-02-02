@@ -25,13 +25,14 @@ from ..descriptor_options import (
 )
 from ..dtype_utils import is_ttnn_tensor
 from ..scheduler import AbstractEngineConfig
+from ..boundary.ttnn_types import TtnnTensorLike
 
 
 def _as_int_grid(
-    grid: tuple[object, ...] | list[object],
+    grid: tuple[object, ...] | list[object] | tuple[int, ...] | list[int],
 ) -> tuple[int, ...] | list[int]:
     """Normalize a tuple/list-like grid to int values."""
-    int_values = [int(x) for x in grid]  # type: ignore[arg-type]
+    int_values = [int(x) for x in grid]  # type: ignore[call-overload]
     return tuple(int_values) if isinstance(grid, tuple) else int_values
 
 
@@ -56,7 +57,11 @@ class ThreadRegistryLike(Protocol):
     def get_and_clear(self) -> list[Callable[..., object]]: ...
 
 
-def _resolve_grid(grid, args, kwargs) -> tuple[int, ...] | list[int]:
+def _resolve_grid(
+    grid: (tuple[int, ...] | list[int] | Callable[..., object]) | str | None,
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
+) -> tuple[int, ...] | list[int]:
     """Resolve grid (callable/'auto'), returning concrete tuple/list."""
     if callable(grid):
         resolved = grid(*args, **kwargs)
@@ -68,7 +73,9 @@ def _resolve_grid(grid, args, kwargs) -> tuple[int, ...] | list[int]:
     if grid == "auto":
         for arg in args:
             if is_ttnn_tensor(arg) and hasattr(arg, "device"):
-                device = arg.device()
+                # Use TtnnTensorLike protocol for type safety
+                tensor: TtnnTensorLike = arg  # type: ignore[assignment]
+                device = tensor.device()
                 device_grid = device.compute_with_storage_grid_size()
                 return (device_grid.x, device_grid.y)
         raise ValueError(

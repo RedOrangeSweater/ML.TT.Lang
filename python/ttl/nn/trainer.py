@@ -10,11 +10,24 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable, TypeVar
 
 from .callbacks import Callback
 from .config import TrainerConfig
 from .logger import Logger, StdoutLogger
+
+T = TypeVar("T", covariant=True)
+
+
+@runtime_checkable
+class ModelLike(Protocol[T]):
+    """Protocol for models that can be trained or run."""
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        ...
+
+    def training_step(self, batch: Any, batch_idx: int) -> Any:
+        ...
 
 
 @runtime_checkable
@@ -25,7 +38,7 @@ class SchedulerEnvLike(Protocol):
         self,
         seed: int | None = None,
         options: dict[str, Any] | None = None,
-    ) -> tuple[Any, Any]:
+    ) -> tuple[Any, dict[str, Any]]:
         ...
 
     def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
@@ -40,7 +53,7 @@ class Trainer:
 
     def __init__(
         self,
-        model: Any = None,
+        model: ModelLike | None = None,
         config: TrainerConfig | None = None,
         callbacks: list[Callback] | None = None,
         logger: Logger | None = None,
@@ -53,17 +66,17 @@ class Trainer:
 
     def fit(
         self,
-        train_batches: list[Any] | Any | None = None,
-        val_batches: list[Any] | Any | None = None,
+        train_batches: list[object] | object | None = None,
+        val_batches: list[object] | object | None = None,
         env: SchedulerEnvLike | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Run fit: compile warmup then benchmark loop or scheduler_env loop.
 
         train_batches: list of batches for benchmark (or single batch, repeated).
         env: when config.mode == "scheduler_env", run reset/step loop on this env.
         Returns summary dict (steps, elapsed_s, metrics).
         """
-        summary: dict[str, Any] = {"steps": 0, "elapsed_s": 0.0, "metrics": {}}
+        summary: dict[str, object] = {"steps": 0, "elapsed_s": 0.0, "metrics": {}}
         self._global_step = 0
         prev_auto_profile: str | None = os.environ.get("TTLANG_AUTO_PROFILE")
         try:
@@ -98,13 +111,13 @@ class Trainer:
                 else:
                     os.environ.pop("TTLANG_AUTO_PROFILE", None)
 
-    def _invoke_callbacks(self, method: str, *args: Any, **kwargs: Any) -> None:
+    def _invoke_callbacks(self, method: str, *args: object, **kwargs: object) -> None:
         for cb in self.callbacks:
             fn = getattr(cb, method, None)
             if fn is not None and callable(fn):
                 fn(self, *args, **kwargs)
 
-    def _compile_warmup(self, train_batches: Any) -> None:
+    def _compile_warmup(self, train_batches: object) -> None:
         n = self.config.compile_warmup_steps
         if not n or self.model is None:
             return
@@ -115,9 +128,9 @@ class Trainer:
 
     def _run_benchmark_loop(
         self,
-        train_batches: Any,
-        summary: dict[str, Any],
-    ) -> dict[str, Any]:
+        train_batches: object,
+        summary: dict[str, object],
+    ) -> dict[str, object]:
         max_steps = self.config.max_steps
         max_epochs = self.config.max_epochs
         if max_steps is not None and max_steps <= 0:
@@ -164,8 +177,8 @@ class Trainer:
     def _run_scheduler_env_loop(
         self,
         env: SchedulerEnvLike,
-        summary: dict[str, Any],
-    ) -> dict[str, Any]:
+        summary: dict[str, object],
+    ) -> dict[str, object]:
         obs, info = env.reset()
         steps = 0
         total_reward = 0.0
@@ -197,10 +210,10 @@ class Trainer:
 
     def _run_one_step(
         self,
-        batch: Any,
+        batch: object,
         batch_idx: int,
         warmup: bool = False,
-    ) -> Any:
+    ) -> object:
         if self.model is None:
             return None
         if hasattr(self.model, "training_step"):
@@ -212,7 +225,7 @@ class Trainer:
         return self.model(batch)
 
 
-def _as_batch_list(batches: list[Any] | Any | None, max_len: int) -> list[Any]:
+def _as_batch_list(batches: list[object] | object | None, max_len: int) -> list[object]:
     """Normalize train_batches to a list of length up to max_len."""
     if batches is None:
         return []

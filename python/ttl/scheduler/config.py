@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..constants import Objective
 
@@ -108,6 +108,38 @@ class AbstractEngineConfig(BaseModel):
     simulator_options: SimulatorOptions | None = Field(default=None)
     planner_options: PlannerOptions | None = Field(default=None)
 
+    @model_validator(mode="after")
+    def validate_connectivity(self) -> Self:
+        """Check that topology graph is connected (if topology_graph is used)."""
+        if self.topology_graph is None:
+            return self
+        nodes = set(self.topology_graph.nodes)
+        if len(nodes) <= 1:
+            return self
+        edges = self.topology_graph.edges
+        # Build adjacency (undirected for connectivity)
+        adj: dict[str, set[str]] = {n: set() for n in nodes}
+        for e in edges:
+            if e.from_id in adj:
+                adj[e.from_id].add(e.to_id)
+            if e.to_id in adj:
+                adj[e.to_id].add(e.from_id)
+        # BFS from first node
+        start = self.topology_graph.nodes[0]
+        seen = {start}
+        stack = [start]
+        while stack:
+            n = stack.pop()
+            for neighbor in adj.get(n, []):
+                if neighbor not in seen:
+                    seen.add(neighbor)
+                    stack.append(neighbor)
+        if seen != nodes:
+            raise ValueError(
+                f"Topology graph is not connected: {len(seen)}/{len(nodes)} nodes reachable"
+            )
+        return self
+
     def get_topology_grid(self) -> tuple[int, int] | None:
         """Return (grid_cols, grid_rows) if topology is grid."""
         if self.topology_grid is None:
@@ -142,40 +174,3 @@ def load_abstract_engine_config(path: str | Path) -> AbstractEngineConfig:
         raise ValueError(f"Unsupported config format: {suffix}. Use .json or .yaml")
 
     return AbstractEngineConfig.model_validate(data)
-
-
-def validate_topology_connectivity(config: AbstractEngineConfig) -> bool:
-    """
-    Check that topology graph is connected (if topology_graph is used).
-
-    Returns True if grid or if graph has at most one node or all nodes
-    are reachable from the first. Raises ValueError on invalid config.
-    """
-    if config.topology_graph is None:
-        return True
-    nodes = set(config.topology_graph.nodes)
-    if len(nodes) <= 1:
-        return True
-    edges = config.topology_graph.edges
-    # Build adjacency (undirected for connectivity)
-    adj: dict[str, set[str]] = {n: set() for n in nodes}
-    for e in edges:
-        if e.from_id in adj:
-            adj[e.from_id].add(e.to_id)
-        if e.to_id in adj:
-            adj[e.to_id].add(e.from_id)
-    # BFS from first node
-    start = config.topology_graph.nodes[0]
-    seen = {start}
-    stack = [start]
-    while stack:
-        n = stack.pop()
-        for neighbor in adj.get(n, []):
-            if neighbor not in seen:
-                seen.add(neighbor)
-                stack.append(neighbor)
-    if seen != nodes:
-        raise ValueError(
-            f"Topology graph is not connected: {len(seen)}/{len(nodes)} nodes reachable"
-        )
-    return True

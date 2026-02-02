@@ -23,6 +23,7 @@ from .compile.pipeline import _compile_kernel as _compile_kernel_impl
 from .compile.registry import get_thread_registry
 from .constants import MemorySpace, Objective, Placement
 from .descriptor_options import CompiledTTNNKernel
+from .boundary.ttnn_types import TtnnTensorLike, TtnnDeviceLike
 from .layered.context import ProgramInvocationContext, RunContext
 from .layered.decorators import (
     cache_by_key,
@@ -54,7 +55,7 @@ _LAST_COMPILED_KERNEL_ATTR = "_last_compiled_kernel"
 # For kernel body: TensorAccessor and dma (alias for copy) used in examples
 # TensorAccessor(tensor) returns the tensor so it is captured; compiler treats
 # subscript access (accessor[i,j]) as tensor accessor in MLIR (see ttl_ast).
-def TensorAccessor(tensor: object) -> object:  # noqa: N802
+def TensorAccessor(tensor: TtnnTensorLike) -> TtnnTensorLike:  # noqa: N802
     """Wrap a tensor for use as accessor in DM threads (e.g. accessor[i, j] in copy)."""
     return tensor
 
@@ -67,7 +68,7 @@ def _should_execute() -> bool:
     return not settings_ttlang.compile_only
 
 
-def compute(verbose: bool = False) -> Callable[..., object]:
+def compute(verbose: bool = False) -> Callable[[Callable[..., object]], Callable[..., object]]:
     """
     Decorator for compute thread functions.
 
@@ -86,7 +87,7 @@ def compute(verbose: bool = False) -> Callable[..., object]:
     return _decorator
 
 
-def datamovement(verbose: bool = False) -> Callable[..., object]:
+def datamovement(verbose: bool = False) -> Callable[[Callable[..., object]], Callable[..., object]]:
     """
     Decorator for data movement thread functions.
 
@@ -238,7 +239,7 @@ def _pykernel_gen_params_adapter(
 @ensure_ctx_field("compile_req", build_compile_request)
 @ensure_ctx_field("compiled", compile_kernel)
 @require_attr("req", error="run() invariant: ctx.req must be set")
-def run(ctx: RunContext) -> object | None:
+def run(ctx: RunContext) -> TtnnTensorLike | None:
     """
     Compile and run kernel. Ideal UX entry point.
 
@@ -255,7 +256,8 @@ def run(ctx: RunContext) -> object | None:
         return None
     if not _should_execute():
         return None
-    return ctx.compiled(*ctx.req.args)
+    result = ctx.compiled(*ctx.req.args)
+    return result if isinstance(result, TtnnTensorLike) else None
 
 
 @_pykernel_gen_params_adapter
@@ -269,7 +271,7 @@ def pykernel_gen(
         cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
 
         @functools.wraps(f)
-        def _wrapper(*args: object, **kwargs: object) -> object | None:
+        def _wrapper(*args: TtnnTensorLike, **kwargs: object) -> TtnnTensorLike | None:
             ctx = ProgramInvocationContext(
                 program=f,
                 args=args,
