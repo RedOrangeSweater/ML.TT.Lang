@@ -34,20 +34,9 @@ class LoopParams(BaseModel):
     def _process_params(self) -> "LoopParams":
         """Process AST arguments into MLIR values for scf.for."""
         # 1. Visit AST nodes and handle defaults
-        if len(self.args) == 1:
-            lb_raw = arith.ConstantOp(IndexType.get(self.ctx), 0)
-            ub_raw = self.visitor.visit(self.args[0])
-            step_raw = arith.ConstantOp(IndexType.get(self.ctx), 1)
-        elif len(self.args) == 2:
-            lb_raw = self.visitor.visit(self.args[0])
-            ub_raw = self.visitor.visit(self.args[1])
-            step_raw = arith.ConstantOp(IndexType.get(self.ctx), 1)
-        elif len(self.args) == 3:
-            lb_raw = self.visitor.visit(self.args[0])
-            ub_raw = self.visitor.visit(self.args[1])
-            step_raw = self.visitor.visit(self.args[2])
-        else:
-            raise ValueError(f"range() expects 1-3 arguments, got {len(self.args)}")
+        lb_raw = self.visitor.visit(self.args[0]) if len(self.args) >= 2 else arith.ConstantOp(IndexType.get(self.ctx), 0)
+        ub_raw = self.visitor.visit(self.args[1] if len(self.args) >= 2 else self.args[0])
+        step_raw = self.visitor.visit(self.args[2]) if len(self.args) == 3 else arith.ConstantOp(IndexType.get(self.ctx), 1)
 
         # 2. Handle memref loading and index casting
         self.lower_bound = self._prepare_value(lb_raw)
