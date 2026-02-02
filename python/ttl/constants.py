@@ -17,6 +17,21 @@ class MemorySpace(StrEnum):
     UNKNOWN = "unknown"
 
 
+class Objective(StrEnum):
+    """Scheduler objective policy."""
+
+    LATENCY = "latency"
+    THROUGHPUT = "throughput"
+    BALANCED = "balanced"
+
+
+class Placement(StrEnum):
+    """Scheduler placement policy."""
+
+    AUTO = "auto"
+    MANUAL = "manual"
+
+
 # Device-supported memory spaces only (L1/DRAM).
 SUPPORTED_MEMORY_SPACES: frozenset[MemorySpace] = frozenset({MemorySpace.L1, MemorySpace.DRAM})
 

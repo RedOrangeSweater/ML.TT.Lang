@@ -6,11 +6,9 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
-from ..constants import MemorySpace
+from ..constants import MemorySpace, Objective, Placement
 
 
 class ProgramRunConfig(BaseModel):
@@ -40,10 +38,10 @@ class ProgramConfig(BaseModel):
     grid: tuple[int, int] | None = Field(
         default=None, description="(cols, rows) for scheduler/compile"
     )
-    objective: Literal["latency", "throughput", "balanced"] | None = Field(
+    objective: Objective | None = Field(
         default=None, description="Scheduler objective"
     )
-    placement: Literal["auto", "manual"] | None = Field(
+    placement: Placement | None = Field(
         default=None, description="Scheduler placement"
     )
 

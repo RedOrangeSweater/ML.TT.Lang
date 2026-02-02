@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from typing import Annotated, Literal, Self
+from typing import Annotated, Self
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
-from ..constants import MemorySpace
+from ..constants import MemorySpace, Objective, Placement
 from ..descriptor_options import (
     ProgramConfig,
     ProgramRunConfig,
@@ -26,14 +26,16 @@ from ..descriptor_options import (
 from ..dtype_utils import is_ttnn_tensor
 
 
-def _as_int_grid(grid: tuple[object, ...] | list[object]) -> tuple[int, ...] | list[int]:
+def _as_int_grid(
+    grid: tuple[object, ...] | list[object],
+) -> tuple[int, ...] | list[int]:
     """Normalize a tuple/list-like grid to int values."""
     int_values = [int(x) for x in grid]  # type: ignore[arg-type]
     return tuple(int_values) if isinstance(grid, tuple) else int_values
 
 
 def _resolve_grid(grid, args, kwargs) -> tuple[int, ...] | list[int]:
-    """Resolve grid, evaluating callable or 'auto' if needed. Returns concrete grid tuple/list."""
+    """Resolve grid (callable/'auto'), returning concrete tuple/list."""
     if callable(grid):
         resolved = grid(*args, **kwargs)
         if not isinstance(resolved, (tuple, list)):
@@ -75,16 +77,22 @@ class ProgramOptions(BaseModel):
     tiled: bool = True
     fp32_dest_acc_en: bool | None = None
     dst_full_sync_en: bool | None = None
-    objective: Literal["latency", "throughput", "balanced"] | None = None
-    placement: Literal["auto", "manual"] | None = None
+    objective: Objective | None = None
+    placement: Placement | None = None
 
     @property
     def program_config_dict(self) -> dict[str, str | None]:
         """Dict for program_config (objective, placement)."""
-        return {"objective": self.objective, "placement": self.placement}
+        return {
+            "objective": self.objective.value if self.objective else None,
+            "placement": self.placement.value if self.placement else None,
+        }
 
-    def build_program_config(self, grid: tuple[int, int] | None = None) -> ProgramConfig:
-        """Build ProgramConfig from decorator options (objective, placement, optional grid)."""
+    def build_program_config(
+        self,
+        grid: tuple[int, int] | None = None,
+    ) -> ProgramConfig:
+        """Build ProgramConfig from decorator options and optional grid."""
         return ProgramConfig(
             grid=grid,
             objective=self.objective,
@@ -109,7 +117,10 @@ class ProgramOptions(BaseModel):
 
 
 class ProgramDecoratorParams(BaseModel):
-    """Validated decorator params for @ttl.program. Contract: grid required; indexing_maps when iterator_types; options.num_outs == 1."""
+    """Validated decorator params for @ttl.program.
+
+    Contract: grid required; indexing_maps when iterator_types; options.num_outs == 1.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -151,7 +162,7 @@ class ProgramDecoratorParams(BaseModel):
 
     @model_validator(mode="after")
     def indexing_maps_dims_match_iterator_types(self) -> Self:
-        """Contract: each indexing_map's number of parameters must match len(iterator_types)."""
+        """Contract: indexing_map params count matches len(iterator_types)."""
         if not self.indexing_maps or not self.iterator_types:
             return self
         it_len = len(self.iterator_types)
@@ -163,14 +174,17 @@ class ProgramDecoratorParams(BaseModel):
                 continue
             if num_dims != it_len:
                 raise ValueError(
-                    f"Number of dimensions ({num_dims}) must match iterator_types length ({it_len}) "
-                    f"for indexing_map[{i}]"
+                    f"Number of dimensions ({num_dims}) must match iterator_types "
+                    f"length ({it_len}) for indexing_map[{i}]"
                 )
         return self
 
 
 class KernelCompileRequest(BaseModel):
-    """Hierarchical request for _compile_kernel. Per-invocation data at root; decorator options nested in options."""
+    """Hierarchical request for _compile_kernel.
+
+    Per-invocation data at root; decorator options nested in options.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -191,7 +205,10 @@ class KernelCompileRequest(BaseModel):
 
 
 class CompileKernelRequest(BaseModel):
-    """Single request object for _compile_kernel. Bundles program, invocation, compile params, and registry."""
+    """Single request object for _compile_kernel.
+
+    Bundles program, invocation, compile params, and registry.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -246,7 +263,10 @@ class ProgramSpec(BaseModel):
         return self
 
 class RunRequest(BaseModel):
-    """Request for run(req). Single entry point: spec + args + kwargs. Validates num_outs == 1 before compile."""
+    """Request for run(req).
+
+    Single entry point: spec + args + kwargs. Validates num_outs == 1 before compile.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -324,7 +344,7 @@ class Program:
         return Program(*self.threads, args=args, kwargs={**self.kwargs, **kwargs})
 
 
-from .builder import ProgramBuilder
+from .builder import ProgramBuilder  # noqa: E402
 
 __all__ = [
     "CompileKernelRequest",

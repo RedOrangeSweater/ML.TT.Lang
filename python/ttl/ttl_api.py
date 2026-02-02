@@ -15,14 +15,13 @@ from __future__ import annotations
 import functools
 import random
 from collections.abc import Callable
-from typing import Literal
 
 from ._src.auto_profile import is_auto_profile_enabled, run_profiling_after_execute
 from .circular_buffer import CircularBuffer
 from .compile.compile_thread import compile_thread as _compile_thread_impl
 from .compile.pipeline import _compile_kernel as _compile_kernel_impl
 from .compile.registry import get_thread_registry
-from .constants import MemorySpace
+from .constants import MemorySpace, Objective, Placement
 from .descriptor_options import CompiledTTNNKernel
 from .layered.context import ProgramInvocationContext, RunContext
 from .layered.decorators import (
@@ -110,10 +109,6 @@ def datamovement(verbose: bool = False) -> Callable[..., object]:
 # Compile layer: KernelCompileRequest -> (threads, module) -> TTNNKernelCompileRequest
 # -> CompiledTTNNKernel. Implementation in .compile.pipeline; facade delegates.
 # -----------------------------------------------------------------------------
-
-OBJECTIVE_VALUES = ("latency", "throughput", "balanced")
-PLACEMENT_VALUES = ("auto", "manual")
-
 
 # -----------------------------------------------------------------------------
 # Runtime entry: ProgramSpec + args -> compile -> run_kernel_on_device (kernel_runner).
@@ -211,8 +206,8 @@ def _pykernel_gen_params_adapter(
         tiled: bool = True,
         fp32_dest_acc_en: bool | None = None,
         dst_full_sync_en: bool | None = None,
-        objective: Literal["latency", "throughput", "balanced"] | None = None,
-        placement: Literal["auto", "manual"] | None = None,
+        objective: Objective | None = None,
+        placement: Placement | None = None,
     ) -> Callable:
         """Public @ttl.program API: build ProgramDecoratorParams and delegate."""
         params = ProgramDecoratorParams(

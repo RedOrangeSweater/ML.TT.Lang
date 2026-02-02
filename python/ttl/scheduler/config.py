@@ -17,8 +17,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from ..constants import Objective
+
 BackendType = Literal["tenstorrent", "toy_shops", "toy_bakeries"]
-ObjectiveType = Literal["latency", "throughput", "balanced"]
 
 
 class GraphSourceSpec(BaseModel):
@@ -94,7 +95,7 @@ class AbstractEngineConfig(BaseModel):
     backend: BackendType = Field(
         ..., description="tenstorrent | toy_shops | toy_bakeries"
     )
-    objective: ObjectiveType = Field(default="latency")
+    objective: Objective = Field(default=Objective.LATENCY)
 
     # Graph: either source ref or Toy generator params
     graph_source: GraphSourceSpec | None = Field(default=None)
