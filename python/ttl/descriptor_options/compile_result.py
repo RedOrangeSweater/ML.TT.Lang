@@ -93,11 +93,11 @@ class CompiledProfilingSource(BaseModel):
     source_lines: object | None = Field(
         default=None, description="Source lines (deprecated)"
     )
-    all_source_lines: dict[str, object] = Field(
+    all_source_lines: dict[str, list[str]] = Field(
         default_factory=dict,
         description="Dict mapping kernel name to source lines",
     )
-    kernel_line_offsets: dict[str, object] = Field(
+    kernel_line_offsets: dict[str, int] = Field(
         default_factory=dict,
         description="Dict mapping kernel name to line offset",
     )
@@ -181,11 +181,11 @@ class CompiledTTNNKernel(BaseModel):
         return self.profiling.source_lines if self.profiling else None
 
     @property
-    def all_source_lines(self) -> dict[str, object]:
+    def all_source_lines(self) -> dict[str, list[str]]:
         return self.profiling.all_source_lines if self.profiling else {}
 
     @property
-    def kernel_line_offsets(self) -> dict[str, object]:
+    def kernel_line_offsets(self) -> dict[str, int]:
         return self.profiling.kernel_line_offsets if self.profiling else {}
 
     def build_run_request(self, *args: object) -> RunKernelRequest:

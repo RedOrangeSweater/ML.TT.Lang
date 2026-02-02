@@ -15,7 +15,7 @@ from __future__ import annotations
 import functools
 import random
 from collections.abc import Callable
-from typing import Literal, cast
+from typing import Literal
 
 from ._src.auto_profile import is_auto_profile_enabled, run_profiling_after_execute
 from .circular_buffer import CircularBuffer
@@ -287,17 +287,11 @@ def pykernel_gen(
                 return None
             result = ctx.compiled(*ctx.args)
             if is_auto_profile_enabled() and ctx.compiled.all_source_lines:
-                all_source_lines = cast(
-                    dict[str, list[str]], ctx.compiled.all_source_lines
-                )
-                kernel_line_offsets = cast(
-                    dict[str, int] | None, ctx.compiled.kernel_line_offsets
-                )
                 run_profiling_after_execute(
                     ctx.args,
-                    all_source_lines,
+                    ctx.compiled.all_source_lines,
                     ctx.compiled.thread_to_kernel,
-                    kernel_line_offsets,
+                    ctx.compiled.kernel_line_offsets,
                 )
             return result
 
