@@ -59,7 +59,7 @@
 ## 3. Правила ведения
 
 - **После каждого абзаца/раздела**: сноска в едином формате (HTML-комментарий или markdown-сноска): путь к MLIR (канон: `.cursor/artifacts_mlir_graphdb/mlir/`), опционально якорь, диалект. Пример: `<!-- mlir: .cursor/artifacts_mlir_graphdb/mlir/doc_pipeline.mlir [#anchor] dialect=ttm.sdlc_doc -->`.
-- **Реестр диалектов**: для каждого MLIR-слоя/файла объявлять диалект (в атрибутах модуля или в `.cursor/artifacts_mlir_graphdb/mlir/README.md`; см. также [Artifacts/mlir/README.md](Artifacts/mlir/README.md) в этом каталоге).
+- **Реестр диалектов**: для каждого MLIR-слоя/файла объявлять диалект (в атрибутах модуля или в `.cursor/artifacts_mlir_graphdb/mlir/README.md`; см. также [`.cursor/artifacts_mlir_graphdb/mlir/README.md`](../../../../.cursor/artifacts_mlir_graphdb/mlir/README.md)).
 - **Реестр трансформаций**: перечень пассов/пайплайнов (doc→MLIR, GraphDB→MLIR, lowering, …) с указанием потребляемых и производимых диалектов.
 
 ---

@@ -1,6 +1,6 @@
 # Реестр MLIR-слоёв и трансформаций (cursorrules)
 
-Канонический **SoT** — KG (GraphDB) + MLIR intent/effect. Текст генерируется только на последнем шаге (LLM из финального MLIR). См. [00_Doc_MLIR_GraphDB_Pipeline.md](../00_Doc_MLIR_GraphDB_Pipeline.md) и `Artifacts/graphdb/`.
+Канонический **SoT** — KG (GraphDB) + MLIR intent/effect. Текст генерируется только на последнем шаге (LLM из финального MLIR). См. [00_Doc_MLIR_GraphDB_Pipeline.md](../../../docs/sdlc/01_tt_metal/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md) и [`graphdb/`](../graphdb/).
 
 **Структура**: по путям видно этап → диалект → трансформация.
 
@@ -14,6 +14,8 @@
 | `reu.sdlc_kg` (kg_core) | Представление KG-структур в MLIR: концепты, отношения, эффекты (без текстовых фраз). |
 | `reu.sdlc_doc_intent` (doc_intent) | Intent/effect для генерации документа: ссылки на KG ids, стиль/язык; без текстового content. |
 | `reu.sdlc_doc` | Устаревший doc-слой с content-строками; вытесняется KG-first (kg_core + doc_intent). |
+
+Примечание по префиксам: `reu.*` используется для документационных диалектов в контексте tt-lang/cursorrules; в SDLC-доках tt-metal и в legacy-сносках может встречаться `ttm.*` (например `ttm.sdlc_doc`) как кросс-проектный префикс.
 
 ## Трансформации (KG-first)
 

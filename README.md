@@ -41,6 +41,8 @@ source build/env/activate
 cmake --build build
 ```
 
+For one-click runs in Cursor/VSCode (examples, pytest), use the `TTL:` Run configs in `.vscode/launch.json` and `.vscode/tasks.json` (see `docs/sdlc/00_Main/00_Status/00_Quickstart.md`).
+
 The tt-mlir will be built and installed to `build/tt-mlir-install/` by default (or to the location specified by `TTMLIR_INSTALL_PREFIX`). The generated `env/activate` script in tt-lang's build directory will automatically use this local installation. This process requires:
 - An existing LLVM/MLIR toolchain at `TTMLIR_TOOLCHAIN_DIR` (default: `/opt/ttmlir-toolchain`)
 

@@ -15,4 +15,4 @@
 | doc_layer.rq, mlir_doc_layer.rq, mlir_passes.rq, graphdb_layer.rq, next_mlir.rq, final_llm.rq | representation_layers (§2) | reu.sdlc_kg, reu.sdlc_doc_intent |
 | links_section.rq | Ссылки | reu.sdlc_kg, reu.sdlc_doc_intent |
 
-Реестр MLIR: [../mlir/README.md](../mlir/README.md). Пайплайн: [../../../00_Main/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md](../../../00_Main/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md).
+Реестр MLIR: [../mlir/README.md](../mlir/README.md). Пайплайн: [../../../docs/sdlc/01_tt_metal/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md](../../../docs/sdlc/01_tt_metal/02_Architecture/00_Doc_MLIR_GraphDB_Pipeline.md).

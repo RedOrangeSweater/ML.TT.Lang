@@ -10,7 +10,7 @@
 
 Цель: дать **минимум терминов**, но достаточно, чтобы:
 
-- понимать существующие документы (например `docs/LOWERING_MULTITILE.md`);
+ - понимать существующие документы (например `docs/sdlc/00_Main/03_Specs/LOWERING_MULTITILE.md`);
 - читать IR в тестах и диагностиках;
 - понимать, почему “сломался pass”.
 
@@ -155,7 +155,7 @@ flowchart LR
 
 ## 4) Минимальный пример end-to-end (Python + кусок IR)
 
-В `docs/LOWERING_MULTITILE.md` есть эталонная трассировка “2x2 add” от Python до IR и дальше. Ниже — минимальный фрагмент, чтобы “узнать форму”.
+В `docs/sdlc/00_Main/03_Specs/LOWERING_MULTITILE.md` есть эталонная трассировка “2x2 add” от Python до IR и дальше. Ниже — минимальный фрагмент, чтобы “узнать форму”.
 
 ### 4.1 Python идея (сокращенно)
 
@@ -266,7 +266,7 @@ def add_kernel(lhs, rhs, out):
 
 ## 8) Что читать дальше (4 пункта)
 
-- `docs/LOWERING_MULTITILE.md` — “одна трасса, которая объясняет половину системы”.
+- `docs/sdlc/00_Main/03_Specs/LOWERING_MULTITILE.md` — “одна трасса, которая объясняет половину системы”.
 - `docs/sdlc/00_Main/02_Architecture/01_HighLevelDesign.md` — границы ответственности компонентов.
 - `docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md` — слои Python-фреймворка (Program / Graph / Compile / Runtime), поток данных и реестр трансформаций.
 - `test/TESTING.md` — как тесты проверяют IR на двух стадиях (initial/final).
