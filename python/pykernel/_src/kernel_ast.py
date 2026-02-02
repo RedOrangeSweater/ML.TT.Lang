@@ -95,7 +95,7 @@ class TTCompilerBase(PyKernelAstBase):
         self.module = Module.create(self.cursor)
         self.insert_point = self.module.body
         self.func_entry = None
-        self.symbol_tables = []
+        self.scope = Scope()
         self.module_symbol_table = None
         self.kernel_type = kernel_type
 
@@ -141,19 +141,17 @@ class TTCompilerBase(PyKernelAstBase):
         if_exp = scf.IfOp(cond=if_cond, hasElse=bool(node.orelse))
 
         with InsertionPoint(if_exp.then_block), Location.unknown():
-            self.symbol_tables.append({})
-            for stmt in node.body:
-                self.visit(stmt)
-            scf.YieldOp([])
-            self.symbol_tables.pop()
+            with self.scope.new_scope():
+                for stmt in node.body:
+                    self.visit(stmt)
+                scf.YieldOp([])
 
         if node.orelse:
             with InsertionPoint(if_exp.else_block), Location.unknown():
-                self.symbol_tables.append({})
-                for stmt in node.orelse:
-                    self.visit(stmt)
-                scf.YieldOp([])
-                self.symbol_tables.pop()
+                with self.scope.new_scope():
+                    for stmt in node.orelse:
+                        self.visit(stmt)
+                    scf.YieldOp([])
 
     def visit_For(self, node):
         assert node.iter.func.id == "range", "Only range() supported in for loops"
@@ -198,15 +196,13 @@ class TTCompilerBase(PyKernelAstBase):
 
         for_op = scf.ForOp(lower_bound, upper_bound, step)
         with InsertionPoint(for_op.body), Location.unknown():
-            self.symbol_tables.append({})
+            with self.scope.new_scope():
+                # Add the iterator into the symbol_table
+                self.scope.define(node.target.id, for_op.induction_variable)
 
-            # Add the iterator into the symbol_table
-            self.symbol_tables[-1][node.target.id] = for_op.induction_variable
-
-            for stmt in node.body:
-                self.visit(stmt)
-            scf.YieldOp([])
-            self.symbol_tables.pop()
+                for stmt in node.body:
+                    self.visit(stmt)
+                scf.YieldOp([])
 
     # Statements
     def visit_Name(self, node):
@@ -216,11 +212,7 @@ class TTCompilerBase(PyKernelAstBase):
         if var_name == "int":
             return IntegerType.get_signless(64, self.ctx)
 
-        existing_var_table = self._var_exists(var_name)
-        if existing_var_table:
-            return existing_var_table[var_name]
-
-        return None
+        return self.scope.lookup(var_name)
 
     def visit_Assign(self, node):
         # Loosely support slice + tuple assignment for rt_args
@@ -248,16 +240,14 @@ class TTCompilerBase(PyKernelAstBase):
                         f"Not enough values to unpack from rt_args slice (expected {len(_vars)}, got {len(values)})"
                     )
                 # Since we are unpacking a tuple, types can't be assigned here:
-                sym_table = self.symbol_tables[-1]
                 for i in range(len(_vars)):
-                    sym_table[_tuple.elts[i].id] = values[i]
+                    self.scope.define(_tuple.elts[i].id, values[i])
 
                 # Exit out of function now
                 return
 
         var = self.visit(node.targets[0])
         value = self.visit(node.value)
-        sym_table = self.symbol_tables[-1]
 
         # Handle Subscript Assignment here
         if isinstance(node.targets[0], ast.Subscript):
@@ -270,13 +260,12 @@ class TTCompilerBase(PyKernelAstBase):
         if hasattr(var, "type") and isinstance(var.type, MemRefType):
             memref.StoreOp(value, var, [arith.ConstantOp(IndexType.get(self.ctx), 0)])
         else:
-            sym_table[var_name] = value
+            self.scope.define(var_name, value)
 
     def visit_AnnAssign(self, node):
         # NOTE: TTKernel types can not be used with memrefs
         var = self.visit(node.target)
         value = self.visit(node.value)
-        sym_table = self.symbol_tables[-1]
         var_name = node.target.id
 
         # Check the annotation for array creation
@@ -296,7 +285,7 @@ class TTCompilerBase(PyKernelAstBase):
                 memref_type = MemRefType.get(
                     [elt.value for elt in node.annotation.elts[1:]], var_type
                 )
-                sym_table[var_name] = memref.alloca(memref_type, [], [])
+                self.scope.define(var_name, memref.alloca(memref_type, [], []))
                 return
             else:
                 raise NotImplementedError(
@@ -312,7 +301,7 @@ class TTCompilerBase(PyKernelAstBase):
             var_type = value.type
             memref_type = MemRefType.get([1], var_type)
             var = memref.alloca(memref_type, [], [])
-            sym_table[var_name] = var
+            self.scope.define(var_name, var)
         else:
             assert isinstance(var, MemRefType), "Can not AnnAssign to non-memref types"
 
@@ -617,7 +606,9 @@ class TTCompilerBase(PyKernelAstBase):
 
     def visit_Attribute(self, node, func_args=[], kwargs={}):
         # type name should be !ttkernel.* if it has attributes
-        mlir_value = self._var_exists(node.value.id)[node.value.id]
+        mlir_value = self.scope.lookup(node.value.id)
+        if mlir_value is None:
+            raise ValueError(f"Variable {node.value.id} not found")
         mlir_type = _get_type_str(mlir_value.type)
         qualified_object_syntax = f"{mlir_type}.{node.attr}"
         fn = self._fn_map.get(qualified_object_syntax, None)
@@ -656,17 +647,18 @@ class TTCompilerBase(PyKernelAstBase):
 
             for elt in node.elts:
                 if isinstance(elt, ast.Name):
-                    tbl = self._var_exists(elt.id)
-                    elt = tbl[elt.id]
-                    if hasattr(elt, "type") and isinstance(elt.type, MemRefType):
-                        if elt.type.rank > 1 or elt.type.shape[0] != 1:
+                    elt_val = self.scope.lookup(elt.id)
+                    if elt_val is None:
+                        raise ValueError(f"Variable {elt.id} not found")
+                    if hasattr(elt_val, "type") and isinstance(elt_val.type, MemRefType):
+                        if elt_val.type.rank > 1 or elt_val.type.shape[0] != 1:
                             raise NotImplementedError(
                                 "Creating Arrays with Pre-Defined Nested Arrays Not Supported."
                             )
                     sz += 1
                     result_arr.append(
                         memref.LoadOp(
-                            elt, arith.ConstantOp(IndexType.get(self.ctx), 0)
+                            elt_val, arith.ConstantOp(IndexType.get(self.ctx), 0)
                         ).result
                     )
                 elif isinstance(elt, ast.List):

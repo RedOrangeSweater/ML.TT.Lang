@@ -181,33 +181,6 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
         )
 
     @with_proxy(AssignProxy)
-    @contextlib.contextmanager
-    def scope(self) -> Generator[None, None, None]:
-        """Context manager to manage symbol table scoping."""
-        self.symbol_tables.append({})
-        try:
-            yield
-        finally:
-            self.symbol_tables.pop()
-
-    @property
-    def current_scope(self) -> dict[str, Any]:
-        """Return the current (innermost) symbol table."""
-        if not self.symbol_tables:
-            raise RuntimeError("No active scope in symbol table")
-        return self.symbol_tables[-1]
-
-    def define(self, name: str, value: Any) -> None:
-        """Define a variable in the current scope."""
-        self.current_scope[name] = value
-
-    def lookup(self, name: str) -> Any | None:
-        """Look up a variable in all active scopes, starting from the innermost."""
-        for sym_table in reversed(self.symbol_tables):
-            if name in sym_table:
-                return sym_table[name]
-        return None
-
     def visit_Assign(self, proxy: AssignProxy):
         """Handle tuple unpacking for TTL functions like core(dims=2)."""
         target = proxy.first_target
@@ -227,7 +200,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
         for elt, val in zip(targets, value, strict=False):
             if not isinstance(elt, ast.Name):
                 raise ValueError("Tuple unpacking requires simple variable names")
-            self.define(elt.id, val)
+            self.scope.define(elt.id, val)
 
     def _loc_for_node(self, node: ast.AST) -> Location:
         """Return file location for node if debug_locations enabled, else name location."""
@@ -373,7 +346,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
 
         var_name = value_proxy.name_id
         assert var_name is not None
-        tbl = self._var_exists(var_name)
+        tbl = self.scope.get_table_with_var(var_name)
         if not tbl:
             proxy.error(f"Unknown variable: {var_name}", self.config.source_file, self.config.line_offset)
 
@@ -512,12 +485,10 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
         thread_attr = ttkernel.ir.ThreadTypeAttr.get(self.ctx, thread_type)
         self.func_entry.attributes["ttl.kernel_thread"] = thread_attr
 
-        # Push global scope
-        self.symbol_tables.append({})
         func_bb: Block = self.func_entry.add_entry_block()
 
         # Add ttl module to symbol table
-        self.define("ttl", ttl)
+        self.scope.define("ttl", ttl)
 
         # Ensure TTL dialect is registered for type parsing
         ttl.ensure_dialects_registered(self.ctx)
@@ -529,49 +500,49 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
         self._validate_function_signature(node)
 
         processed_tensors = self._process_tensor_captures(self.captures)
-        func_bb = self._setup_symbol_table(node, processed_tensors)
 
-        # Emit function body
-        with InsertionPoint(func_bb):
-            # Map TensorAccessor function arguments to symbol table
-            for i, name in enumerate(self._tensor_accessor_names):
-                self.define(name, func_bb.arguments[i])
-                self.streams.add(name)
+        with self.scope.new_scope():
+            func_bb = self._setup_symbol_table(node, processed_tensors)
 
-            # Prepopulate other captures (non-tensor)
-            from ..circular_buffer import CircularBuffer
+            # Emit function body
+            with InsertionPoint(func_bb):
+                # Map TensorAccessor function arguments to symbol table
+                for i, name in enumerate(self._tensor_accessor_names):
+                    self.scope.define(name, func_bb.arguments[i])
+                    self.streams.add(name)
 
-            for name, val in self.captures.items():
-                if is_ttnn_tensor(val):
-                    continue  # Already handled via function arguments
-                # torch.Tensor in compile-only path: same as ttnn, handled via args
-                try:
-                    import torch
+                # Prepopulate other captures (non-tensor)
+                from ..circular_buffer import CircularBuffer
 
-                    if isinstance(val, torch.Tensor):
-                        continue
-                except ImportError:
-                    pass
-                assert isinstance(name, str)
-                if isinstance(val, int):
-                    self.define(name, arith.ConstantOp(
-                        IndexType.get(self.ctx), val
-                    ))
-                elif isinstance(val, CircularBuffer):
-                    cb_val = self._emit_cb_from_capture(val)
-                    self.define(name, cb_val)
-                else:
-                    self._raise_error(
-                        node, f"Invalid capture type for var {name}: {type(val)}"
-                    )
+                for name, val in self.captures.items():
+                    if is_ttnn_tensor(val):
+                        continue  # Already handled via function arguments
+                    # torch.Tensor in compile-only path: same as ttnn, handled via args
+                    try:
+                        import torch
 
-            for target in node.body:
-                self.visit(target)
+                        if isinstance(val, torch.Tensor):
+                            continue
+                    except ImportError:
+                        pass
+                    assert isinstance(name, str)
+                    if isinstance(val, int):
+                        self.scope.define(name, arith.ConstantOp(
+                            IndexType.get(self.ctx), val
+                        ))
+                    elif isinstance(val, CircularBuffer):
+                        cb_val = self._emit_cb_from_capture(val)
+                        self.scope.define(name, cb_val)
+                    else:
+                        self._raise_error(
+                            node, f"Invalid capture type for var {name}: {type(val)}"
+                        )
 
-            self.profiler.close_final_signpost()
-            func.ReturnOp([])
+                for target in node.body:
+                    self.visit(target)
 
-        self.symbol_tables.pop()
+                self.profiler.close_final_signpost()
+                func.ReturnOp([])
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
         with self._loc_for_node(node):
@@ -604,7 +575,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
                 if not proxy.is_valid_cb_method:
                     proxy.error("'with' only supports 'reserve()' or 'wait()' on CircularBuffer", self.config.source_file, self.config.line_offset)
 
-                cb_table = self._var_exists(proxy.cb_var_name)
+                cb_table = self.scope.get_table_with_var(proxy.cb_var_name)
                 if not cb_table:
                     proxy.error(f"'{proxy.cb_var_name}' not found in scope", self.config.source_file, self.config.line_offset)
                 cb_val = cb_table[proxy.cb_var_name]
@@ -616,7 +587,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
                 )
                 releases.append(release_info)
                 if proxy.optional_name is not None:
-                    self.define(proxy.optional_name, acquire_result)
+                    self.scope.define(proxy.optional_name, acquire_result)
 
             for stmt in node.body:
                 self.visit(stmt)

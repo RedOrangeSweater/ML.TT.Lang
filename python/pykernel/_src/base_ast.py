@@ -4,11 +4,57 @@
 #
 # NOTE: This file was copied from tt-mlir/tools/pykernel/_src/base_ast.py
 
+from __future__ import annotations
+
 import ast
+import contextlib
 import inspect
+from collections.abc import Generator
+from typing import Any
 
 from ttmlir.dialects import emitc, func
 from ttmlir.ir import *
+
+
+class Scope:
+    """Manages symbol table scoping."""
+
+    def __init__(self):
+        self.symbol_tables: list[dict[str, Any]] = []
+
+    @contextlib.contextmanager
+    def new_scope(self) -> Generator[None]:
+        """Context manager to manage symbol table scoping."""
+        self.symbol_tables.append({})
+        try:
+            yield
+        finally:
+            self.symbol_tables.pop()
+
+    @property
+    def current_scope(self) -> dict[str, Any]:
+        """Return the current (innermost) symbol table."""
+        if not self.symbol_tables:
+            raise RuntimeError("No active scope in symbol table")
+        return self.symbol_tables[-1]
+
+    def define(self, name: str, value: Any) -> None:
+        """Define a variable in the current scope."""
+        self.current_scope[name] = value
+
+    def lookup(self, name: str) -> Any | None:
+        """Look up a variable in all active scopes, starting from the innermost."""
+        for sym_table in reversed(self.symbol_tables):
+            if name in sym_table:
+                return sym_table[name]
+        return None
+
+    def get_table_with_var(self, var_name: str) -> dict[str, Any] | None:
+        """Return the symbol table containing the variable, or None if not found."""
+        for sym_table in reversed(self.symbol_tables):
+            if var_name in sym_table:
+                return sym_table
+        return None
 
 
 class PyKernelAstBase(ast.NodeVisitor):
@@ -20,7 +66,7 @@ class PyKernelAstBase(ast.NodeVisitor):
         self.module = Module.create(self.cursor)
         self.insert_point = self.module.body
         self.func_entry = None
-        self.symbol_tables = []
+        self.scope = Scope()
         self.supported_nodes = [ast.Module, ast.Return, ast.Expr]
 
     def _get_source_comment(self, node):
@@ -77,17 +123,12 @@ class PyKernelAstBase(ast.NodeVisitor):
                 result += f"{line}\n// "
         return result
 
-    def _var_exists(self, var_name):
-        for sym_table in reversed(self.symbol_tables):
-            if var_name in sym_table:
-                return sym_table
-        return {}
-
     def visit_Module(self, node):
         # Set default basic block
         with InsertionPoint(self.insert_point), Location.unknown():
-            for stmt in node.body:
-                self.visit(stmt)
+            with self.scope.new_scope():
+                for stmt in node.body:
+                    self.visit(stmt)
 
     def visit_Return(self, node):
         # TODO: handle more than one return, i.e. tuples, expressions etc.
@@ -104,25 +145,18 @@ class PyKernelAstBase(ast.NodeVisitor):
         return self.visit(node.value)
 
     def visit(self, node: ast.AST, **kwargs):
-        if any(
-            isinstance(node, supported_node) for supported_node in self.supported_nodes
-        ):
-            if self.verbose and isinstance(
-                node, (ast.Assign, ast.AnnAssign, ast.AugAssign)
-            ):
-                # Create a verbatim Op here to store the comment
-                source_code = self._get_source_comment(node)
-                emitc.verbatim(source_code, [])
-
-            # Figure out which node to visit. Not using super().visit() in order to pass kwargs.
-            method_name = "visit_" + node.__class__.__name__
-            visitor = getattr(self, method_name, self.generic_visit)
-
-            params = inspect.signature(visitor).parameters
-            filtered_kwargs = {k: v for k, v in kwargs.items() if k in params}
-            if filtered_kwargs:
-                return visitor(node, **filtered_kwargs)
-            else:
-                return visitor(node)
-        else:
+        if not any(isinstance(node, sn) for sn in self.supported_nodes):
             raise NotImplementedError(f"visit {type(node).__name__} not supported")
+
+        if self.verbose and isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            # Create a verbatim Op here to store the comment
+            source_code = self._get_source_comment(node)
+            emitc.verbatim(source_code, [])
+
+        # Figure out which node to visit. Not using super().visit() in order to pass kwargs.
+        method_name = f"visit_{node.__class__.__name__}"
+        visitor = getattr(self, method_name, self.generic_visit)
+
+        params = inspect.signature(visitor).parameters
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in params}
+        return visitor(node, **filtered_kwargs) if filtered_kwargs else visitor(node)
