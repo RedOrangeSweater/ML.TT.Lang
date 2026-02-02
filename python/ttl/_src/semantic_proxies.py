@@ -5,12 +5,12 @@
 from __future__ import annotations
 
 import ast
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from .ast_proxies import CallProxy, NodeProxy
 
 if TYPE_CHECKING:
-    from .ttl_ast import TTLGenericCompiler
+    pass
 
 class SemanticProxy(NodeProxy):
     """Base class for semantic proxies that understand the 'meaning' of code."""
@@ -18,12 +18,12 @@ class SemanticProxy(NodeProxy):
 
 class CircularBufferOpProxy(SemanticProxy):
     """Proxy for CircularBuffer operations (wait, reserve, push, pop)."""
-    
+
     @classmethod
     def try_wrap(cls, node: ast.AST) -> CircularBufferOpProxy | None:
         if not isinstance(node, ast.Call):
             return None
-        
+
         call = CallProxy(node)
         if isinstance(call.func, ast.Attribute) and call.func.attr in ("wait", "reserve", "push", "pop"):
             # Check if the base object is a CB (this might require compiler context)
@@ -43,7 +43,7 @@ class CircularBufferOpProxy(SemanticProxy):
 
 class WithCBProxy(SemanticProxy):
     """Proxy for 'with cb.wait() as data' pattern."""
-    
+
     def __init__(self, item: ast.withitem):
         super().__init__(item.context_expr)
         self.item = item
@@ -65,3 +65,12 @@ class WithCBProxy(SemanticProxy):
         if isinstance(self.item.optional_vars, ast.Name):
             return self.item.optional_vars.id
         return None
+
+    @property
+    def is_valid_cb_method(self) -> bool:
+        """Check if this is a valid CircularBuffer method call (wait/reserve/etc)."""
+        return (
+            isinstance(self.item.context_expr, ast.Call)
+            and isinstance(self.item.context_expr.func, ast.Attribute)
+            and self.method_name in ("reserve", "wait")
+        )

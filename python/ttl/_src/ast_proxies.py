@@ -66,6 +66,16 @@ class NodeProxy(Generic[T]):
         """Create an OpSignpost for this node."""
         return OpSignpost(op_name, self.lineno or 0, line_offset, implicit)
 
+    @property
+    def is_name(self) -> bool:
+        """Check if this node is an ast.Name."""
+        return isinstance(self.node, ast.Name)
+
+    @property
+    def name_id(self) -> str | None:
+        """Return the id if this is an ast.Name."""
+        return self.node.id if isinstance(self.node, ast.Name) else None
+
 class CallProxy(NodeProxy[ast.Call]):
     """Proxy for ast.Call nodes."""
 
@@ -100,6 +110,21 @@ class AttributeProxy(NodeProxy[ast.Attribute]):
     @property
     def attr(self) -> str:
         return self.node.attr
+
+    @property
+    def is_ttl_module(self) -> bool:
+        """Check if this is a ttl.XXX access."""
+        return isinstance(self.node.value, ast.Name) and self.node.value.id == "ttl"
+
+    @property
+    def is_ttl_math(self) -> bool:
+        """Check if this is a ttl.math.XXX access."""
+        return (
+            isinstance(self.node.value, ast.Attribute)
+            and isinstance(self.node.value.value, ast.Name)
+            and self.node.value.value.id == "ttl"
+            and self.node.value.attr == "math"
+        )
 
 class AssignProxy(NodeProxy[ast.Assign]):
     """Proxy for ast.Assign nodes."""

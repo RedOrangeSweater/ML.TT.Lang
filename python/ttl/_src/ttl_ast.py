@@ -13,7 +13,6 @@ from typing import Any, NoReturn, TypeVar
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import (
     Block,
-    F32Type,
     IndexType,
     InsertionPoint,
     IntegerAttr,
@@ -273,36 +272,23 @@ class TTLGenericCompiler(TTCompilerBase):
         """Visit all children of a node and return results."""
         return [self.visit(child) for child in ast.iter_child_nodes(node)]
 
-    def _is_ttl_module_access(self, node: ast.Attribute) -> bool:
-        """Check if node is ttl.XXX access pattern."""
-        return isinstance(node.value, ast.Name) and node.value.id == "ttl"
-
-    def _is_ttl_math_access(self, node):
-        """Check if node is ttl.math.XXX access pattern."""
-        return (
-            isinstance(node.value, ast.Attribute)
-            and isinstance(node.value.value, ast.Name)
-            and node.value.value.id == "ttl"
-            and node.value.attr == "math"
-        )
-
     def _resolve_ttl_function(
         self,
-        node: ast.Attribute,
+        proxy: AttributeProxy,
         func_args: list[object],
         kwargs: dict[str, object],
     ) -> object | None:
         """Resolve and call a ttl.XXX or ttl.math.XXX function."""
-        if self._is_ttl_module_access(node):
+        if proxy.is_ttl_module:
             namespace = "ttl"
-        elif self._is_ttl_math_access(node):
+        elif proxy.is_ttl_math:
             namespace = "ttl.math"
         else:
             return None
 
-        fn = self._fn_map.get(node.attr)
+        fn = self._fn_map.get(proxy.attr)
         if fn is None:
-            self._raise_error(node, f"Unknown function: {namespace}.{node.attr}")
+            proxy.error(f"Unknown function: {namespace}.{proxy.attr}", self.config.source_file, self.config.line_offset)
         return fn(*func_args, **kwargs)
 
     def visit_Attribute(
@@ -318,8 +304,8 @@ class TTLGenericCompiler(TTCompilerBase):
         with self._loc_for_node(node):
             try:
                 # Handle ttl.XXX and ttl.math.XXX attribute access
-                if self._is_ttl_module_access(node) or self._is_ttl_math_access(node):
-                    return self._resolve_ttl_function(node, func_args, kwargs)
+                if proxy.is_ttl_module or proxy.is_ttl_math:
+                    return self._resolve_ttl_function(proxy, func_args, kwargs)
                 return super().visit_Attribute(node, func_args, kwargs)
             except (ValueError, TypeError, NotImplementedError) as e:
                 if isinstance(e, TTLangCompileError):
@@ -329,10 +315,12 @@ class TTLGenericCompiler(TTCompilerBase):
     def visit_Subscript(self, node):
         """Handle tensor[row, col] or tensor[r0:r1, c0:c1] indexing."""
         proxy = SubscriptProxy(node)
-        if not isinstance(proxy.value, ast.Name):
+        value_proxy = NodeProxy(proxy.value)
+        if not value_proxy.is_name:
             proxy.error("TTL only supports subscripting simple variables", self.config.source_file, self.config.line_offset)
 
-        var_name = proxy.value.id
+        var_name = value_proxy.name_id
+        assert var_name is not None
         tbl = self._var_exists(var_name)
         if not tbl:
             proxy.error(f"Unknown variable: {var_name}", self.config.source_file, self.config.line_offset)
@@ -381,7 +369,7 @@ class TTLGenericCompiler(TTCompilerBase):
         as_attr = getattr(node, "_ttkernel_as_attr", False)
         if callable(as_attr):
             return as_attr(node)
-        
+
         if isinstance(node.value, bool):
             type_ = IntegerType.get_signless(1, self.ctx)
             return IntegerAttr.get(type_, node.value) if as_attr else arith.ConstantOp(type_, node.value).result
@@ -559,11 +547,8 @@ class TTLGenericCompiler(TTCompilerBase):
 
             for item in node.items:
                 proxy = WithCBProxy(item)
-                
-                # Validation logic moved to proxy or handled here concisely
-                if not isinstance(item.context_expr, ast.Call) or \
-                   not isinstance(item.context_expr.func, ast.Attribute) or \
-                   proxy.method_name not in ("reserve", "wait"):
+
+                if not proxy.is_valid_cb_method:
                     proxy.error("'with' only supports 'reserve()' or 'wait()' on CircularBuffer", self.config.source_file, self.config.line_offset)
 
                 cb_table = self._var_exists(proxy.cb_var_name)
