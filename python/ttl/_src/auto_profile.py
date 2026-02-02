@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .ast_proxies import NodeProxy
+    pass
 
 
 class SignpostBoundary(Enum):

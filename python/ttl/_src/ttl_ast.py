@@ -8,7 +8,7 @@ import ast
 import contextlib
 import inspect
 from collections.abc import Callable, Generator
-from typing import NoReturn, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import (
@@ -49,6 +49,10 @@ from .context import (
     ThreadSourceInfo,
     TTLCompilerConfig,
 )
+from .ir_builder import IRBuilder
+from .profiling_aspect import ProfilingAspect
+from .semantic_dispatcher import SemanticDispatcher
+from .semantic_proxies import WithCBProxy
 from .tensor_registry import get_tensor_global_index
 from .type_builder import build_tensor_type as _build_tensor_type
 
@@ -83,27 +87,26 @@ class TTLGenericCompiler(TTCompilerBase):
             memory_space=config.memory_space,
             tiled=config.tiled,
         )
-        self.debug_locations = config.debug_locations
-        self.source_file = config.source_file
-        self.source_lines = config.source_lines
-        self.line_offset = config.line_offset
-        self.fn_globals = config.fn_globals
-
+        self.config = config
         self._cb_info: list[dict[str, object]] = []
         self.auto_profile_enabled = is_auto_profile_enabled()
         self.line_mapper = get_line_mapper() if self.auto_profile_enabled else None
+        self.line_mapper = get_line_mapper() if self.auto_profile_enabled else None
         if self.line_mapper:
-            self.line_mapper.line_offset = self.line_offset
+            self.line_mapper.line_offset = self.config.line_offset
         self._current_line_signpost: Signpost | None = None
+        self.profiler = ProfilingAspect(self)
+        self.ir = IRBuilder(self)
+        self.dispatcher = SemanticDispatcher(self)
         self._fn_map = dict(TTLGenericCompiler._syntax)
 
     @property
     def source_info(self) -> ThreadSourceInfo:
         """Structured source info for error reporting and profiling."""
         return ThreadSourceInfo(
-            source_file=self.source_file,
-            source_lines=self.source_lines,
-            line_offset=self.line_offset,
+            source_file=self.config.source_file,
+            source_lines=self.config.source_lines,
+            line_offset=self.config.line_offset,
         )
 
     def visit_Assign(self, node):
@@ -131,43 +134,29 @@ class TTLGenericCompiler(TTCompilerBase):
 
     def _loc_for_node(self, node: ast.AST) -> Location:
         """Return file location for node if debug_locations enabled, else name location."""
-        if self.debug_locations:
+        if self.config.debug_locations:
             proxy = NodeProxy(node)
             if proxy.lineno is not None:
-                return proxy.location(self.ctx, self.source_file, self.line_offset)
+                return proxy.location(self.ctx, self.config.source_file, self.config.line_offset)
         return self.loc
 
     def _raise_error(self, node: ast.AST, message: str) -> NoReturn:
         """Raise a TTLangCompileError with source location from AST node."""
-        NodeProxy(node).error(message, self.source_file, self.line_offset)
+        NodeProxy(node).error(message, self.config.source_file, self.config.line_offset)
 
     # Auto-profiling helpers for line-based signposting
 
-    def _emit_signpost(self, name: str):
-        """Emit a signpost operation into the MLIR."""
-        ttl.signpost(name)
-
     def _emit_marker(self, signpost: Signpost, boundary: SignpostBoundary) -> None:
         """Emit a signpost marker (before or after) for a typed signpost."""
-        self._emit_signpost(signpost.get_marker(boundary))
+        ttl.signpost(signpost.get_marker(boundary))
 
     def _register_pair(self, signpost: Signpost, source_line: str) -> None:
         """Register before/after signpost pair if line_mapper is active."""
-        if self.line_mapper:
-            self.line_mapper.register_signpost(signpost.before(), signpost.file_lineno, source_line)
-            self.line_mapper.register_signpost(signpost.after(), signpost.file_lineno, source_line)
+        if not self.line_mapper:
+            return
 
-    def _register_signpost_pair(
-        self,
-        before_name: str,
-        after_name: str,
-        file_lineno: int,
-        source_line: str,
-    ) -> None:
-        """DEPRECATED: Use _register_pair instead."""
-        if self.line_mapper:
-            self.line_mapper.register_signpost(before_name, file_lineno, source_line)
-            self.line_mapper.register_signpost(after_name, file_lineno, source_line)
+        for marker in (signpost.before(), signpost.after()):
+            self.line_mapper.register_signpost(marker, signpost.file_lineno, source_line)
 
     def _emit_line_signpost_if_needed(self, node: ast.AST) -> None:
         """Emit signposts at line boundaries for auto-profiling."""
@@ -175,14 +164,14 @@ class TTLGenericCompiler(TTCompilerBase):
         if not self.auto_profile_enabled or not isinstance(proxy.lineno, int):
             return
 
-        signpost = proxy.line_signpost(self.line_offset)
+        signpost = proxy.line_signpost(self.config.line_offset)
         if self._current_line_signpost and self._current_line_signpost.file_lineno == signpost.file_lineno:
             return
 
-        if self._current_line_signpost is not None:
+        if self._current_line_signpost:
             self._emit_marker(self._current_line_signpost, SignpostBoundary.AFTER)
 
-        self._register_pair(signpost, proxy.source_line(self.source_lines, self.line_offset))
+        self._register_pair(signpost, proxy.source_line(self.config.source_lines, self.config.line_offset))
         self._emit_marker(signpost, SignpostBoundary.BEFORE)
         self._current_line_signpost = signpost
 
@@ -209,7 +198,7 @@ class TTLGenericCompiler(TTCompilerBase):
                 yield
             return
 
-        self._register_pair(signpost, NodeProxy(node).source_line(self.source_lines, self.line_offset))
+        self._register_pair(signpost, NodeProxy(node).source_line(self.config.source_lines, self.config.line_offset))
 
         with self._loc_for_node(node):
             self._emit_marker(signpost, SignpostBoundary.BEFORE)
@@ -224,35 +213,44 @@ class TTLGenericCompiler(TTCompilerBase):
         implicit: bool = False,
     ) -> _T:
         """Emit signposts for operations with op name included."""
-        signpost = NodeProxy(node).op_signpost(op_name, self.line_offset, implicit)
-        with self.signpost_context(node, signpost):
+        with self.profiler.instrument_op(node, op_name, implicit):
             return op_fn()
 
     def visit_Call(self, node):
         """Override to set location context, catch errors, and inject auto-profiling."""
+        # Try semantic dispatch first
+        result = self.dispatcher.dispatch(node)
+        if result is not None:
+            return result
+
         proxy = CallProxy(node)
         with self._loc_for_node(node):
             try:
-                return self._try_emit_auto_signposts(
+                return self.profiler.wrap_visit(
                     node, lambda: super(TTLGenericCompiler, self).visit_Call(node)
                 )
             except (ValueError, TypeError, NotImplementedError) as e:
                 if isinstance(e, TTLangCompileError):
                     raise
-                proxy.error(str(e), self.source_file, self.line_offset)
+                proxy.error(str(e), self.config.source_file, self.config.line_offset)
 
     def visit_BinOp(self, node):
         """Override to inject auto-profiling and provide better error messages."""
+        # Try semantic dispatch first (e.g. for tensor ops)
+        result = self.dispatcher.dispatch(node)
+        if result is not None:
+            return result
+
         proxy = BinOpProxy(node)
         with self._loc_for_node(node):
             try:
-                return self._try_emit_auto_signposts(
+                return self.profiler.wrap_visit(
                     node, lambda: super(TTLGenericCompiler, self).visit_BinOp(node)
                 )
             except (ValueError, TypeError, NotImplementedError) as e:
                 if isinstance(e, TTLangCompileError):
                     raise
-                proxy.error(str(e), self.source_file, self.line_offset)
+                proxy.error(str(e), self.config.source_file, self.config.line_offset)
 
     def visit_Name(self, node):
         """Override to check function globals for simple constants."""
@@ -262,16 +260,18 @@ class TTLGenericCompiler(TTCompilerBase):
 
         # Check if it's a module-level constant
         var_name = node.id
-        if var_name in self.fn_globals:
-            val = self.fn_globals[var_name]
+        if var_name in self.config.fn_globals:
+            val = self.config.fn_globals[var_name]
             if isinstance(val, int):
-                return arith.ConstantOp(
-                    IntegerType.get_signless(64, self.ctx), val
-                ).result
+                return self.ir.const_i64(val)
             if isinstance(val, float):
-                return arith.ConstantOp(F32Type.get(self.ctx), val).result
+                return self.ir.const_f32(val)
 
         return None
+
+    def visit_children(self, node: ast.AST) -> list[Any]:
+        """Visit all children of a node and return results."""
+        return [self.visit(child) for child in ast.iter_child_nodes(node)]
 
     def _is_ttl_module_access(self, node: ast.Attribute) -> bool:
         """Check if node is ttl.XXX access pattern."""
@@ -324,22 +324,22 @@ class TTLGenericCompiler(TTCompilerBase):
             except (ValueError, TypeError, NotImplementedError) as e:
                 if isinstance(e, TTLangCompileError):
                     raise
-                proxy.error(str(e), self.source_file, self.line_offset)
+                proxy.error(str(e), self.config.source_file, self.config.line_offset)
 
     def visit_Subscript(self, node):
         """Handle tensor[row, col] or tensor[r0:r1, c0:c1] indexing."""
         proxy = SubscriptProxy(node)
         if not isinstance(proxy.value, ast.Name):
-            proxy.error("TTL only supports subscripting simple variables", self.source_file, self.line_offset)
+            proxy.error("TTL only supports subscripting simple variables", self.config.source_file, self.config.line_offset)
 
         var_name = proxy.value.id
         tbl = self._var_exists(var_name)
         if not tbl:
-            proxy.error(f"Unknown variable: {var_name}", self.source_file, self.line_offset)
+            proxy.error(f"Unknown variable: {var_name}", self.config.source_file, self.config.line_offset)
 
         tensor = tbl[var_name]
         if not isinstance(getattr(tensor, "type", None), RankedTensorType):
-            proxy.error("TTL only supports subscripting tensors", self.source_file, self.line_offset)
+            proxy.error("TTL only supports subscripting tensors", self.config.source_file, self.config.line_offset)
 
         if isinstance(proxy.slice, ast.Tuple):
             indices = [self._build_index_or_range(elt) for elt in proxy.slice.elts]
@@ -351,11 +351,11 @@ class TTLGenericCompiler(TTCompilerBase):
     def _to_index_value(self, node):
         """Convert AST node to MLIR index Value."""
         if isinstance(node, ast.Constant):
-            return arith.ConstantOp(IndexType.get(self.ctx), node.value)
+            return self.ir.const_index(node.value)
         val = self.visit(node)
         if isinstance(val.type, IndexType):
             return val
-        return arith.IndexCastOp(IndexType.get(self.ctx), val)
+        return self.ir.index_cast(val)
 
     def _build_index_or_range(self, node):
         """Convert AST node to (start_value, is_range) tuple.
@@ -379,13 +379,14 @@ class TTLGenericCompiler(TTCompilerBase):
     # D2M ops require i64, and this reduces casts throughout the pipeline
     def visit_Constant(self, node):
         as_attr = getattr(node, "_ttkernel_as_attr", False)
-        op_constructor = IntegerAttr.get if as_attr else arith.ConstantOp
         if callable(as_attr):
             return as_attr(node)
-        elif isinstance(node.value, bool):
-            return op_constructor(IntegerType.get_signless(1, self.ctx), node.value)
+        
+        if isinstance(node.value, bool):
+            type_ = IntegerType.get_signless(1, self.ctx)
+            return IntegerAttr.get(type_, node.value) if as_attr else arith.ConstantOp(type_, node.value).result
         elif isinstance(node.value, int):
-            return op_constructor(IntegerType.get_signless(64, self.ctx), node.value)
+            return IntegerAttr.get(IntegerType.get_signless(64, self.ctx), node.value) if as_attr else self.ir.const_i64(node.value)
         elif isinstance(node.value, str):
             return node.value
         else:
@@ -526,7 +527,7 @@ class TTLGenericCompiler(TTCompilerBase):
             for target in node.body:
                 self.visit(target)
 
-            self._close_final_signpost()
+            self.profiler.close_final_signpost()
             func.ReturnOp([])
 
         self.symbol_tables.pop()
@@ -552,83 +553,37 @@ class TTLGenericCompiler(TTCompilerBase):
     def visit_With(self, node):
         """
         Handle 'with' for CircularBuffer acquire/release.
-
-        Acquire ops (wait/reserve) are generated left-to-right.
-        Release ops (pop/push) are generated in reverse order at scope end.
-
-        Example:
-            with lhs_cb.wait() as l, rhs_cb.wait() as r, out_cb.reserve() as o:
-                ...
-                # releases in reverse order: push(out), pop(rhs), pop(lhs)
         """
         with self._loc_for_node(node):
             releases: list[tuple[str, object, object, ast.AST]] = []
 
             for item in node.items:
-                cb_val, method_name, expr_node, optional_name = self._parse_with_item(
-                    item
-                )
+                proxy = WithCBProxy(item)
+                
+                # Validation logic moved to proxy or handled here concisely
+                if not isinstance(item.context_expr, ast.Call) or \
+                   not isinstance(item.context_expr.func, ast.Attribute) or \
+                   proxy.method_name not in ("reserve", "wait"):
+                    proxy.error("'with' only supports 'reserve()' or 'wait()' on CircularBuffer", self.config.source_file, self.config.line_offset)
+
+                cb_table = self._var_exists(proxy.cb_var_name)
+                if not cb_table:
+                    proxy.error(f"'{proxy.cb_var_name}' not found in scope", self.config.source_file, self.config.line_offset)
+                cb_val = cb_table[proxy.cb_var_name]
+
                 acquire_result, release_info = self._emit_cb_acquire(
                     cb_val=cb_val,
-                    method_name=method_name,
-                    expr_node=expr_node,
+                    method_name=proxy.method_name,
+                    expr_node=item.context_expr,
                 )
                 releases.append(release_info)
-                if optional_name is not None:
-                    self.symbol_tables[-1][optional_name] = acquire_result
+                if proxy.optional_name is not None:
+                    self.symbol_tables[-1][proxy.optional_name] = acquire_result
 
             for stmt in node.body:
                 self.visit(stmt)
 
             self._emit_cb_releases(releases)
-
-    def _parse_with_item(
-        self, item: ast.withitem
-    ) -> tuple[object, str, ast.AST, str | None]:
-        """Parse a single with-item and return (cb_value, method_name, expr_node, optional_name)."""
-        context_expr = item.context_expr
-        optional_vars = item.optional_vars
-
-        if not isinstance(context_expr, ast.Call):
-            self._raise_error(
-                context_expr,
-                "'with' requires a method call (e.g., cb.reserve())",
-            )
-
-        if not isinstance(context_expr.func, ast.Attribute):
-            self._raise_error(
-                context_expr, "'with' requires a method call on an object"
-            )
-
-        method_name = context_expr.func.attr
-        cb_node = context_expr.func.value
-
-        if method_name not in ("reserve", "wait"):
-            self._raise_error(
-                context_expr,
-                f"'with' only supports 'reserve()' or 'wait()', got '{method_name}'",
-            )
-
-        if not isinstance(cb_node, ast.Name):
-            self._raise_error(
-                context_expr,
-                "'with' requires a simple variable (e.g., cb.reserve())",
-            )
-
-        cb_table = self._var_exists(cb_node.id)
-        if not cb_table:
-            self._raise_error(cb_node, f"'{cb_node.id}' not found in scope")
-        cb_val = cb_table[cb_node.id]
-
-        optional_name: str | None = None
-        if optional_vars is not None:
-            if not isinstance(optional_vars, ast.Name):
-                self._raise_error(
-                    optional_vars, "'with ... as var' requires a simple variable name"
-                )
-            optional_name = optional_vars.id
-
-        return cb_val, method_name, context_expr, optional_name
 
     def _emit_cb_acquire(
         self, *, cb_val: object, method_name: str, expr_node: ast.AST
