@@ -318,6 +318,11 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
         return [self.visit(child) for child in ast.iter_child_nodes(node)]
 
     @with_proxy(AttributeProxy)
+    def error(self, message: str, source_file: str | None = None, line_offset: int = 0) -> NoReturn:
+        """Raise a TTLangCompileError with source location from AST node."""
+        from .ast_proxies import NodeProxy
+        NodeProxy(self.node).error(message, source_file, line_offset)
+
     def visit_Attribute(
         self,
         proxy: AttributeProxy,
@@ -346,9 +351,15 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
 
         var_name = value_proxy.name_id
         assert var_name is not None
-        tbl = self.scope.get_table_with_var(var_name)
+        tbl = self.scope.get_table_with_var(
+            var_name,
+            error_msg=f"Unknown variable: {var_name}",
+            error_on=proxy,
+            source_file=self.config.source_file,
+            line_offset=self.config.line_offset,
+        )
         if not tbl:
-            proxy.error(f"Unknown variable: {var_name}", self.config.source_file, self.config.line_offset)
+            return None
 
         tensor = tbl[var_name]
         if not isinstance(getattr(tensor, "type", None), RankedTensorType):
@@ -575,9 +586,15 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
                 if not proxy.is_valid_cb_method:
                     proxy.error("'with' only supports 'reserve()' or 'wait()' on CircularBuffer", self.config.source_file, self.config.line_offset)
 
-                cb_table = self.scope.get_table_with_var(proxy.cb_var_name)
+                cb_table = self.scope.get_table_with_var(
+                    proxy.cb_var_name,
+                    error_msg=f"'{proxy.cb_var_name}' not found in scope",
+                    error_on=proxy,
+                    source_file=self.config.source_file,
+                    line_offset=self.config.line_offset,
+                )
                 if not cb_table:
-                    proxy.error(f"'{proxy.cb_var_name}' not found in scope", self.config.source_file, self.config.line_offset)
+                    continue
                 cb_val = cb_table[proxy.cb_var_name]
 
                 acquire_result, release_info = self._emit_cb_acquire(

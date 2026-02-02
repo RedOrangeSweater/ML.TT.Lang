@@ -42,18 +42,41 @@ class Scope:
         """Define a variable in the current scope."""
         self.current_scope[name] = value
 
-    def lookup(self, name: str) -> Any | None:
-        """Look up a variable in all active scopes, starting from the innermost."""
+    def get(
+        self,
+        name: str,
+        error_msg: str | None = None,
+        error_on: Any | None = None,
+        source_file: str | None = None,
+        line_offset: int = 0,
+    ) -> Any | None:
+        """Look up a variable. If not found and error_on is provided, report error."""
+        val = self.lookup(name)
+        if val is None and error_msg and error_on:
+            if hasattr(error_on, "error"):
+                error_on.error(error_msg, source_file, line_offset)
+            else:
+                raise ValueError(error_msg)
+        return val
+
+    def get_table_with_var(
+        self,
+        name: str,
+        error_msg: str | None = None,
+        error_on: Any | None = None,
+        source_file: str | None = None,
+        line_offset: int = 0,
+    ) -> dict[str, Any] | None:
+        """Return the symbol table containing the variable. If not found and error_on is provided, report error."""
         for sym_table in reversed(self.symbol_tables):
             if name in sym_table:
-                return sym_table[name]
-        return None
-
-    def get_table_with_var(self, var_name: str) -> dict[str, Any] | None:
-        """Return the symbol table containing the variable, or None if not found."""
-        for sym_table in reversed(self.symbol_tables):
-            if var_name in sym_table:
                 return sym_table
+
+        if error_msg and error_on:
+            if hasattr(error_on, "error"):
+                error_on.error(error_msg, source_file, line_offset)
+            else:
+                raise ValueError(error_msg)
         return None
 
 

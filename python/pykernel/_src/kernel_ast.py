@@ -212,7 +212,7 @@ class TTCompilerBase(PyKernelAstBase):
         if var_name == "int":
             return IntegerType.get_signless(64, self.ctx)
 
-        return self.scope.lookup(var_name)
+        return self.scope.get(var_name)
 
     def visit_Assign(self, node):
         # Loosely support slice + tuple assignment for rt_args
@@ -604,11 +604,17 @@ class TTCompilerBase(PyKernelAstBase):
                     f"Compare operator {type(node.ops).__name__} not implemented"
                 )
 
+    def error(self, message: str, source_file: str | None = None, line_offset: int = 0) -> NoReturn:
+        """Raise an error. Base implementation raises ValueError."""
+        raise ValueError(message)
+
     def visit_Attribute(self, node, func_args=[], kwargs={}):
         # type name should be !ttkernel.* if it has attributes
-        mlir_value = self.scope.lookup(node.value.id)
+        mlir_value = self.scope.get(
+            node.value.id, error_msg=f"Variable {node.value.id} not found", error_on=self
+        )
         if mlir_value is None:
-            raise ValueError(f"Variable {node.value.id} not found")
+            return None
         mlir_type = _get_type_str(mlir_value.type)
         qualified_object_syntax = f"{mlir_type}.{node.attr}"
         fn = self._fn_map.get(qualified_object_syntax, None)
@@ -647,9 +653,11 @@ class TTCompilerBase(PyKernelAstBase):
 
             for elt in node.elts:
                 if isinstance(elt, ast.Name):
-                    elt_val = self.scope.lookup(elt.id)
+                    elt_val = self.scope.get(
+                        elt.id, error_msg=f"Variable {elt.id} not found", error_on=self
+                    )
                     if elt_val is None:
-                        raise ValueError(f"Variable {elt.id} not found")
+                        return None
                     if hasattr(elt_val, "type") and isinstance(elt_val.type, MemRefType):
                         if elt_val.type.rank > 1 or elt_val.type.shape[0] != 1:
                             raise NotImplementedError(
