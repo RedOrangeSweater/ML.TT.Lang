@@ -5,7 +5,6 @@
 """
 Constants for the cbsim module.
 """
-from typing import Any, cast
 
 from annotated_types import Lt  # type that holds the 'lt' constraint
 from pydantic.fields import FieldInfo
@@ -14,9 +13,7 @@ from .typedefs import CBID, Shape
 
 
 def _extract_max_cbs_from_cbid() -> int:
-    fi: FieldInfo = FieldInfo.from_annotation(
-        cast(Any, CBID)
-    )  # Cast required for type checkers
+    fi: FieldInfo = FieldInfo.from_annotation(CBID)  # type: ignore[arg-type]
 
     for meta in fi.metadata:
         match meta:

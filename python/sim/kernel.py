@@ -11,7 +11,7 @@ specified grid configurations.
 import inspect
 import types
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 from .block import ThreadType
 from .typedefs import CoreIndex, Index, Shape, Size
@@ -196,8 +196,7 @@ def core(dims: Size = 2) -> CoreIndex:
 
     if dims == 1:
         return coords[0]
-    else:
-        return cast(tuple[Index, Index, *tuple[Index, ...]], tuple(coords))
+    return tuple(coords)
 
 
 def kernel(

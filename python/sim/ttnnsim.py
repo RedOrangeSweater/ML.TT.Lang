@@ -18,7 +18,7 @@ Scope:
 
 from __future__ import annotations
 
-from typing import Any, Union, cast
+from typing import Any, Union
 
 import torch
 
@@ -254,9 +254,16 @@ class Tensor:
         return True
 
     def __getitem__(self, key: Any) -> Tensor:
+        def _as_tuple_key(maybe_tuple: object) -> tuple[Any, ...] | None:
+            return maybe_tuple if isinstance(maybe_tuple, tuple) else None
+
+        def _as_any_key(k: object) -> Any:
+            # Centralize Any-escaping for torch __getitem__/__setitem__.
+            return k
+
         # If key looks like tile-style indexing (two slices/ints), use TensorAccessor
-        if isinstance(key, tuple):
-            key_t = cast(tuple[Any, ...], key)
+        key_t = _as_tuple_key(key)
+        if key_t is not None:
             if len(key_t) == 2:
                 row_key = key_t[0]
                 col_key = key_t[1]
@@ -265,7 +272,7 @@ class Tensor:
                 if isinstance(row_key, int) and isinstance(col_key, int):
                     # Check if tensor is tile-indexable
                     if not self._is_tile_indexable():
-                        return Tensor(self._tensor.__getitem__(cast(Any, key)))
+                        return Tensor(self._tensor.__getitem__(_as_any_key(key)))
                     # Use tile indexing for tile-indexable tensors
                     self._ensure_accessor()
                     assert self._accessor is not None
@@ -279,12 +286,18 @@ class Tensor:
                     assert self._accessor is not None
                     return Tensor(self._accessor[row_key, col_key])
 
-        return Tensor(self._tensor.__getitem__(cast(Any, key)))
+        return Tensor(self._tensor.__getitem__(_as_any_key(key)))
 
     def __setitem__(self, key: Any, value: Tensor | torch.Tensor | Any) -> None:
+        def _as_tuple_key(maybe_tuple: object) -> tuple[Any, ...] | None:
+            return maybe_tuple if isinstance(maybe_tuple, tuple) else None
+
+        def _as_any_key(k: object) -> Any:
+            return k
+
         # If setting via tile-style indexing, route through accessor
-        if isinstance(key, tuple):
-            key_t = cast(tuple[Any, ...], key)
+        key_t = _as_tuple_key(key)
+        if key_t is not None:
             if len(key_t) == 2:
                 row_key = key_t[0]
                 col_key = key_t[1]
@@ -295,11 +308,11 @@ class Tensor:
                     if not self._is_tile_indexable():
                         match value:
                             case Tensor() as tval:
-                                self._tensor.__setitem__(cast(Any, key), tval._tensor)
+                                self._tensor.__setitem__(_as_any_key(key), tval._tensor)
                             case torch.Tensor() as tt:
-                                self._tensor.__setitem__(cast(Any, key), tt)
+                                self._tensor.__setitem__(_as_any_key(key), tt)
                             case _:
-                                self._tensor.__setitem__(cast(Any, key), value)
+                                self._tensor.__setitem__(_as_any_key(key), value)
                         return
                     # Use tile indexing for tile-indexable tensors
                     self._ensure_accessor()
@@ -330,11 +343,11 @@ class Tensor:
 
         match value:
             case Tensor() as tval:
-                self._tensor.__setitem__(cast(Any, key), tval._tensor)
+                self._tensor.__setitem__(_as_any_key(key), tval._tensor)
             case torch.Tensor() as tt:
-                self._tensor.__setitem__(cast(Any, key), tt)
+                self._tensor.__setitem__(_as_any_key(key), tt)
             case _:
-                self._tensor.__setitem__(cast(Any, key), value)
+                self._tensor.__setitem__(_as_any_key(key), value)
 
     def __repr__(self) -> str:
         return f"Tensor(shape={tuple(self._tensor.shape)}, dtype={self._tensor.dtype})"
