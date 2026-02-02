@@ -39,6 +39,7 @@ from .ast_proxies import (
     SubscriptProxy,
 )
 from .auto_profile import (
+    Signpost,
     get_line_mapper,
     is_auto_profile_enabled,
 )
@@ -160,19 +161,19 @@ class TTLGenericCompiler(TTCompilerBase):
     def _emit_line_signpost_if_needed(self, node: ast.AST) -> None:
         """Emit signposts at line boundaries for auto-profiling."""
         proxy = NodeProxy(node)
-        lineno = proxy.lineno
-        if not self.auto_profile_enabled or not isinstance(lineno, int):
+        if not self.auto_profile_enabled or not isinstance(proxy.lineno, int):
             return
 
-        file_lineno = lineno + self.line_offset
+        signpost = proxy.line_signpost(self.line_offset)
+        file_lineno = signpost.file_lineno
         if self._current_signpost_line == file_lineno:
             return
 
         if self._current_signpost_line is not None:
             self._emit_signpost(f"line_{self._current_signpost_line}_after")
 
-        before_name = f"line_{file_lineno}_before"
-        after_name = f"line_{file_lineno}_after"
+        before_name = signpost.before()
+        after_name = signpost.after()
 
         source_line = proxy.source_line(self.source_lines, self.line_offset)
         self._register_signpost_pair(before_name, after_name, file_lineno, source_line)
@@ -195,23 +196,20 @@ class TTLGenericCompiler(TTCompilerBase):
     def signpost_context(
         self,
         node: ast.AST,
-        op_name: str,
-        implicit: bool = False,
+        signpost: Signpost | None = None,
     ) -> Generator[None, None, None]:
         """Context manager to emit signposts around an operation."""
-        proxy = NodeProxy(node)
-        if not self.auto_profile_enabled or not isinstance(proxy.lineno, int):
+        if not self.auto_profile_enabled or signpost is None or not signpost.is_valid:
             with self._loc_for_node(node):
                 yield
             return
 
-        file_lineno = proxy.lineno + self.line_offset
-        prefix = "implicit_" if implicit else ""
-        before_name = f"line_{file_lineno}_{prefix}{op_name}_before"
-        after_name = f"line_{file_lineno}_{prefix}{op_name}_after"
+        before_name = signpost.before()
+        after_name = signpost.after()
 
+        proxy = NodeProxy(node)
         source_line = proxy.source_line(self.source_lines, self.line_offset)
-        self._register_signpost_pair(before_name, after_name, file_lineno, source_line)
+        self._register_signpost_pair(before_name, after_name, signpost.file_lineno, source_line)
 
         with self._loc_for_node(node):
             self._emit_signpost(before_name)
@@ -226,7 +224,8 @@ class TTLGenericCompiler(TTCompilerBase):
         implicit: bool = False,
     ) -> _T:
         """Emit signposts for operations with op name included."""
-        with self.signpost_context(node, op_name, implicit):
+        signpost = NodeProxy(node).op_signpost(op_name, self.line_offset, implicit)
+        with self.signpost_context(node, signpost):
             return op_fn()
 
     def visit_Call(self, node):

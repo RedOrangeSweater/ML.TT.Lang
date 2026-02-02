@@ -10,11 +10,62 @@ Automatically instruments every operation with signposts and generates
 a visual profile report showing cycle counts per source line.
 """
 
+from __future__ import annotations
+
 import csv
 import json
 import os
 from collections import defaultdict
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .ast_proxies import NodeProxy
+
+
+class Signpost:
+    """Base class for typed signposts."""
+
+    def __init__(self, lineno: int, line_offset: int = 0):
+        self.lineno = lineno
+        self.line_offset = line_offset
+        self.file_lineno = lineno + line_offset
+
+    def before(self) -> str:
+        raise NotImplementedError
+
+    def after(self) -> str:
+        raise NotImplementedError
+
+    @property
+    def is_valid(self) -> bool:
+        return isinstance(self.lineno, int)
+
+
+class LineSignpost(Signpost):
+    """Signpost for a specific source line."""
+
+    def before(self) -> str:
+        return f"line_{self.file_lineno}_before"
+
+    def after(self) -> str:
+        return f"line_{self.file_lineno}_after"
+
+
+class OpSignpost(Signpost):
+    """Signpost for a specific operation on a source line."""
+
+    def __init__(self, op_name: str, lineno: int, line_offset: int = 0, implicit: bool = False):
+        super().__init__(lineno, line_offset)
+        self.op_name = op_name
+        self.implicit = implicit
+        self.prefix = "implicit_" if implicit else ""
+
+    def before(self) -> str:
+        return f"line_{self.file_lineno}_{self.prefix}{self.op_name}_before"
+
+    def after(self) -> str:
+        return f"line_{self.file_lineno}_{self.prefix}{self.op_name}_after"
 
 
 class Colors:

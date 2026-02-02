@@ -11,6 +11,7 @@ from typing import Generic, NoReturn, TypeVar
 from ttmlir.ir import Context, Location
 
 from ..diagnostics import TTLangCompileError
+from .auto_profile import LineSignpost, OpSignpost
 from .context import make_file_loc
 
 T = TypeVar("T", bound=ast.AST)
@@ -56,6 +57,14 @@ class NodeProxy(Generic[T]):
 
         file_lineno = self.lineno + line_offset
         return f"<line {file_lineno}>"
+
+    def line_signpost(self, line_offset: int = 0) -> LineSignpost:
+        """Create a LineSignpost for this node."""
+        return LineSignpost(self.lineno or 0, line_offset)
+
+    def op_signpost(self, op_name: str, line_offset: int = 0, implicit: bool = False) -> OpSignpost:
+        """Create an OpSignpost for this node."""
+        return OpSignpost(op_name, self.lineno or 0, line_offset, implicit)
 
 class CallProxy(NodeProxy[ast.Call]):
     """Proxy for ast.Call nodes."""
