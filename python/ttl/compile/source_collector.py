@@ -59,7 +59,7 @@ def get_source_line_offset(f: Callable[..., object]) -> int:
 
 def collect_cb_configs(
     threads: list[Callable[..., object]],
-) -> list[CircularBuffer | None]:
+) -> list[object]:
     """Extract CircularBuffer objects from thread closures, indexed by cb_index."""
     cb_configs_dict: dict[int, CircularBuffer] = {}
     for thread_fn in threads:

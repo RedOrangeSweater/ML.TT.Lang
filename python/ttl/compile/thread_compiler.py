@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Thread compiler: run program to get threads, compile each to TTLGenericCompiler, build module.
+Thread compiler: run program to get threads, compile each to TTLGenericCompiler.
 
 Compiles program to list of TTLGenericCompiler instances and assembles MLIR module.
 Scheduler validation runs in pipeline; pass manager and stages stay in pipeline.
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import inspect
 
+from pydantic import BaseModel, ConfigDict
 from ttmlir.ir import (
     ArrayAttr,
     Context,
@@ -39,6 +40,20 @@ from .source_collector import (
 )
 
 
+class CompiledThreadsResult(BaseModel):
+    """Result of compiling a program invocation to compiled thread functions."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    compiled_threads: list[TTLGenericCompiler]
+    thread_tensor_indices: list[list[int]]
+    all_source_files: dict[str, str]
+    all_source_lines: dict[str, list[str]]
+    kernel_line_offsets: dict[str, int]
+    cb_configs: list[object]
+    program: Program
+
+
 def compile_program_to_threads(
     req: CompileKernelRequest,
     memory_space: str,
@@ -46,21 +61,12 @@ def compile_program_to_threads(
     loc: Location,
     kernel_source_file: str,
     kernel_line_offset: int,
-) -> tuple[
-    list[TTLGenericCompiler],
-    list[list[int]],
-    dict[str, str],
-    dict[str, list[str]],
-    dict[str, int],
-    list[object],
-    Program,
-]:
+) -> CompiledThreadsResult:
     """
-    Run program to collect threads, compile each to TTLGenericCompiler, collect source info.
+    Run program to collect threads, compile each to TTLGenericCompiler.
 
     Call resolve_memory_space_and_register_tensors(req) first to get memory_space and
-    register tensor names / track sources. Returns (compiled_threads, thread_tensor_indices,
-    all_source_files, all_source_lines, kernel_line_offsets, cb_configs, program).
+    register tensor names / track sources.
     """
     f = req.program
     args = req.args
@@ -129,14 +135,14 @@ def compile_program_to_threads(
         collect_source_info_from_threads(compiled_threads)
     )
 
-    return (
-        compiled_threads,
-        thread_tensor_indices,
-        all_source_files,
-        all_source_lines,
-        kernel_line_offsets,
-        cb_configs,
-        program,
+    return CompiledThreadsResult(
+        compiled_threads=compiled_threads,
+        thread_tensor_indices=thread_tensor_indices,
+        all_source_files=all_source_files,
+        all_source_lines=all_source_lines,
+        kernel_line_offsets=kernel_line_offsets,
+        cb_configs=cb_configs,
+        program=program,
     )
 
 
@@ -196,6 +202,7 @@ def resolve_memory_space_and_register_tensors(
 
 __all__ = [
     "compile_program_to_threads",
+    "CompiledThreadsResult",
     "build_module_from_threads",
     "resolve_memory_space_and_register_tensors",
 ]

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from typing import Annotated, Self
+from typing import Annotated, Protocol, Self
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
@@ -24,6 +24,7 @@ from ..descriptor_options import (
     TTNNKernelCompileOptions,
 )
 from ..dtype_utils import is_ttnn_tensor
+from ..scheduler import AbstractEngineConfig
 
 
 def _as_int_grid(
@@ -32,6 +33,27 @@ def _as_int_grid(
     """Normalize a tuple/list-like grid to int values."""
     int_values = [int(x) for x in grid]  # type: ignore[arg-type]
     return tuple(int_values) if isinstance(grid, tuple) else int_values
+
+
+def _as_grid_2d(grid: object) -> tuple[int, int]:
+    """Normalize grid input to a 2D (cols, rows) tuple of ints."""
+    if not isinstance(grid, (tuple, list)):
+        raise TypeError(
+            f"grid must be tuple/list/callable/'auto', got {type(grid).__name__}"
+        )
+    if len(grid) != 2:
+        raise ValueError(f"Only 2D grids supported, got grid {tuple(grid)}")
+    return (int(grid[0]), int(grid[1]))
+
+
+Grid2D = Annotated[tuple[int, int], BeforeValidator(_as_grid_2d)]
+
+
+class ThreadRegistryLike(Protocol):
+    """Protocol for thread registry used by compile pipeline."""
+
+    def clear(self) -> None: ...
+    def get_and_clear(self) -> list[Callable[..., object]]: ...
 
 
 def _resolve_grid(grid, args, kwargs) -> tuple[int, ...] | list[int]:
@@ -188,7 +210,7 @@ class KernelCompileRequest(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    grid: tuple[int, ...] | list[int] = Field(
+    grid: Grid2D = Field(
         ..., description="Grid dimensions (cols, rows)"
     )
     program_hash: int = Field(..., description="Hash for tt-metal program cache")
@@ -224,10 +246,10 @@ class CompileKernelRequest(BaseModel):
     compile_request: KernelCompileRequest = Field(
         ..., description="Grid, program_hash, options for this compile"
     )
-    thread_registry: object = Field(
+    thread_registry: ThreadRegistryLike = Field(
         ..., description="Registry for @compute/@datamovement threads"
     )
-    engine_config: object | None = Field(
+    engine_config: AbstractEngineConfig | None = Field(
         default=None, description="Optional abstract engine config for scheduler"
     )
 

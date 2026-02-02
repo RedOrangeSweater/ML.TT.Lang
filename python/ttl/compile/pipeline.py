@@ -6,21 +6,21 @@
 Compile pipeline: KernelCompileRequest -> (threads, module) -> TTNNKernelCompileRequest
 -> CompiledTTNNKernel.
 
-Orchestration only: delegates to thread_compiler, ttnn_compiler, source_collector, stages.
+Orchestration only: delegates to thread_compiler, ttnn_compiler, source_collector,
+stages.
 See docs/sdlc/00_Main/02_Architecture/08_PythonDialectLayersAndDataFlow.md.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
-from typing import Protocol
+from collections.abc import Sequence
 
 from ttmlir.ir import Context, Location, PassManager
 
 import ttl._mlir_libs._ttlang  # noqa: F401  # Register tt-lang passes
 
 from .._src.auto_profile import is_auto_profile_enabled
+from ..boundary import MlirModuleLike
 from ..config import HAS_TT_DEVICE
 from ..descriptor_options import (
     CompiledTTNNKernel,
@@ -33,9 +33,11 @@ from ..descriptor_options import (
 )
 from ..diagnostics import format_mlir_error
 from ..program import CompileKernelRequest, KernelCompileRequest
+from ..scheduler import AbstractEngineConfig
 from ..settings import AutoProfileConfig, settings_ttlang
 from .source_collector import get_source_line_offset
 from .thread_compiler import (
+    CompiledThreadsResult,
     build_module_from_threads,
     compile_program_to_threads,
     resolve_memory_space_and_register_tensors,
@@ -43,23 +45,16 @@ from .thread_compiler import (
 from .ttnn_compiler import compile_ttnn_kernel
 
 
-class ThreadRegistryLike(Protocol):
-    """Protocol for thread registry: clear and get_and_clear for compile pipeline."""
-
-    def clear(self) -> None: ...
-    def get_and_clear(self) -> list[Callable[..., object]]: ...
-
-
 def build_ttnn_compile_request(
-    module: object,
+    module: MlirModuleLike,
     args: tuple[object, ...],
     request: KernelCompileRequest,
     thread_tensor_indices: list[list[int]],
-    cb_configs: list[object],
+    cb_configs: list[object] | None,
     all_source_lines: dict[str, list[str]] | None,
     kernel_line_offsets: dict[str, int] | None,
 ) -> TTNNKernelCompileRequest:
-    """Build TTNNKernelCompileRequest from pipeline artifacts and KernelCompileRequest."""
+    """Build TTNNKernelCompileRequest from pipeline artifacts."""
     compile_input = TTNNCompileInput(
         module=module,
         args=args,
@@ -76,14 +71,11 @@ def build_ttnn_compile_request(
         profile_source_lines = all_source_lines[first_thread]
     profiling_input = TTNNProfilingInput(
         source_lines=profile_source_lines,
-        all_source_lines=all_source_lines or None,
-        kernel_line_offsets=kernel_line_offsets or None,
+        all_source_lines=all_source_lines,
+        kernel_line_offsets=kernel_line_offsets,
     )
-    grid_tuple: tuple[int, int] | None = None
-    if isinstance(request.grid, (tuple, list)) and len(request.grid) >= 2:
-        grid_tuple = (int(request.grid[0]), int(request.grid[1]))
     program_config = ProgramConfig(
-        grid=grid_tuple,
+        grid=request.grid,
         objective=request.options.objective,
         placement=request.options.placement,
     )
@@ -101,9 +93,9 @@ def build_ttnn_compile_request(
 
 def _run_scheduler_if_enabled(
     *,
-    compiled_threads: list[object],
+    compiled_threads: Sequence[object],
     request: KernelCompileRequest,
-    engine_config: object | None,
+    engine_config: AbstractEngineConfig | None,
 ) -> None:
     """Run scheduler stub logic when settings_ttlang.use_scheduler is enabled."""
     if not settings_ttlang.use_scheduler:
@@ -117,35 +109,23 @@ def _run_scheduler_if_enabled(
         validate_topology_connectivity,
     )
 
-    engine_cfg = engine_config
-    if engine_cfg is None:
-        thread_infos = [(ct.name, ct.kernel_type or "dm") for ct in compiled_threads]
+    if engine_config is None:
+        thread_infos: list[tuple[str, str]] = []
+        for ct in compiled_threads:
+            name = str(getattr(ct, "name", "<unknown>"))
+            kernel_type = getattr(ct, "kernel_type", None)
+            thread_infos.append((name, str(kernel_type or "dm")))
         op_graph = build_op_graph_from_threads(thread_infos)
         topology = build_topology_from_grid(request.grid)
         plan = schedule_stub(op_graph, topology, request.options.program_config_dict)
-        assert plan.grid_cols == topology.grid_cols and plan.grid_rows == topology.grid_rows
+        assert plan.grid_cols == topology.grid_cols
+        assert plan.grid_rows == topology.grid_rows
         for nid in op_graph.node_ids_in_order():
             assert plan.core_for(nid) == (0, 0), f"stub plan mismatch for {nid}"
         return
 
-    if getattr(engine_cfg, "backend", None) == "tenstorrent":
-        thread_infos = [(ct.name, ct.kernel_type or "dm") for ct in compiled_threads]
-        op_graph = build_op_graph_from_threads(thread_infos)
-        topo_grid = (
-            engine_cfg.get_topology_grid()
-            if hasattr(engine_cfg, "get_topology_grid")
-            else None
-        )
-        grid_for_topology = topo_grid if topo_grid is not None else request.grid
-        topology = build_topology_from_grid(grid_for_topology)
-        plan = schedule_stub(op_graph, topology, request.options.program_config_dict)
-        assert plan.grid_cols == topology.grid_cols and plan.grid_rows == topology.grid_rows
-        for nid in op_graph.node_ids_in_order():
-            assert plan.core_for(nid) == (0, 0), f"stub plan mismatch for {nid}"
-        return
-
-    validate_topology_connectivity(engine_cfg)
-    schedule_toy_stub(engine_cfg)
+    validate_topology_connectivity(engine_config)
+    schedule_toy_stub(engine_config)
 
 
 def _build_pipeline_passes(request: KernelCompileRequest) -> list[str]:
@@ -200,7 +180,7 @@ def _build_pipeline_passes(request: KernelCompileRequest) -> list[str]:
 
 def _run_pass_pipeline(
     *,
-    module: object,
+    module: MlirModuleLike,
     ctx: Context,
     pipeline_passes: list[str],
     all_source_files: dict[str, str],
@@ -245,7 +225,8 @@ def _compile_kernel(req: CompileKernelRequest) -> CompiledTTNNKernel | None:
     """
     Compile kernel function to MLIR and return CompiledTTNNKernel.
 
-    Single request object bundles program, args/kwargs, compile params, and thread registry.
+    Single request object bundles program, args/kwargs, compile params, and
+    thread registry.
     Orchestrates thread_compiler, pass manager, stages, and ttnn_compiler.
     """
     request = req.compile_request
@@ -258,15 +239,7 @@ def _compile_kernel(req: CompileKernelRequest) -> CompiledTTNNKernel | None:
     ctx = Context()
     loc = Location.unknown(ctx)
     with ctx, loc:
-        (
-            compiled_threads,
-            thread_tensor_indices,
-            all_source_files,
-            all_source_lines,
-            kernel_line_offsets,
-            cb_configs,
-            program,
-        ) = compile_program_to_threads(
+        result: CompiledThreadsResult = compile_program_to_threads(
             req,
             memory_space,
             ctx,
@@ -276,19 +249,19 @@ def _compile_kernel(req: CompileKernelRequest) -> CompiledTTNNKernel | None:
         )
 
         _run_scheduler_if_enabled(
-            compiled_threads=compiled_threads,
+            compiled_threads=result.compiled_threads,
             request=request,
             engine_config=engine_config,
         )
 
-        module = build_module_from_threads(compiled_threads, loc, ctx)
+        module = build_module_from_threads(result.compiled_threads, loc, ctx)
         print_debug_locations = settings_ttlang.debug_locations
 
         from .stages import CompileStageContext, get_initial_stages, run_stages
 
         stage_ctx = CompileStageContext(
-            module=module,
             initial_mlir_path=settings_ttlang.initial_mlir,
+            module=module,
             print_debug_locations=print_debug_locations,
         )
         run_stages(get_initial_stages(), stage_ctx, settings_ttlang)
@@ -298,8 +271,8 @@ def _compile_kernel(req: CompileKernelRequest) -> CompiledTTNNKernel | None:
             module=module,
             ctx=ctx,
             pipeline_passes=pipeline_passes,
-            all_source_files=all_source_files,
-            all_source_lines=all_source_lines,
+            all_source_files=result.all_source_files,
+            all_source_lines=result.all_source_lines,
         )
 
         from .stages import CompileStageContext, get_final_stages, run_stages
@@ -315,10 +288,10 @@ def _compile_kernel(req: CompileKernelRequest) -> CompiledTTNNKernel | None:
             module=module,
             args=req.args,
             request=request,
-            thread_tensor_indices=thread_tensor_indices,
-            cb_configs=cb_configs,
-            all_source_lines=all_source_lines,
-            kernel_line_offsets=kernel_line_offsets,
+            thread_tensor_indices=result.thread_tensor_indices,
+            cb_configs=result.cb_configs,
+            all_source_lines=result.all_source_lines,
+            kernel_line_offsets=result.kernel_line_offsets,
         )
     return compile_ttnn_kernel(ttnn_req)
 

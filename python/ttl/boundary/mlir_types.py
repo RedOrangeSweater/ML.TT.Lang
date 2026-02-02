@@ -11,5 +11,10 @@ get_ttkernel_arg_spec) without inspecting it; typing uses object for opacity.
 
 from __future__ import annotations
 
-# MLIR module from ttmlir.ir (Module.create, etc.). Opaque in our layer.
-MlirModuleLike: type[object] = object
+from typing import Protocol
+
+
+class MlirModuleLike(Protocol):
+    """Opaque MLIR module type used across the compile layer."""
+
+    operation: object
