@@ -40,6 +40,7 @@ from .ast_proxies import (
 )
 from .auto_profile import (
     Signpost,
+    SignpostBoundary,
     get_line_mapper,
     is_auto_profile_enabled,
 )
@@ -146,9 +147,9 @@ class TTLGenericCompiler(TTCompilerBase):
         """Emit a signpost operation into the MLIR."""
         ttl.signpost(name)
 
-    def _emit_marker(self, signpost: Signpost, before: bool = True) -> None:
+    def _emit_marker(self, signpost: Signpost, boundary: SignpostBoundary) -> None:
         """Emit a signpost marker (before or after) for a typed signpost."""
-        self._emit_signpost(signpost.before() if before else signpost.after())
+        self._emit_signpost(signpost.get_marker(boundary))
 
     def _register_pair(self, signpost: Signpost, source_line: str) -> None:
         """Register before/after signpost pair if line_mapper is active."""
@@ -179,16 +180,16 @@ class TTLGenericCompiler(TTCompilerBase):
             return
 
         if self._current_line_signpost is not None:
-            self._emit_marker(self._current_line_signpost, before=False)
+            self._emit_marker(self._current_line_signpost, SignpostBoundary.AFTER)
 
         self._register_pair(signpost, proxy.source_line(self.source_lines, self.line_offset))
-        self._emit_marker(signpost, before=True)
+        self._emit_marker(signpost, SignpostBoundary.BEFORE)
         self._current_line_signpost = signpost
 
     def _close_final_signpost(self):
         """Close the final signpost at the end of function body."""
         if self.auto_profile_enabled and self._current_line_signpost is not None:
-            self._emit_marker(self._current_line_signpost, before=False)
+            self._emit_marker(self._current_line_signpost, SignpostBoundary.AFTER)
             self._current_line_signpost = None
 
     def _try_emit_auto_signposts(self, node: ast.AST, visit_fn: Callable[[], _T]) -> _T:
@@ -201,7 +202,7 @@ class TTLGenericCompiler(TTCompilerBase):
         self,
         node: ast.AST,
         signpost: Signpost | None = None,
-    ) -> Generator[None, None, None]:
+    ) -> Generator[None]:
         """Context manager to emit signposts around an operation."""
         if not self.auto_profile_enabled or signpost is None or not signpost.is_valid:
             with self._loc_for_node(node):
@@ -211,9 +212,9 @@ class TTLGenericCompiler(TTCompilerBase):
         self._register_pair(signpost, NodeProxy(node).source_line(self.source_lines, self.line_offset))
 
         with self._loc_for_node(node):
-            self._emit_marker(signpost, before=True)
+            self._emit_marker(signpost, SignpostBoundary.BEFORE)
             yield
-            self._emit_marker(signpost, before=False)
+            self._emit_marker(signpost, SignpostBoundary.AFTER)
 
     def _emit_op_signposts(
         self,

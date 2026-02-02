@@ -16,11 +16,19 @@ import csv
 import json
 import os
 from collections import defaultdict
+from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    pass
+    from .ast_proxies import NodeProxy
+
+
+class SignpostBoundary(Enum):
+    """Enum for signpost boundary types."""
+
+    BEFORE = auto()
+    AFTER = auto()
 
 
 class Signpost:
@@ -32,9 +40,12 @@ class Signpost:
         self.file_lineno = lineno + line_offset
 
     def before(self) -> str:
-        raise NotImplementedError
+        return self.get_marker(SignpostBoundary.BEFORE)
 
     def after(self) -> str:
+        return self.get_marker(SignpostBoundary.AFTER)
+
+    def get_marker(self, boundary: SignpostBoundary) -> str:
         raise NotImplementedError
 
     @property
@@ -45,11 +56,9 @@ class Signpost:
 class LineSignpost(Signpost):
     """Signpost for a specific source line."""
 
-    def before(self) -> str:
-        return f"line_{self.file_lineno}_before"
-
-    def after(self) -> str:
-        return f"line_{self.file_lineno}_after"
+    def get_marker(self, boundary: SignpostBoundary) -> str:
+        suffix = "before" if boundary == SignpostBoundary.BEFORE else "after"
+        return f"line_{self.file_lineno}_{suffix}"
 
 
 class OpSignpost(Signpost):
@@ -61,11 +70,9 @@ class OpSignpost(Signpost):
         self.implicit = implicit
         self.prefix = "implicit_" if implicit else ""
 
-    def before(self) -> str:
-        return f"line_{self.file_lineno}_{self.prefix}{self.op_name}_before"
-
-    def after(self) -> str:
-        return f"line_{self.file_lineno}_{self.prefix}{self.op_name}_after"
+    def get_marker(self, boundary: SignpostBoundary) -> str:
+        suffix = "before" if boundary == SignpostBoundary.BEFORE else "after"
+        return f"line_{self.file_lineno}_{self.prefix}{self.op_name}_{suffix}"
 
 
 class Colors:
