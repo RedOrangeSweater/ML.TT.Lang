@@ -17,13 +17,13 @@ import random
 from collections.abc import Callable, Sequence
 
 from ._src.auto_profile import is_auto_profile_enabled, run_profiling_after_execute
+from .boundary.ttnn_types import TtnnTensorLike
 from .circular_buffer import CircularBuffer
 from .compile.compile_thread import compile_thread as _compile_thread_impl
 from .compile.pipeline import _compile_kernel as _compile_kernel_impl
 from .compile.registry import get_thread_registry
 from .constants import MemorySpace, Objective, Placement
 from .descriptor_options import CompiledTTNNKernel
-from .boundary.ttnn_types import TtnnTensorLike, TtnnDeviceLike
 from .layered.context import ProgramInvocationContext, RunContext
 from .layered.decorators import (
     cache_by_key,

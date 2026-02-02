@@ -17,6 +17,7 @@ from typing import Annotated, Protocol, Self
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
+from ..boundary.ttnn_types import TtnnTensorLike
 from ..constants import MemorySpace, Objective, Placement
 from ..descriptor_options import (
     ProgramConfig,
@@ -25,7 +26,6 @@ from ..descriptor_options import (
 )
 from ..dtype_utils import is_ttnn_tensor
 from ..scheduler import AbstractEngineConfig
-from ..boundary.ttnn_types import TtnnTensorLike
 
 
 def _as_int_grid(

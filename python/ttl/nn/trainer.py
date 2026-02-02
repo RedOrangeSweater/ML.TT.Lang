@@ -10,7 +10,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable, TypeVar
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from .callbacks import Callback
 from .config import TrainerConfig

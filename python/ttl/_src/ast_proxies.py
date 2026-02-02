@@ -1,0 +1,122 @@
+# SPDX-FileCopyrightText: (c) 2025 Tenstorrent AI ULC
+#
+# SPDX-License-Identifier: Apache-2.0
+
+from __future__ import annotations
+
+import ast
+from collections.abc import Sequence
+from typing import Any, NoReturn, TypeVar, Generic
+
+from ttmlir.ir import Location, Context
+from ..diagnostics import TTLangCompileError
+from .context import make_file_loc
+
+T = TypeVar("T", bound=ast.AST)
+
+class NodeProxy(Generic[T]):
+    """Base proxy for AST nodes to simplify location and error handling."""
+
+    def __init__(self, node: T):
+        self.node = node
+
+    @property
+    def lineno(self) -> int | None:
+        return getattr(self.node, "lineno", None)
+
+    @property
+    def col_offset(self) -> int | None:
+        return getattr(self.node, "col_offset", None)
+
+    def location(self, ctx: Context, source_file: str | None, line_offset: int = 0) -> Location:
+        """Return MLIR location for this node."""
+        if source_file and self.lineno is not None:
+            return make_file_loc(ctx, source_file, self.node, line_offset)
+        return Location.unknown(ctx)
+
+    def error(self, message: str, source_file: str | None, line_offset: int = 0) -> NoReturn:
+        """Raise TTLangCompileError with node's location info."""
+        line = (self.lineno + line_offset) if isinstance(self.lineno, int) else None
+        col = (self.col_offset + 1) if isinstance(self.col_offset, int) else None
+        raise TTLangCompileError(
+            message,
+            source_file=source_file,
+            line=line,
+            col=col,
+        )
+
+class CallProxy(NodeProxy[ast.Call]):
+    """Proxy for ast.Call nodes."""
+
+    @property
+    def func(self) -> ast.AST:
+        return self.node.func
+
+    @property
+    def args(self) -> Sequence[ast.AST]:
+        return self.node.args
+
+    @property
+    def keywords(self) -> Sequence[ast.keyword]:
+        return self.node.keywords
+
+    @property
+    def func_name(self) -> str | None:
+        """Return function name if it's a simple Name or Attribute."""
+        if isinstance(self.node.func, ast.Name):
+            return self.node.func.id
+        if isinstance(self.node.func, ast.Attribute):
+            return self.node.func.attr
+        return None
+
+class AttributeProxy(NodeProxy[ast.Attribute]):
+    """Proxy for ast.Attribute nodes."""
+
+    @property
+    def value(self) -> ast.AST:
+        return self.node.value
+
+    @property
+    def attr(self) -> str:
+        return self.node.attr
+
+class AssignProxy(NodeProxy[ast.Assign]):
+    """Proxy for ast.Assign nodes."""
+
+    @property
+    def targets(self) -> Sequence[ast.AST]:
+        return self.node.targets
+
+    @property
+    def value(self) -> ast.AST:
+        return self.node.value
+
+    @property
+    def first_target(self) -> ast.AST | None:
+        return self.node.targets[0] if self.node.targets else None
+
+class BinOpProxy(NodeProxy[ast.BinOp]):
+    """Proxy for ast.BinOp nodes."""
+
+    @property
+    def left(self) -> ast.AST:
+        return self.node.left
+
+    @property
+    def op(self) -> ast.operator:
+        return self.node.op
+
+    @property
+    def right(self) -> ast.AST:
+        return self.node.right
+
+class SubscriptProxy(NodeProxy[ast.Subscript]):
+    """Proxy for ast.Subscript nodes."""
+
+    @property
+    def value(self) -> ast.AST:
+        return self.node.value
+
+    @property
+    def slice(self) -> ast.AST:
+        return self.node.slice

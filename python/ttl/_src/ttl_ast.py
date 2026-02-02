@@ -10,7 +10,18 @@ from collections.abc import Callable
 from typing import NoReturn, TypeVar
 
 from ttmlir.dialects import arith, func, ttcore, ttkernel
-from ttmlir.ir import *
+from ttmlir.ir import (
+    Block,
+    Context,
+    F32Type,
+    IndexType,
+    InsertionPoint,
+    IntegerAttr,
+    IntegerType,
+    Location,
+    RankedTensorType,
+    SymbolTable,
+)
 
 from pykernel._src.kernel_ast import TTCompilerBase
 
@@ -22,6 +33,14 @@ from ..ttl_utils import get_thread_type_string
 from .auto_profile import (
     get_line_mapper,
     is_auto_profile_enabled,
+)
+from .ast_proxies import (
+    NodeProxy,
+    CallProxy,
+    AttributeProxy,
+    AssignProxy,
+    BinOpProxy,
+    SubscriptProxy,
 )
 from .context import (
     CompilerContext,
@@ -40,7 +59,7 @@ _T = TypeVar("_T")
 class TTLGenericCompiler(TTCompilerBase):
     """Compiler that generates TTL dialect ops from Python AST."""
 
-    _syntax = {}
+    _syntax: dict[str, Callable] = {}
 
     def __init__(
         self,
@@ -54,7 +73,7 @@ class TTLGenericCompiler(TTCompilerBase):
         super().__init__(name, kernel_type, *args, **kwargs)
         self.loc = Location.name(self.name)
         self.captures = captures if captures is not None else {}
-        self.streams = set()
+        self.streams: set[str] = set()
         self.supported_nodes.append(ast.AsyncFunctionDef)
         self.supported_nodes.append(ast.With)
 
@@ -76,7 +95,7 @@ class TTLGenericCompiler(TTCompilerBase):
         self.line_mapper = get_line_mapper() if self.auto_profile_enabled else None
         if self.line_mapper:
             self.line_mapper.line_offset = self.line_offset
-        self._current_signpost_line = None
+        self._current_signpost_line: int | None = None
         self._fn_map = dict(TTLGenericCompiler._syntax)
 
     @property
@@ -90,14 +109,16 @@ class TTLGenericCompiler(TTCompilerBase):
 
     def visit_Assign(self, node):
         """Handle tuple unpacking for TTL functions like core(dims=2)."""
-        if not isinstance(node.targets[0], ast.Tuple):
+        proxy = AssignProxy(node)
+        target = proxy.first_target
+        if not isinstance(target, ast.Tuple):
             return super().visit_Assign(node)
 
-        value = self.visit(node.value)
+        value = self.visit(proxy.value)
         if not isinstance(value, tuple):
             return super().visit_Assign(node)
 
-        targets = node.targets[0].elts
+        targets = target.elts
         if len(value) != len(targets):
             raise ValueError(
                 f"Cannot unpack {len(value)} values into {len(targets)} variables"
@@ -111,22 +132,15 @@ class TTLGenericCompiler(TTCompilerBase):
 
     def _loc_for_node(self, node: ast.AST) -> Location:
         """Return file location for node if debug_locations enabled, else name location."""
-        if self.debug_locations and hasattr(node, "lineno"):
-            return _make_file_loc(self.ctx, self.source_file, node, self.line_offset)
+        if self.debug_locations:
+            proxy = NodeProxy(node)
+            if proxy.lineno is not None:
+                return proxy.location(self.ctx, self.source_file, self.line_offset)
         return self.loc
 
     def _raise_error(self, node: ast.AST, message: str) -> NoReturn:
         """Raise a TTLangCompileError with source location from AST node."""
-        lineno = getattr(node, "lineno", None)
-        col_offset = getattr(node, "col_offset", None)
-        line = (lineno + self.line_offset) if isinstance(lineno, int) else None
-        col = (col_offset + 1) if isinstance(col_offset, int) else None
-        raise TTLangCompileError(
-            message,
-            source_file=self.source_file,
-            line=line,
-            col=col,
-        )
+        NodeProxy(node).error(message, self.source_file, self.line_offset)
 
     # Auto-profiling helpers for line-based signposting
 
@@ -148,7 +162,8 @@ class TTLGenericCompiler(TTCompilerBase):
 
     def _emit_line_signpost_if_needed(self, node: ast.AST) -> None:
         """Emit signposts at line boundaries for auto-profiling."""
-        lineno = getattr(node, "lineno", None)
+        proxy = NodeProxy(node)
+        lineno = proxy.lineno
         if not self.auto_profile_enabled or not isinstance(lineno, int):
             return
 
@@ -170,7 +185,7 @@ class TTLGenericCompiler(TTCompilerBase):
         self._register_signpost_pair(before_name, after_name, file_lineno, source_line)
 
         self._emit_signpost(before_name)
-        self._current_signpost_line = file_lineno
+        self._current_signpost_line = int(file_lineno)
 
     def _close_final_signpost(self):
         """Close the final signpost at the end of function body."""
@@ -191,11 +206,12 @@ class TTLGenericCompiler(TTCompilerBase):
         implicit: bool = False,
     ) -> _T:
         """Emit signposts for CB operations with op name included."""
+        proxy = NodeProxy(node)
         if not self.auto_profile_enabled:
             with self._loc_for_node(node):
                 return op_fn()
 
-        lineno = getattr(node, "lineno", None)
+        lineno = proxy.lineno
         if not isinstance(lineno, int):
             with self._loc_for_node(node):
                 return op_fn()
@@ -220,6 +236,7 @@ class TTLGenericCompiler(TTCompilerBase):
 
     def visit_Call(self, node):
         """Override to set location context, catch errors, and inject auto-profiling."""
+        proxy = CallProxy(node)
         with self._loc_for_node(node):
             try:
                 return self._try_emit_auto_signposts(
@@ -228,10 +245,11 @@ class TTLGenericCompiler(TTCompilerBase):
             except (ValueError, TypeError, NotImplementedError) as e:
                 if isinstance(e, TTLangCompileError):
                     raise
-                self._raise_error(node, str(e))
+                proxy.error(str(e), self.source_file, self.line_offset)
 
     def visit_BinOp(self, node):
         """Override to inject auto-profiling and provide better error messages."""
+        proxy = BinOpProxy(node)
         with self._loc_for_node(node):
             try:
                 return self._try_emit_auto_signposts(
@@ -240,7 +258,7 @@ class TTLGenericCompiler(TTCompilerBase):
             except (ValueError, TypeError, NotImplementedError) as e:
                 if isinstance(e, TTLangCompileError):
                     raise
-                self._raise_error(node, str(e))
+                proxy.error(str(e), self.source_file, self.line_offset)
 
     def visit_Name(self, node):
         """Override to check function globals for simple constants."""
@@ -300,6 +318,7 @@ class TTLGenericCompiler(TTCompilerBase):
         kwargs: dict[str, object] | None = None,
     ) -> object | None:
         """Override to set location context and catch errors for method calls."""
+        proxy = AttributeProxy(node)
         func_args = [] if func_args is None else func_args
         kwargs = {} if kwargs is None else kwargs
         with self._loc_for_node(node):
@@ -311,22 +330,27 @@ class TTLGenericCompiler(TTCompilerBase):
             except (ValueError, TypeError, NotImplementedError) as e:
                 if isinstance(e, TTLangCompileError):
                     raise
-                self._raise_error(node, str(e))
+                proxy.error(str(e), self.source_file, self.line_offset)
 
     def visit_Subscript(self, node):
         """Handle tensor[row, col] or tensor[r0:r1, c0:c1] indexing."""
-        tbl = self._var_exists(node.value.id)
+        proxy = SubscriptProxy(node)
+        if not isinstance(proxy.value, ast.Name):
+            proxy.error("TTL only supports subscripting simple variables", self.source_file, self.line_offset)
+
+        var_name = proxy.value.id
+        tbl = self._var_exists(var_name)
         if not tbl:
-            self._raise_error(node, f"Unknown variable: {node.value.id}")
+            proxy.error(f"Unknown variable: {var_name}", self.source_file, self.line_offset)
 
-        tensor = tbl[node.value.id]
+        tensor = tbl[var_name]
         if not isinstance(getattr(tensor, "type", None), RankedTensorType):
-            self._raise_error(node, "TTL only supports subscripting tensors")
+            proxy.error("TTL only supports subscripting tensors", self.source_file, self.line_offset)
 
-        if isinstance(node.slice, ast.Tuple):
-            indices = [self._build_index_or_range(elt) for elt in node.slice.elts]
+        if isinstance(proxy.slice, ast.Tuple):
+            indices = [self._build_index_or_range(elt) for elt in proxy.slice.elts]
         else:
-            indices = [self._build_index_or_range(node.slice)]
+            indices = [self._build_index_or_range(proxy.slice)]
 
         return (tensor, indices)
 
@@ -399,10 +423,10 @@ class TTLGenericCompiler(TTCompilerBase):
         # Emit: %cb = ttl.bind_cb {cb_index = N, buffer_factor = M} : !ttl.cb<...>
         return ttl.bind_cb(cb_type, cb._cb_index, buffer_factor=cb.buffer_factor)
 
-    def _validate_function_signature(self, node: ast.AST) -> None:
+    def _validate_function_signature(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
         """Validate function has correct arguments for kernel entry."""
         assert not self.func_entry, "Cannot declare function within a function"
-        if getattr(node, "args", None) is not None and getattr(node.args, "args", None):
+        if node.args.args:
             self._raise_error(
                 node,
                 "Thread functions must have no parameters. "
@@ -437,8 +461,8 @@ class TTLGenericCompiler(TTCompilerBase):
         return processed
 
     def _setup_symbol_table(
-        self, node: ast.AST, processed_captures: list[tuple[str, object, object]]
-    ) -> object:
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef, processed_captures: list[tuple[str, object, object]]
+    ) -> Block:
         """Initialize symbol table with function arguments and captures."""
         self._tensor_accessor_names = [name for name, _val, _tt in processed_captures]
         self._tensor_accessor_global_indices = [
@@ -454,7 +478,7 @@ class TTLGenericCompiler(TTCompilerBase):
         self.func_entry.attributes["ttl.kernel_thread"] = thread_attr
 
         self.symbol_tables.append({})
-        func_bb = self.func_entry.add_entry_block()
+        func_bb: Block = self.func_entry.add_entry_block()
 
         # Add ttl module to symbol table
         self.symbol_tables[-1]["ttl"] = ttl
@@ -465,7 +489,7 @@ class TTLGenericCompiler(TTCompilerBase):
         self.module_symbol_table = SymbolTable(self.module.operation)
         return func_bb
 
-    def _emit_entry(self, node):
+    def _emit_entry(self, node: ast.FunctionDef | ast.AsyncFunctionDef):
         self._validate_function_signature(node)
 
         processed_tensors = self._process_tensor_captures(self.captures)
@@ -513,11 +537,11 @@ class TTLGenericCompiler(TTCompilerBase):
 
         self.symbol_tables.pop()
 
-    def visit_FunctionDef(self, node):
+    def visit_FunctionDef(self, node: ast.FunctionDef):
         with self._loc_for_node(node):
             return self._emit_entry(node)
 
-    def visit_AsyncFunctionDef(self, node):
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
         with self._loc_for_node(node):
             return self._emit_entry(node)
 
