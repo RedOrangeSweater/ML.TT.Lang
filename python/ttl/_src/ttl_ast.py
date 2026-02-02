@@ -93,7 +93,7 @@ class TTLGenericCompiler(TTCompilerBase):
         self.line_mapper = get_line_mapper() if self.auto_profile_enabled else None
         if self.line_mapper:
             self.line_mapper.line_offset = self.line_offset
-        self._current_signpost_line: int | None = None
+        self._current_line_signpost: Signpost | None = None
         self._fn_map = dict(TTLGenericCompiler._syntax)
 
     @property
@@ -146,6 +146,16 @@ class TTLGenericCompiler(TTCompilerBase):
         """Emit a signpost operation into the MLIR."""
         ttl.signpost(name)
 
+    def _emit_marker(self, signpost: Signpost, before: bool = True) -> None:
+        """Emit a signpost marker (before or after) for a typed signpost."""
+        self._emit_signpost(signpost.before() if before else signpost.after())
+
+    def _register_pair(self, signpost: Signpost, source_line: str) -> None:
+        """Register before/after signpost pair if line_mapper is active."""
+        if self.line_mapper:
+            self.line_mapper.register_signpost(signpost.before(), signpost.file_lineno, source_line)
+            self.line_mapper.register_signpost(signpost.after(), signpost.file_lineno, source_line)
+
     def _register_signpost_pair(
         self,
         before_name: str,
@@ -153,7 +163,7 @@ class TTLGenericCompiler(TTCompilerBase):
         file_lineno: int,
         source_line: str,
     ) -> None:
-        """Register before/after signpost pair if line_mapper is active."""
+        """DEPRECATED: Use _register_pair instead."""
         if self.line_mapper:
             self.line_mapper.register_signpost(before_name, file_lineno, source_line)
             self.line_mapper.register_signpost(after_name, file_lineno, source_line)
@@ -165,27 +175,21 @@ class TTLGenericCompiler(TTCompilerBase):
             return
 
         signpost = proxy.line_signpost(self.line_offset)
-        file_lineno = signpost.file_lineno
-        if self._current_signpost_line == file_lineno:
+        if self._current_line_signpost and self._current_line_signpost.file_lineno == signpost.file_lineno:
             return
 
-        if self._current_signpost_line is not None:
-            self._emit_signpost(f"line_{self._current_signpost_line}_after")
+        if self._current_line_signpost is not None:
+            self._emit_marker(self._current_line_signpost, before=False)
 
-        before_name = signpost.before()
-        after_name = signpost.after()
-
-        source_line = proxy.source_line(self.source_lines, self.line_offset)
-        self._register_signpost_pair(before_name, after_name, file_lineno, source_line)
-
-        self._emit_signpost(before_name)
-        self._current_signpost_line = int(file_lineno)
+        self._register_pair(signpost, proxy.source_line(self.source_lines, self.line_offset))
+        self._emit_marker(signpost, before=True)
+        self._current_line_signpost = signpost
 
     def _close_final_signpost(self):
         """Close the final signpost at the end of function body."""
-        if self.auto_profile_enabled and self._current_signpost_line is not None:
-            self._emit_signpost(f"line_{self._current_signpost_line}_after")
-            self._current_signpost_line = None
+        if self.auto_profile_enabled and self._current_line_signpost is not None:
+            self._emit_marker(self._current_line_signpost, before=False)
+            self._current_line_signpost = None
 
     def _try_emit_auto_signposts(self, node: ast.AST, visit_fn: Callable[[], _T]) -> _T:
         """Emit line-based signposts if auto-profiling is enabled."""
@@ -204,17 +208,12 @@ class TTLGenericCompiler(TTCompilerBase):
                 yield
             return
 
-        before_name = signpost.before()
-        after_name = signpost.after()
-
-        proxy = NodeProxy(node)
-        source_line = proxy.source_line(self.source_lines, self.line_offset)
-        self._register_signpost_pair(before_name, after_name, signpost.file_lineno, source_line)
+        self._register_pair(signpost, NodeProxy(node).source_line(self.source_lines, self.line_offset))
 
         with self._loc_for_node(node):
-            self._emit_signpost(before_name)
+            self._emit_marker(signpost, before=True)
             yield
-            self._emit_signpost(after_name)
+            self._emit_marker(signpost, before=False)
 
     def _emit_op_signposts(
         self,
