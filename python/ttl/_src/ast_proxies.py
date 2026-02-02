@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Sequence
-from typing import Any, NoReturn, TypeVar, Generic
+from typing import Generic, NoReturn, TypeVar
 
-from ttmlir.ir import Location, Context
+from ttmlir.ir import Context, Location
+
 from ..diagnostics import TTLangCompileError
 from .context import make_file_loc
 
@@ -44,6 +45,17 @@ class NodeProxy(Generic[T]):
             line=line,
             col=col,
         )
+
+    def source_line(self, source_lines: list[str] | None, line_offset: int = 0) -> str:
+        """Extract the text of the source line associated with this node."""
+        if not isinstance(self.lineno, int):
+            return "<unknown line>"
+
+        if source_lines and 0 < self.lineno <= len(source_lines):
+            return source_lines[self.lineno - 1].strip()
+
+        file_lineno = self.lineno + line_offset
+        return f"<line {file_lineno}>"
 
 class CallProxy(NodeProxy[ast.Call]):
     """Proxy for ast.Call nodes."""

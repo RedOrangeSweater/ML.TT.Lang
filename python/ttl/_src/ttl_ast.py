@@ -5,14 +5,14 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import NoReturn, TypeVar
 
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import (
     Block,
-    Context,
     F32Type,
     IndexType,
     InsertionPoint,
@@ -30,25 +30,22 @@ from ..diagnostics import TTLangCompileError
 from ..dialects import ttl
 from ..dtype_utils import TensorDtype, is_ttnn_tensor
 from ..ttl_utils import get_thread_type_string
+from .ast_proxies import (
+    AssignProxy,
+    AttributeProxy,
+    BinOpProxy,
+    CallProxy,
+    NodeProxy,
+    SubscriptProxy,
+)
 from .auto_profile import (
     get_line_mapper,
     is_auto_profile_enabled,
-)
-from .ast_proxies import (
-    NodeProxy,
-    CallProxy,
-    AttributeProxy,
-    AssignProxy,
-    BinOpProxy,
-    SubscriptProxy,
 )
 from .context import (
     CompilerContext,
     ThreadSourceInfo,
     TTLCompilerConfig,
-)
-from .context import (
-    make_file_loc as _make_file_loc,
 )
 from .tensor_registry import get_tensor_global_index
 from .type_builder import build_tensor_type as _build_tensor_type
@@ -174,14 +171,10 @@ class TTLGenericCompiler(TTCompilerBase):
         if self._current_signpost_line is not None:
             self._emit_signpost(f"line_{self._current_signpost_line}_after")
 
-        if self.source_lines and 0 < lineno <= len(self.source_lines):
-            source_line = self.source_lines[lineno - 1].strip()
-        else:
-            source_line = f"<line {file_lineno}>"
-
         before_name = f"line_{file_lineno}_before"
         after_name = f"line_{file_lineno}_after"
 
+        source_line = proxy.source_line(self.source_lines, self.line_offset)
         self._register_signpost_pair(before_name, after_name, file_lineno, source_line)
 
         self._emit_signpost(before_name)
@@ -198,6 +191,33 @@ class TTLGenericCompiler(TTCompilerBase):
         self._emit_line_signpost_if_needed(node)
         return visit_fn()
 
+    @contextlib.contextmanager
+    def signpost_context(
+        self,
+        node: ast.AST,
+        op_name: str,
+        implicit: bool = False,
+    ) -> Generator[None, None, None]:
+        """Context manager to emit signposts around an operation."""
+        proxy = NodeProxy(node)
+        if not self.auto_profile_enabled or not isinstance(proxy.lineno, int):
+            with self._loc_for_node(node):
+                yield
+            return
+
+        file_lineno = proxy.lineno + self.line_offset
+        prefix = "implicit_" if implicit else ""
+        before_name = f"line_{file_lineno}_{prefix}{op_name}_before"
+        after_name = f"line_{file_lineno}_{prefix}{op_name}_after"
+
+        source_line = proxy.source_line(self.source_lines, self.line_offset)
+        self._register_signpost_pair(before_name, after_name, file_lineno, source_line)
+
+        with self._loc_for_node(node):
+            self._emit_signpost(before_name)
+            yield
+            self._emit_signpost(after_name)
+
     def _emit_op_signposts(
         self,
         op_name: str,
@@ -205,34 +225,9 @@ class TTLGenericCompiler(TTCompilerBase):
         op_fn: Callable[[], _T],
         implicit: bool = False,
     ) -> _T:
-        """Emit signposts for CB operations with op name included."""
-        proxy = NodeProxy(node)
-        if not self.auto_profile_enabled:
-            with self._loc_for_node(node):
-                return op_fn()
-
-        lineno = proxy.lineno
-        if not isinstance(lineno, int):
-            with self._loc_for_node(node):
-                return op_fn()
-
-        file_lineno = lineno + self.line_offset
-        prefix = "implicit_" if implicit else ""
-        before_name = f"line_{file_lineno}_{prefix}{op_name}_before"
-        after_name = f"line_{file_lineno}_{prefix}{op_name}_after"
-
-        if self.source_lines and 0 < lineno <= len(self.source_lines):
-            source_line = self.source_lines[lineno - 1].strip()
-        else:
-            source_line = f"<line {file_lineno}>"
-
-        self._register_signpost_pair(before_name, after_name, file_lineno, source_line)
-
-        with self._loc_for_node(node):
-            self._emit_signpost(before_name)
-            result = op_fn()
-            self._emit_signpost(after_name)
-        return result
+        """Emit signposts for operations with op name included."""
+        with self.signpost_context(node, op_name, implicit):
+            return op_fn()
 
     def visit_Call(self, node):
         """Override to set location context, catch errors, and inject auto-profiling."""
