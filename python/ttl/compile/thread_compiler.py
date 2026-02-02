@@ -68,12 +68,9 @@ def compile_program_to_threads(
     Call resolve_memory_space_and_register_tensors(req) first to get memory_space and
     register tensor names / track sources.
     """
-    f = req.program
-    args = req.args
     kwargs = dict(req.kwargs)
     request = req.compile_request
-    thread_registry = req.thread_registry
-    f_params = inspect.signature(f).parameters
+    f_params = inspect.signature(req.program).parameters
 
     run_config = ProgramRunConfig(
         grid=list(request.grid),
@@ -89,9 +86,9 @@ def compile_program_to_threads(
     _reset_cb_counter()
     _set_current_grid(request.grid)
 
-    thread_registry.clear()
-    f(*args, **kwargs)
-    threads = thread_registry.get_and_clear()
+    req.thread_registry.clear()
+    req.program(*req.args, **kwargs)
+    threads = req.thread_registry.get_and_clear()
 
     if not threads:
         raise ValueError(
@@ -100,7 +97,7 @@ def compile_program_to_threads(
         )
 
     cb_configs = collect_cb_configs(threads)
-    program = Program(*threads, args=args, run_config=run_config)
+    program = Program(*threads, args=req.args, run_config=run_config)
 
     compiled_threads: list[TTLGenericCompiler] = []
     thread_tensor_indices: list[list[int]] = []
