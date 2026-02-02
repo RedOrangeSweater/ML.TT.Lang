@@ -46,9 +46,9 @@ class Trainer:
         logger: Logger | None = None,
     ) -> None:
         self.model = model
-        self.config = config or TrainerConfig()
-        self.callbacks = list(callbacks or [])
-        self.logger = logger or StdoutLogger()
+        self.config = TrainerConfig() if config is None else config
+        self.callbacks = [] if callbacks is None else list(callbacks)
+        self.logger = StdoutLogger() if logger is None else logger
         self._global_step = 0
 
     def fit(

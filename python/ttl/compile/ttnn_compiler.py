@@ -166,8 +166,12 @@ def compile_ttnn_kernel(req: TTNNKernelCompileRequest) -> CompiledTTNNKernel | N
     ):
         profiling = CompiledProfilingSource(
             source_lines=prof.source_lines,
-            all_source_lines=prof.all_source_lines or {},
-            kernel_line_offsets=prof.kernel_line_offsets or {},
+            all_source_lines=(
+                prof.all_source_lines if prof.all_source_lines is not None else {}
+            ),
+            kernel_line_offsets=(
+                prof.kernel_line_offsets if prof.kernel_line_offsets is not None else {}
+            ),
         )
     compiled_kernel = CompiledTTNNKernel(
         artifacts=artifacts, runtime=runtime, profiling=profiling

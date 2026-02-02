@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import functools
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from ._src.auto_profile import is_auto_profile_enabled, run_profiling_after_execute
 from .circular_buffer import CircularBuffer
@@ -199,8 +199,8 @@ def _pykernel_gen_params_adapter(
     @functools.wraps(fn, assigned=("__module__", "__name__", "__qualname__"))
     def wrapper(
         grid: (tuple[int, ...] | Callable[..., object]) | None = None,
-        indexing_maps: list[Callable[..., object]] | None = None,
-        iterator_types: list[str] | None = None,
+        indexing_maps: Sequence[Callable[..., object]] | None = None,
+        iterator_types: Sequence[str] | None = None,
         num_outs: int = 1,
         memory_space: MemorySpace = MemorySpace.L1,
         tiled: bool = True,
@@ -210,10 +210,12 @@ def _pykernel_gen_params_adapter(
         placement: Placement | None = None,
     ) -> Callable:
         """Public @ttl.program API: build ProgramDecoratorParams and delegate."""
+        indexing_maps_list = [] if indexing_maps is None else list(indexing_maps)
+        iterator_types_list = [] if iterator_types is None else list(iterator_types)
         params = ProgramDecoratorParams(
             grid=grid,
-            indexing_maps=indexing_maps or [],
-            iterator_types=iterator_types or [],
+            indexing_maps=indexing_maps_list,
+            iterator_types=iterator_types_list,
             options=ProgramOptions(
                 num_outs=num_outs,
                 memory_space=memory_space,
@@ -278,7 +280,9 @@ def pykernel_gen(
             )
             ctx = compile_cached(ctx)
             setattr(_wrapper, _LAST_COMPILED_KERNEL_ATTR, ctx.compiled)
-            if ctx.compiled is None or not _should_execute():
+            if ctx.compiled is None:
+                return None
+            if not _should_execute():
                 return None
             result = ctx.compiled(*ctx.args)
             if is_auto_profile_enabled() and ctx.compiled.all_source_lines:
