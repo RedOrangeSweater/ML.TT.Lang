@@ -6,13 +6,69 @@
 # and cleaned up to remove unused code (TTKernelCompiler) and fix i32->i64.
 
 import ast
+from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from ttmlir.dialects import arith, emitc, memref, scf
 from ttmlir.ir import *
 
-from .base_ast import PyKernelAstBase
+from .base_ast import PyKernelAstBase, Scope
 from .kernel_types import ClassRegistry
 from .utils import _cast, _get_type_str
+
+
+class LoopParams(BaseModel):
+    """Handles processing of loop parameters (lower bound, upper bound, step)."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    args: list[ast.AST]
+    visitor: Any
+    ctx: Context
+
+    lower_bound: Any = Field(default=None)
+    upper_bound: Any = Field(default=None)
+    step: Any = Field(default=None)
+
+    @model_validator(mode="after")
+    def _process_params(self) -> "LoopParams":
+        """Process AST arguments into MLIR values for scf.for."""
+        # 1. Visit AST nodes and handle defaults
+        if len(self.args) == 1:
+            lb_raw = arith.ConstantOp(IndexType.get(self.ctx), 0)
+            ub_raw = self.visitor.visit(self.args[0])
+            step_raw = arith.ConstantOp(IndexType.get(self.ctx), 1)
+        elif len(self.args) == 2:
+            lb_raw = self.visitor.visit(self.args[0])
+            ub_raw = self.visitor.visit(self.args[1])
+            step_raw = arith.ConstantOp(IndexType.get(self.ctx), 1)
+        elif len(self.args) == 3:
+            lb_raw = self.visitor.visit(self.args[0])
+            ub_raw = self.visitor.visit(self.args[1])
+            step_raw = self.visitor.visit(self.args[2])
+        else:
+            raise ValueError(f"range() expects 1-3 arguments, got {len(self.args)}")
+
+        # 2. Handle memref loading and index casting
+        self.lower_bound = self._prepare_value(lb_raw)
+        self.upper_bound = self._prepare_value(ub_raw)
+        self.step = self._prepare_value(step_raw)
+
+        return self
+
+    def _prepare_value(self, val: Any) -> Any:
+        """Load from memref and cast to index type if needed."""
+        # Load if it's a memref
+        if hasattr(val, "type") and isinstance(val.type, memref.MemRefType):
+            val = memref.LoadOp(
+                val, arith.ConstantOp(IndexType.get(self.ctx), 0)
+            ).result
+
+        # Cast to index type
+        if not isinstance(val.type, IndexType):
+            val = arith.IndexCastOp(IndexType.get(self.ctx), val).result
+
+        return val
 
 
 class TTCompilerBase(PyKernelAstBase):
@@ -156,45 +212,13 @@ class TTCompilerBase(PyKernelAstBase):
     def visit_For(self, node):
         assert node.iter.func.id == "range", "Only range() supported in for loops"
 
-        if len(node.iter.args) == 1:
-            lower_bound = arith.ConstantOp(IndexType.get(self.ctx), 0)
-            upper_bound = self.visit(node.iter.args[0])
-            step = arith.ConstantOp(IndexType.get(self.ctx), 1)
-        elif len(node.iter.args) == 2:
-            lower_bound = self.visit(node.iter.args[0])
-            upper_bound = self.visit(node.iter.args[1])
-            step = arith.ConstantOp(IndexType.get(self.ctx), 1)
-        elif len(node.iter.args) == 3:
-            lower_bound = self.visit(node.iter.args[0])
-            upper_bound = self.visit(node.iter.args[1])
-            step = self.visit(node.iter.args[2])
-
-        if isinstance(lower_bound.type, memref.MemRefType):
-            lower_bound = memref.LoadOp(
-                lower_bound, arith.ConstantOp(IndexType.get(self.ctx), 0)
-            ).result
-        if isinstance(upper_bound.type, memref.MemRefType):
-            upper_bound = memref.LoadOp(
-                upper_bound, arith.ConstantOp(IndexType.get(self.ctx), 0)
-            ).result
-        if isinstance(step.type, memref.MemRefType):
-            step = memref.LoadOp(
-                step, arith.ConstantOp(IndexType.get(self.ctx), 0)
-            ).result
-
-        # Cast all to index type for scf.for
-        if not isinstance(lower_bound.type, IndexType):
-            lower_bound = arith.IndexCastOp(IndexType.get(self.ctx), lower_bound).result
-        if not isinstance(upper_bound.type, IndexType):
-            upper_bound = arith.IndexCastOp(IndexType.get(self.ctx), upper_bound).result
-        if not isinstance(step.type, IndexType):
-            step = arith.IndexCastOp(IndexType.get(self.ctx), step).result
+        params = LoopParams(args=node.iter.args, visitor=self, ctx=self.ctx)
 
         if self.verbose:
             comment = self._get_source_comment_block(node)
             emitc.verbatim(comment, [])
 
-        for_op = scf.ForOp(lower_bound, upper_bound, step)
+        for_op = scf.ForOp(params.lower_bound, params.upper_bound, params.step)
         with InsertionPoint(for_op.body), Location.unknown():
             with self.scope.new_scope():
                 # Add the iterator into the symbol_table
