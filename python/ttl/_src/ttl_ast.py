@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import ast
 import inspect
+from collections.abc import Callable
+from typing import NoReturn, TypeVar
 
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import *
@@ -31,6 +33,8 @@ from .context import (
 )
 from .tensor_registry import get_tensor_global_index
 from .type_builder import build_tensor_type as _build_tensor_type
+
+_T = TypeVar("_T")
 
 
 class TTLGenericCompiler(TTCompilerBase):
@@ -105,16 +109,18 @@ class TTLGenericCompiler(TTCompilerBase):
                 raise ValueError("Tuple unpacking requires simple variable names")
             sym_table[elt.id] = val
 
-    def _loc_for_node(self, node):
+    def _loc_for_node(self, node: ast.AST) -> Location:
         """Return file location for node if debug_locations enabled, else name location."""
         if self.debug_locations and hasattr(node, "lineno"):
             return _make_file_loc(self.ctx, self.source_file, node, self.line_offset)
         return self.loc
 
-    def _raise_error(self, node, message: str):
+    def _raise_error(self, node: ast.AST, message: str) -> NoReturn:
         """Raise a TTLangCompileError with source location from AST node."""
-        line = node.lineno + self.line_offset if hasattr(node, "lineno") else None
-        col = node.col_offset + 1 if hasattr(node, "col_offset") else None
+        lineno = getattr(node, "lineno", None)
+        col_offset = getattr(node, "col_offset", None)
+        line = (lineno + self.line_offset) if isinstance(lineno, int) else None
+        col = (col_offset + 1) if isinstance(col_offset, int) else None
         raise TTLangCompileError(
             message,
             source_file=self.source_file,
@@ -128,29 +134,40 @@ class TTLGenericCompiler(TTCompilerBase):
         """Emit a signpost operation into the MLIR."""
         ttl.signpost(name)
 
-    def _emit_line_signpost_if_needed(self, node):
+    def _register_signpost_pair(
+        self,
+        before_name: str,
+        after_name: str,
+        file_lineno: int,
+        source_line: str,
+    ) -> None:
+        """Register before/after signpost pair if line_mapper is active."""
+        if self.line_mapper:
+            self.line_mapper.register_signpost(before_name, file_lineno, source_line)
+            self.line_mapper.register_signpost(after_name, file_lineno, source_line)
+
+    def _emit_line_signpost_if_needed(self, node: ast.AST) -> None:
         """Emit signposts at line boundaries for auto-profiling."""
-        if not self.auto_profile_enabled or not hasattr(node, "lineno"):
+        lineno = getattr(node, "lineno", None)
+        if not self.auto_profile_enabled or not isinstance(lineno, int):
             return
 
-        file_lineno = node.lineno + self.line_offset
+        file_lineno = lineno + self.line_offset
         if self._current_signpost_line == file_lineno:
             return
 
         if self._current_signpost_line is not None:
             self._emit_signpost(f"line_{self._current_signpost_line}_after")
 
-        if self.source_lines and 0 < node.lineno <= len(self.source_lines):
-            source_line = self.source_lines[node.lineno - 1].strip()
+        if self.source_lines and 0 < lineno <= len(self.source_lines):
+            source_line = self.source_lines[lineno - 1].strip()
         else:
             source_line = f"<line {file_lineno}>"
 
         before_name = f"line_{file_lineno}_before"
         after_name = f"line_{file_lineno}_after"
 
-        if self.line_mapper:
-            self.line_mapper.register_signpost(before_name, file_lineno, source_line)
-            self.line_mapper.register_signpost(after_name, file_lineno, source_line)
+        self._register_signpost_pair(before_name, after_name, file_lineno, source_line)
 
         self._emit_signpost(before_name)
         self._current_signpost_line = file_lineno
@@ -161,30 +178,39 @@ class TTLGenericCompiler(TTCompilerBase):
             self._emit_signpost(f"line_{self._current_signpost_line}_after")
             self._current_signpost_line = None
 
-    def _try_emit_auto_signposts(self, node, visit_fn):
+    def _try_emit_auto_signposts(self, node: ast.AST, visit_fn: Callable[[], _T]) -> _T:
         """Emit line-based signposts if auto-profiling is enabled."""
         self._emit_line_signpost_if_needed(node)
         return visit_fn()
 
-    def _emit_op_signposts(self, op_name: str, node, op_fn, implicit=False):
+    def _emit_op_signposts(
+        self,
+        op_name: str,
+        node: ast.AST,
+        op_fn: Callable[[], _T],
+        implicit: bool = False,
+    ) -> _T:
         """Emit signposts for CB operations with op name included."""
         if not self.auto_profile_enabled:
             with self._loc_for_node(node):
                 return op_fn()
 
-        file_lineno = node.lineno + self.line_offset
+        lineno = getattr(node, "lineno", None)
+        if not isinstance(lineno, int):
+            with self._loc_for_node(node):
+                return op_fn()
+
+        file_lineno = lineno + self.line_offset
         prefix = "implicit_" if implicit else ""
         before_name = f"line_{file_lineno}_{prefix}{op_name}_before"
         after_name = f"line_{file_lineno}_{prefix}{op_name}_after"
 
-        if self.source_lines and 0 < node.lineno <= len(self.source_lines):
-            source_line = self.source_lines[node.lineno - 1].strip()
+        if self.source_lines and 0 < lineno <= len(self.source_lines):
+            source_line = self.source_lines[lineno - 1].strip()
         else:
             source_line = f"<line {file_lineno}>"
 
-        if self.line_mapper:
-            self.line_mapper.register_signpost(before_name, file_lineno, source_line)
-            self.line_mapper.register_signpost(after_name, file_lineno, source_line)
+        self._register_signpost_pair(before_name, after_name, file_lineno, source_line)
 
         with self._loc_for_node(node):
             self._emit_signpost(before_name)
@@ -235,7 +261,7 @@ class TTLGenericCompiler(TTCompilerBase):
 
         return None
 
-    def _is_ttl_module_access(self, node):
+    def _is_ttl_module_access(self, node: ast.Attribute) -> bool:
         """Check if node is ttl.XXX access pattern."""
         return isinstance(node.value, ast.Name) and node.value.id == "ttl"
 
@@ -248,7 +274,12 @@ class TTLGenericCompiler(TTCompilerBase):
             and node.value.attr == "math"
         )
 
-    def _resolve_ttl_function(self, node, func_args, kwargs):
+    def _resolve_ttl_function(
+        self,
+        node: ast.Attribute,
+        func_args: list[object],
+        kwargs: dict[str, object],
+    ) -> object | None:
         """Resolve and call a ttl.XXX or ttl.math.XXX function."""
         if self._is_ttl_module_access(node):
             namespace = "ttl"
@@ -262,8 +293,15 @@ class TTLGenericCompiler(TTCompilerBase):
             self._raise_error(node, f"Unknown function: {namespace}.{node.attr}")
         return fn(*func_args, **kwargs)
 
-    def visit_Attribute(self, node, func_args=[], kwargs={}):
+    def visit_Attribute(
+        self,
+        node: ast.Attribute,
+        func_args: list[object] | None = None,
+        kwargs: dict[str, object] | None = None,
+    ) -> object | None:
         """Override to set location context and catch errors for method calls."""
+        func_args = [] if func_args is None else func_args
+        kwargs = {} if kwargs is None else kwargs
         with self._loc_for_node(node):
             try:
                 # Handle ttl.XXX and ttl.math.XXX attribute access
@@ -361,21 +399,22 @@ class TTLGenericCompiler(TTCompilerBase):
         # Emit: %cb = ttl.bind_cb {cb_index = N, buffer_factor = M} : !ttl.cb<...>
         return ttl.bind_cb(cb_type, cb._cb_index, buffer_factor=cb.buffer_factor)
 
-    def _emit_entry(self, node):
+    def _validate_function_signature(self, node: ast.AST) -> None:
+        """Validate function has correct arguments for kernel entry."""
         assert not self.func_entry, "Cannot declare function within a function"
-
-        if node.args.args:
+        if getattr(node, "args", None) is not None and getattr(node.args, "args", None):
             self._raise_error(
                 node,
                 "Thread functions must have no parameters. "
                 "Use make_circular_buffer_like() in kernel body and capture CBs in closures.",
             )
 
-        # Collect tensor captures for function arguments
-        self._tensor_accessor_names = []
-        self._tensor_accessor_global_indices = []
-        func_arg_types = []
-        for name, val in self.captures.items():
+    def _process_tensor_captures(
+        self, captures: dict[str, object]
+    ) -> list[tuple[str, object, object]]:
+        """Process captured tensors and return (name, tensor, mlir_type) tuples."""
+        processed: list[tuple[str, object, object]] = []
+        for name, val in captures.items():
             is_tensor = is_ttnn_tensor(val)
             if not is_tensor:
                 try:
@@ -384,19 +423,28 @@ class TTLGenericCompiler(TTCompilerBase):
                     is_tensor = isinstance(val, torch.Tensor)
                 except ImportError:
                     pass
-            if is_tensor:
-                tensor_type = _build_tensor_type(
-                    self.ctx,
-                    val,
-                    self.context.grid,
-                    self.context.tiled,
-                    self.context.memory_space,
-                )
-                self._tensor_accessor_names.append(name)
-                self._tensor_accessor_global_indices.append(
-                    get_tensor_global_index(val)
-                )
-                func_arg_types.append(tensor_type)
+            if not is_tensor:
+                continue
+
+            tensor_type = _build_tensor_type(
+                self.ctx,
+                val,
+                self.context.grid,
+                self.context.tiled,
+                self.context.memory_space,
+            )
+            processed.append((name, val, tensor_type))
+        return processed
+
+    def _setup_symbol_table(
+        self, node: ast.AST, processed_captures: list[tuple[str, object, object]]
+    ) -> object:
+        """Initialize symbol table with function arguments and captures."""
+        self._tensor_accessor_names = [name for name, _val, _tt in processed_captures]
+        self._tensor_accessor_global_indices = [
+            get_tensor_global_index(val) for _name, val, _tt in processed_captures
+        ]
+        func_arg_types = [tt for _name, _val, tt in processed_captures]
 
         self.func_entry = func.FuncOp(name=node.name, type=(func_arg_types, []))
 
@@ -415,6 +463,13 @@ class TTLGenericCompiler(TTCompilerBase):
         ttl.ensure_dialects_registered(self.ctx)
 
         self.module_symbol_table = SymbolTable(self.module.operation)
+        return func_bb
+
+    def _emit_entry(self, node):
+        self._validate_function_signature(node)
+
+        processed_tensors = self._process_tensor_captures(self.captures)
+        func_bb = self._setup_symbol_table(node, processed_tensors)
 
         # Emit function body
         with InsertionPoint(func_bb):
@@ -489,83 +544,108 @@ class TTLGenericCompiler(TTCompilerBase):
                 # releases in reverse order: push(out), pop(rhs), pop(lhs)
         """
         with self._loc_for_node(node):
-            # Process each with-item: acquire resources and track for release
-            releases = []  # [(release_op, cb_val), ...] in acquisition order
+            releases: list[tuple[str, object, object, ast.AST]] = []
 
             for item in node.items:
-                context_expr = item.context_expr
-                optional_vars = item.optional_vars
-
-                if not isinstance(context_expr, ast.Call):
-                    self._raise_error(
-                        context_expr,
-                        "'with' requires a method call (e.g., cb.reserve())",
-                    )
-
-                if not isinstance(context_expr.func, ast.Attribute):
-                    self._raise_error(
-                        context_expr, "'with' requires a method call on an object"
-                    )
-
-                method_name = context_expr.func.attr
-                cb_node = context_expr.func.value
-
-                if method_name not in ("reserve", "wait"):
-                    self._raise_error(
-                        context_expr,
-                        f"'with' only supports 'reserve()' or 'wait()', got '{method_name}'",
-                    )
-
-                if not isinstance(cb_node, ast.Name):
-                    self._raise_error(
-                        context_expr,
-                        "'with' requires a simple variable (e.g., cb.reserve())",
-                    )
-
-                cb_table = self._var_exists(cb_node.id)
-                if not cb_table:
-                    self._raise_error(cb_node, f"'{cb_node.id}' not found in scope")
-                cb_val = cb_table[cb_node.id]
-
-                # Get tensor type from CB for reserve/wait result
-                tensor_type = self._get_cb_tensor_type(cb_val, node=context_expr)
-                if method_name == "reserve":
-                    tensor = self._emit_op_signposts(
-                        "cb_reserve",
-                        context_expr,
-                        lambda tt=tensor_type, cv=cb_val: ttl.cb_reserve(tt, cv),
-                    )
-                    releases.append(("cb_push", ttl.cb_push, cb_val, context_expr))
-                else:  # wait
-                    tensor = self._emit_op_signposts(
-                        "cb_wait",
-                        context_expr,
-                        lambda tt=tensor_type, cv=cb_val: ttl.cb_wait(tt, cv),
-                    )
-                    releases.append(("cb_pop", ttl.cb_pop, cb_val, context_expr))
-
-                # Attach CB to tensor so store() can find the CB association
-                acquire_result = ttl.attach_cb(tensor.type, tensor, cb_val)
-
-                if optional_vars is not None:
-                    if not isinstance(optional_vars, ast.Name):
-                        self._raise_error(
-                            optional_vars,
-                            "'with ... as var' requires a simple variable name",
-                        )
-                    self.symbol_tables[-1][optional_vars.id] = acquire_result
+                cb_val, method_name, expr_node, optional_name = self._parse_with_item(
+                    item
+                )
+                acquire_result, release_info = self._emit_cb_acquire(
+                    cb_val=cb_val,
+                    method_name=method_name,
+                    expr_node=expr_node,
+                )
+                releases.append(release_info)
+                if optional_name is not None:
+                    self.symbol_tables[-1][optional_name] = acquire_result
 
             for stmt in node.body:
                 self.visit(stmt)
 
-            # Release in reverse order (implicit ops from with statement)
-            for op_name, release_op, cb_val, expr_node in reversed(releases):
-                self._emit_op_signposts(
-                    op_name,
-                    expr_node,
-                    lambda ro=release_op, cv=cb_val: ro(cv),
-                    implicit=True,
+            self._emit_cb_releases(releases)
+
+    def _parse_with_item(
+        self, item: ast.withitem
+    ) -> tuple[object, str, ast.AST, str | None]:
+        """Parse a single with-item and return (cb_value, method_name, expr_node, optional_name)."""
+        context_expr = item.context_expr
+        optional_vars = item.optional_vars
+
+        if not isinstance(context_expr, ast.Call):
+            self._raise_error(
+                context_expr,
+                "'with' requires a method call (e.g., cb.reserve())",
+            )
+
+        if not isinstance(context_expr.func, ast.Attribute):
+            self._raise_error(
+                context_expr, "'with' requires a method call on an object"
+            )
+
+        method_name = context_expr.func.attr
+        cb_node = context_expr.func.value
+
+        if method_name not in ("reserve", "wait"):
+            self._raise_error(
+                context_expr,
+                f"'with' only supports 'reserve()' or 'wait()', got '{method_name}'",
+            )
+
+        if not isinstance(cb_node, ast.Name):
+            self._raise_error(
+                context_expr,
+                "'with' requires a simple variable (e.g., cb.reserve())",
+            )
+
+        cb_table = self._var_exists(cb_node.id)
+        if not cb_table:
+            self._raise_error(cb_node, f"'{cb_node.id}' not found in scope")
+        cb_val = cb_table[cb_node.id]
+
+        optional_name: str | None = None
+        if optional_vars is not None:
+            if not isinstance(optional_vars, ast.Name):
+                self._raise_error(
+                    optional_vars, "'with ... as var' requires a simple variable name"
                 )
+            optional_name = optional_vars.id
+
+        return cb_val, method_name, context_expr, optional_name
+
+    def _emit_cb_acquire(
+        self, *, cb_val: object, method_name: str, expr_node: ast.AST
+    ) -> tuple[object, tuple[str, object, object, ast.AST]]:
+        """Emit CB acquire operation with signposts if profiling enabled."""
+        tensor_type = self._get_cb_tensor_type(cb_val, node=expr_node)
+        if method_name == "reserve":
+            tensor = self._emit_op_signposts(
+                "cb_reserve",
+                expr_node,
+                lambda tt=tensor_type, cv=cb_val: ttl.cb_reserve(tt, cv),
+            )
+            release_info = ("cb_push", ttl.cb_push, cb_val, expr_node)
+        else:
+            tensor = self._emit_op_signposts(
+                "cb_wait",
+                expr_node,
+                lambda tt=tensor_type, cv=cb_val: ttl.cb_wait(tt, cv),
+            )
+            release_info = ("cb_pop", ttl.cb_pop, cb_val, expr_node)
+
+        acquire_result = ttl.attach_cb(tensor.type, tensor, cb_val)
+        return acquire_result, release_info
+
+    def _emit_cb_releases(
+        self, releases: list[tuple[str, object, object, ast.AST]]
+    ) -> None:
+        """Emit CB release operations for all acquired CBs."""
+        for op_name, release_op, cb_val, expr_node in reversed(releases):
+            self._emit_op_signposts(
+                op_name,
+                expr_node,
+                lambda ro=release_op, cv=cb_val: ro(cv),
+                implicit=True,
+            )
 
 
 def syntax(syntax_name):

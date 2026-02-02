@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, ParamSpec, TypeVar
 
 Ctx = TypeVar("Ctx")
 Val = TypeVar("Val")
 Out = TypeVar("Out")
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 def require_attr(attr_name: str, *, error: str | None = None):
@@ -112,9 +114,25 @@ def ensure_ctx_field(
     return decorator
 
 
+def require_module_available(get_module: Callable[[], object | None], *, name: str):
+    """Require an optional dependency module to be available before calling the function."""
+
+    def decorator(fn: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(fn)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            if get_module() is None:
+                raise RuntimeError(f"{name} is not available")
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 __all__ = [
     "cache_by_key",
     "ensure_ctx_field",
+    "require_module_available",
     "require_attr",
     "store_to_ctx",
 ]

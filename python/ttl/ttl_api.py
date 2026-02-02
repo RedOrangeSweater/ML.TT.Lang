@@ -15,13 +15,7 @@ from __future__ import annotations
 import functools
 import random
 from collections.abc import Callable
-from typing import Literal
-
-try:
-    import ttnn
-except (ModuleNotFoundError, ImportError):
-    ttnn = None
-
+from typing import Literal, cast
 
 from ._src.auto_profile import is_auto_profile_enabled, run_profiling_after_execute
 from .circular_buffer import CircularBuffer
@@ -29,11 +23,14 @@ from .compile.compile_thread import compile_thread as _compile_thread_impl
 from .compile.pipeline import _compile_kernel as _compile_kernel_impl
 from .compile.registry import get_thread_registry
 from .constants import MemorySpace
-from .descriptor_options import (
-    CompiledTTNNKernel,
-)
+from .descriptor_options import CompiledTTNNKernel
 from .layered.context import ProgramInvocationContext, RunContext
-from .layered.decorators import cache_by_key, ensure_ctx_field, store_to_ctx
+from .layered.decorators import (
+    cache_by_key,
+    ensure_ctx_field,
+    require_attr,
+    store_to_ctx,
+)
 from .layered.program.ensure_run_request import ctx_request_ensure_run_request
 from .layered.run_decorators import (
     ctx_config_resolve_engine_config,
@@ -52,11 +49,13 @@ from .program import (
 from .program.cache_key import make_cache_key
 from .settings import settings_ttlang
 
+_LAST_COMPILED_KERNEL_ATTR = "_last_compiled_kernel"
+
 
 # For kernel body: TensorAccessor and dma (alias for copy) used in examples
 # TensorAccessor(tensor) returns the tensor so it is captured; compiler treats
 # subscript access (accessor[i,j]) as tensor accessor in MLIR (see ttl_ast).
-def TensorAccessor(tensor):  # noqa: N802
+def TensorAccessor(tensor: object) -> object:  # noqa: N802
     """Wrap a tensor for use as accessor in DM threads (e.g. accessor[i, j] in copy)."""
     return tensor
 
@@ -126,10 +125,10 @@ PLACEMENT_VALUES = ("auto", "manual")
 _TTL_PROGRAM_ATTR = "_ttl_program"
 
 
+@require_attr("req", error="build_compile_request requires ctx.req to be set")
 def build_compile_request(ctx: RunContext) -> CompileKernelRequest:
-    """Business logic: build CompileKernelRequest from ctx.req and ctx.engine_config."""
-    if ctx.req is None:
-        raise RuntimeError("build_compile_request requires ctx.req to be set")
+    """Build CompileKernelRequest from ctx.req and ctx.engine_config."""
+    assert ctx.req is not None
 
     cache_key = make_cache_key(
         ctx.req.args,
@@ -155,10 +154,10 @@ def build_compile_request(ctx: RunContext) -> CompileKernelRequest:
     )
 
 
+@require_attr("compile_req", error="compile_kernel requires ctx.compile_req to be set")
 def compile_kernel(ctx: RunContext) -> CompiledTTNNKernel | None:
     """Business logic: compile ctx.compile_req and return compiled kernel."""
-    if ctx.compile_req is None:
-        raise RuntimeError("compile_kernel requires ctx.compile_req to be set")
+    assert ctx.compile_req is not None
     return _compile_kernel_impl(ctx.compile_req)
 
 
@@ -218,8 +217,8 @@ def _pykernel_gen_params_adapter(
         """Public @ttl.program API: build ProgramDecoratorParams and delegate."""
         params = ProgramDecoratorParams(
             grid=grid,
-            indexing_maps=indexing_maps,  # type: ignore[arg-type]
-            iterator_types=iterator_types,  # type: ignore[arg-type]
+            indexing_maps=indexing_maps or [],
+            iterator_types=iterator_types or [],
             options=ProgramOptions(
                 num_outs=num_outs,
                 memory_space=memory_space,
@@ -241,6 +240,7 @@ def _pykernel_gen_params_adapter(
 @ctx_program_require_ttl_program_attr(_TTL_PROGRAM_ATTR)
 @ensure_ctx_field("compile_req", build_compile_request)
 @ensure_ctx_field("compiled", compile_kernel)
+@require_attr("req", error="run() invariant: ctx.req must be set")
 def run(ctx: RunContext) -> object | None:
     """
     Compile and run kernel. Ideal UX entry point.
@@ -253,8 +253,7 @@ def run(ctx: RunContext) -> object | None:
     Optional engine_config_path or engine_config: abstract engine config for scheduler.
     See docs/sdlc/00_Main/00_Ideas/20_nickel_mlir_config_abstract_engine.md.
     """
-    if ctx.req is None:
-        raise RuntimeError("run() invariant: ctx.req must be set")
+    assert ctx.req is not None
     if ctx.compiled is None:
         return None
     if not _should_execute():
@@ -273,26 +272,32 @@ def pykernel_gen(
         cache: dict[tuple[object, ...], CompiledTTNNKernel] = {}
 
         @functools.wraps(f)
-        def _wrapper(*args, **kwargs):
+        def _wrapper(*args: object, **kwargs: object) -> object | None:
             ctx = ProgramInvocationContext(
                 program=f,
                 args=args,
-                kwargs=kwargs,
+                kwargs=dict(kwargs),
                 params=params,
                 kernel_id=kernel_id,
                 cache=cache,
             )
             ctx = compile_cached(ctx)
-            _wrapper._last_compiled_kernel = ctx.compiled  # type: ignore[attr-defined]
+            setattr(_wrapper, _LAST_COMPILED_KERNEL_ATTR, ctx.compiled)
             if ctx.compiled is None or not _should_execute():
                 return None
             result = ctx.compiled(*ctx.args)
             if is_auto_profile_enabled() and ctx.compiled.all_source_lines:
+                all_source_lines = cast(
+                    dict[str, list[str]], ctx.compiled.all_source_lines
+                )
+                kernel_line_offsets = cast(
+                    dict[str, int] | None, ctx.compiled.kernel_line_offsets
+                )
                 run_profiling_after_execute(
                     ctx.args,
-                    ctx.compiled.all_source_lines,  # type: ignore[arg-type]
+                    all_source_lines,
                     ctx.compiled.thread_to_kernel,
-                    ctx.compiled.kernel_line_offsets,  # type: ignore[arg-type]
+                    kernel_line_offsets,
                 )
             return result
 

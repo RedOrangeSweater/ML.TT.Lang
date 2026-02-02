@@ -28,15 +28,8 @@ from ..dtype_utils import is_ttnn_tensor
 
 def _as_int_grid(grid: tuple[object, ...] | list[object]) -> tuple[int, ...] | list[int]:
     """Normalize a tuple/list-like grid to int values."""
-    if isinstance(grid, tuple):
-        out: list[int] = []
-        for x in grid:
-            out.append(int(x))  # type: ignore[arg-type]
-        return tuple(out)
-    out = []
-    for x in grid:
-        out.append(int(x))  # type: ignore[arg-type]
-    return out
+    int_values = [int(x) for x in grid]  # type: ignore[arg-type]
+    return tuple(int_values) if isinstance(grid, tuple) else int_values
 
 
 def _resolve_grid(grid, args, kwargs) -> tuple[int, ...] | list[int]:

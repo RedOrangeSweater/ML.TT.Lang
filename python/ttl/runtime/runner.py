@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..boundary import CoreRangeSetLike, TtnnTensorLike
 from ..dtype_utils import TensorDtype
+from ..layered.decorators import require_module_available
 
 
 class KernelSpec(BaseModel):
@@ -116,6 +117,11 @@ class RunKernelRequest(BaseModel):
     program_hash: int | None = Field(default=None, description="Program cache hash (not yet used)")
 
 
+def _get_ttnn() -> object | None:
+    return ttnn
+
+
+@require_module_available(_get_ttnn, name="ttnn")
 def build_tensor_accessor_args(tensors: list[TtnnTensorLike]) -> list[int]:
     """
     Build compile-time args for tensor accessors.
@@ -126,9 +132,6 @@ def build_tensor_accessor_args(tensors: list[TtnnTensorLike]) -> list[int]:
     Returns:
         List of compile-time args (flattened TensorAccessorArgs for all tensors).
     """
-    if ttnn is None:
-        raise RuntimeError("ttnn is not available")
-
     args = []
     for tensor in tensors:
         tensor_args = ttnn.TensorAccessorArgs(tensor).get_compile_time_args()
@@ -136,6 +139,7 @@ def build_tensor_accessor_args(tensors: list[TtnnTensorLike]) -> list[int]:
     return args
 
 
+@require_module_available(_get_ttnn, name="ttnn")
 def build_kernel_descriptors(req: KernelDescriptorBuildRequest) -> list[object]:
     """
     Build kernel descriptors for ttnn.generic_op.
@@ -147,9 +151,6 @@ def build_kernel_descriptors(req: KernelDescriptorBuildRequest) -> list[object]:
     Returns:
         List of ttnn.KernelDescriptor objects.
     """
-    if ttnn is None:
-        raise RuntimeError("ttnn is not available")
-
     kernel_descriptors = []
     cb_indices = list(range(req.num_cbs))
 
@@ -176,6 +177,7 @@ def build_kernel_descriptors(req: KernelDescriptorBuildRequest) -> list[object]:
     return kernel_descriptors
 
 
+@require_module_available(_get_ttnn, name="ttnn")
 def build_cb_descriptors(req: CBDescriptorBuildRequest) -> list[object]:
     """
     Build circular buffer descriptors for ttnn.generic_op.
@@ -186,9 +188,6 @@ def build_cb_descriptors(req: CBDescriptorBuildRequest) -> list[object]:
     Returns:
         List of ttnn.CBDescriptor objects.
     """
-    if ttnn is None:
-        raise RuntimeError("ttnn is not available")
-
     cb_descriptors = []
     for i, cb in enumerate(req.cb_configs):
         # Contract enforced by CBDescriptorBuildRequest.model_validator
@@ -215,6 +214,7 @@ def build_cb_descriptors(req: CBDescriptorBuildRequest) -> list[object]:
     return cb_descriptors
 
 
+@require_module_available(_get_ttnn, name="ttnn")
 def run_kernel_on_device(req: RunKernelRequest) -> object:
     """
     Execute kernels on device using ttnn.generic_op.
@@ -227,9 +227,6 @@ def run_kernel_on_device(req: RunKernelRequest) -> object:
     Returns:
         Result from ttnn.generic_op (typically None or output tensor).
     """
-    if ttnn is None:
-        raise RuntimeError("ttnn is not available")
-
     tensor_accessor_args = build_tensor_accessor_args(req.tensors)
     grid_size = req.core_ranges.bounding_box().grid_size()
     grid_cols = grid_size.x

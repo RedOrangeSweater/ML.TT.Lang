@@ -33,7 +33,7 @@ from ..descriptor_options import (
 )
 from ..diagnostics import format_mlir_error
 from ..program import CompileKernelRequest, KernelCompileRequest
-from ..settings import settings_ttlang
+from ..settings import AutoProfileConfig, settings_ttlang
 from .source_collector import get_source_line_offset
 from .thread_compiler import (
     build_module_from_threads,
@@ -99,6 +99,148 @@ def build_ttnn_compile_request(
     )
 
 
+def _run_scheduler_if_enabled(
+    *,
+    compiled_threads: list[object],
+    request: KernelCompileRequest,
+    engine_config: object | None,
+) -> None:
+    """Run scheduler stub logic when settings_ttlang.use_scheduler is enabled."""
+    if not settings_ttlang.use_scheduler:
+        return
+
+    from ..scheduler import (
+        build_op_graph_from_threads,
+        build_topology_from_grid,
+        schedule_stub,
+        schedule_toy_stub,
+        validate_topology_connectivity,
+    )
+
+    engine_cfg = engine_config
+    if engine_cfg is None:
+        thread_infos = [(ct.name, ct.kernel_type or "dm") for ct in compiled_threads]
+        op_graph = build_op_graph_from_threads(thread_infos)
+        topology = build_topology_from_grid(request.grid)
+        plan = schedule_stub(op_graph, topology, request.options.program_config_dict)
+        assert plan.grid_cols == topology.grid_cols and plan.grid_rows == topology.grid_rows
+        for nid in op_graph.node_ids_in_order():
+            assert plan.core_for(nid) == (0, 0), f"stub plan mismatch for {nid}"
+        return
+
+    if getattr(engine_cfg, "backend", None) == "tenstorrent":
+        thread_infos = [(ct.name, ct.kernel_type or "dm") for ct in compiled_threads]
+        op_graph = build_op_graph_from_threads(thread_infos)
+        topo_grid = (
+            engine_cfg.get_topology_grid()
+            if hasattr(engine_cfg, "get_topology_grid")
+            else None
+        )
+        grid_for_topology = topo_grid if topo_grid is not None else request.grid
+        topology = build_topology_from_grid(grid_for_topology)
+        plan = schedule_stub(op_graph, topology, request.options.program_config_dict)
+        assert plan.grid_cols == topology.grid_cols and plan.grid_rows == topology.grid_rows
+        for nid in op_graph.node_ids_in_order():
+            assert plan.core_for(nid) == (0, 0), f"stub plan mismatch for {nid}"
+        return
+
+    validate_topology_connectivity(engine_cfg)
+    schedule_toy_stub(engine_cfg)
+
+
+def _build_pipeline_passes(request: KernelCompileRequest) -> list[str]:
+    """Build MLIR pass pipeline list based on request options and settings."""
+    set_compute_config_pass = "func.func(ttl-set-compute-kernel-config)"
+    config_options: list[str] = []
+    if request.options.fp32_dest_acc_en is not None:
+        config_options.append(
+            f"fp32-dest-acc-en={1 if request.options.fp32_dest_acc_en else 0}"
+        )
+    if request.options.dst_full_sync_en is not None:
+        config_options.append(
+            f"dst-full-sync-en={1 if request.options.dst_full_sync_en else 0}"
+        )
+    if config_options:
+        set_compute_config_pass = (
+            "func.func(ttl-set-compute-kernel-config{" + " ".join(config_options) + "})"
+        )
+
+    pipeline_passes = [
+        "func.func(convert-ttl-to-compute)",
+        set_compute_config_pass,
+        "func.func(ttl-assign-dst)",
+        "func.func(ttl-insert-tile-regs-sync)",
+        "func.func(ttl-lower-to-loops)",
+        "func.func(ttl-annotate-cb-associations)",
+    ]
+
+    if is_auto_profile_enabled():
+        cfg = AutoProfileConfig(
+            profile_csv=settings_ttlang.profile_csv,
+            tt_metal_home=settings_ttlang.tt_metal_home or None,
+        )
+        cb_flow_json = cfg.cb_flow_graph_json_path()
+        pipeline_passes.append(f'ttl-dump-cb-flow-graph{{output="{cb_flow_json}"}}')
+
+    pipeline_passes += ["convert-ttl-to-ttkernel"]
+    if is_auto_profile_enabled():
+        pipeline_passes.append("ttl-lower-signpost-to-emitc")
+    pipeline_passes += [
+        "canonicalize",
+        "cse",
+        "lower-affine",
+        "convert-ttkernel-to-emitc",
+        "symbol-dce",
+    ]
+    if HAS_TT_DEVICE:
+        pipeline_passes.insert(0, "ttcore-register-device")
+
+    return pipeline_passes
+
+
+def _run_pass_pipeline(
+    *,
+    module: object,
+    ctx: Context,
+    pipeline_passes: list[str],
+    all_source_files: dict[str, str],
+    all_source_lines: dict[str, list[str]] | None,
+) -> None:
+    """Run MLIR pass pipeline with optional IR printing and formatted errors."""
+    pipeline_str = f"builtin.module({','.join(pipeline_passes)})"
+    pm = PassManager.parse(pipeline_str)
+    pm.enable_verifier(True)
+    try:
+        from ttmlir._mlir_libs._ttmlir import enable_pretty_stack_traces
+
+        enable_pretty_stack_traces(pm._CAPIPtr)
+    except Exception:
+        pass
+
+    if settings_ttlang.verbose_passes:
+        print("Running custom pipeline:", pm)
+        ctx.enable_multithreading(False)
+        pm.enable_ir_printing(
+            print_after_all=True,
+            print_before_all=True,
+            print_after_failure=True,
+            enable_debug_info=True,
+        )
+
+    try:
+        pm.run(module.operation)
+    except Exception as e:
+        error_msg = str(e)
+        source_lines = None
+        source_file = None
+        if all_source_lines:
+            first_thread = next(iter(all_source_lines.keys()))
+            source_lines = all_source_lines[first_thread]
+            source_file = all_source_files.get(first_thread)
+        formatted = format_mlir_error(error_msg, source_lines, source_file)
+        raise RuntimeError(formatted) from None
+
+
 def _compile_kernel(req: CompileKernelRequest) -> CompiledTTNNKernel | None:
     """
     Compile kernel function to MLIR and return CompiledTTNNKernel.
@@ -133,61 +275,11 @@ def _compile_kernel(req: CompileKernelRequest) -> CompiledTTNNKernel | None:
             kernel_line_offset,
         )
 
-        if settings_ttlang.use_scheduler:
-            from ..scheduler import (
-                build_op_graph_from_threads,
-                build_topology_from_grid,
-                schedule_stub,
-                schedule_toy_stub,
-                validate_topology_connectivity,
-            )
-
-            engine_cfg = engine_config
-            if engine_cfg is None:
-                thread_infos = [
-                    (ct.name, ct.kernel_type or "dm") for ct in compiled_threads
-                ]
-                op_graph = build_op_graph_from_threads(thread_infos)
-                topology = build_topology_from_grid(request.grid)
-                plan = schedule_stub(
-                    op_graph, topology, request.options.program_config_dict
-                )
-                assert (
-                    plan.grid_cols == topology.grid_cols
-                    and plan.grid_rows == topology.grid_rows
-                )
-                for nid in op_graph.node_ids_in_order():
-                    assert plan.core_for(nid) == (0, 0), (
-                        f"stub plan mismatch for {nid}"
-                    )
-            elif getattr(engine_cfg, "backend", None) == "tenstorrent":
-                thread_infos = [
-                    (ct.name, ct.kernel_type or "dm") for ct in compiled_threads
-                ]
-                op_graph = build_op_graph_from_threads(thread_infos)
-                topo_grid = (
-                    engine_cfg.get_topology_grid()
-                    if hasattr(engine_cfg, "get_topology_grid")
-                    else None
-                )
-                grid_for_topology = (
-                    topo_grid if topo_grid is not None else request.grid
-                )
-                topology = build_topology_from_grid(grid_for_topology)
-                plan = schedule_stub(
-                    op_graph, topology, request.options.program_config_dict
-                )
-                assert (
-                    plan.grid_cols == topology.grid_cols
-                    and plan.grid_rows == topology.grid_rows
-                )
-                for nid in op_graph.node_ids_in_order():
-                    assert plan.core_for(nid) == (0, 0), (
-                        f"stub plan mismatch for {nid}"
-                    )
-            else:
-                validate_topology_connectivity(engine_cfg)
-                schedule_toy_stub(engine_cfg)
+        _run_scheduler_if_enabled(
+            compiled_threads=compiled_threads,
+            request=request,
+            engine_config=engine_config,
+        )
 
         module = build_module_from_threads(compiled_threads, loc, ctx)
         print_debug_locations = settings_ttlang.debug_locations
@@ -201,98 +293,14 @@ def _compile_kernel(req: CompileKernelRequest) -> CompiledTTNNKernel | None:
         )
         run_stages(get_initial_stages(), stage_ctx, settings_ttlang)
 
-        verify = True
-        set_compute_config_pass = "func.func(ttl-set-compute-kernel-config)"
-        config_options = []
-        if request.options.fp32_dest_acc_en is not None:
-            config_options.append(
-                f"fp32-dest-acc-en={1 if request.options.fp32_dest_acc_en else 0}"
-            )
-        if request.options.dst_full_sync_en is not None:
-            config_options.append(
-                f"dst-full-sync-en={1 if request.options.dst_full_sync_en else 0}"
-            )
-        if config_options:
-            set_compute_config_pass = (
-                "func.func(ttl-set-compute-kernel-config{"
-                + " ".join(config_options)
-                + "})"
-            )
-
-        pipeline_passes = [
-            "func.func(convert-ttl-to-compute)",
-            set_compute_config_pass,
-            "func.func(ttl-assign-dst)",
-            "func.func(ttl-insert-tile-regs-sync)",
-            "func.func(ttl-lower-to-loops)",
-            "func.func(ttl-annotate-cb-associations)",
-        ]
-        if is_auto_profile_enabled():
-            st = settings_ttlang
-            if st.profile_csv:
-                cb_flow_json = str(
-                    Path(st.profile_csv).parent / "cb_flow_graph.json"
-                )
-            else:
-                tt_metal_home = st.tt_metal_home
-                if not tt_metal_home:
-                    raise ValueError(
-                        "TTLANG_AUTO_PROFILE=1 requires TT_METAL_HOME or "
-                        "TTLANG_PROFILE_CSV to be set"
-                    )
-                cb_flow_json = (
-                    f"{tt_metal_home}/generated/profiler/.logs/cb_flow_graph.json"
-                )
-            pipeline_passes.append(
-                f'ttl-dump-cb-flow-graph{{output="{cb_flow_json}"}}'
-            )
-        pipeline_passes += ["convert-ttl-to-ttkernel"]
-        if is_auto_profile_enabled():
-            pipeline_passes.append("ttl-lower-signpost-to-emitc")
-        pipeline_passes += [
-            "canonicalize",
-            "cse",
-            "lower-affine",
-            "convert-ttkernel-to-emitc",
-            "symbol-dce",
-        ]
-        if HAS_TT_DEVICE:
-            pipeline_passes.insert(0, "ttcore-register-device")
-
-        pipeline_str = f"builtin.module({','.join(pipeline_passes)})"
-        pm = PassManager.parse(pipeline_str)
-        pm.enable_verifier(verify)
-        try:
-            from ttmlir._mlir_libs._ttmlir import enable_pretty_stack_traces
-
-            enable_pretty_stack_traces(pm._CAPIPtr)
-        except Exception:
-            pass
-
-        if settings_ttlang.verbose_passes:
-            print("Running custom pipeline:", pm)
-            ctx.enable_multithreading(False)
-            pm.enable_ir_printing(
-                print_after_all=True,
-                print_before_all=True,
-                print_after_failure=True,
-                enable_debug_info=True,
-            )
-
-        try:
-            pm.run(module.operation)
-        except Exception as e:
-            error_msg = str(e)
-            source_lines = None
-            source_file = None
-            if all_source_lines:
-                first_thread = next(iter(all_source_lines.keys()))
-                source_lines = all_source_lines[first_thread]
-                source_file = all_source_files.get(first_thread)
-            formatted = format_mlir_error(
-                error_msg, source_lines, source_file
-            )
-            raise RuntimeError(formatted) from None
+        pipeline_passes = _build_pipeline_passes(request)
+        _run_pass_pipeline(
+            module=module,
+            ctx=ctx,
+            pipeline_passes=pipeline_passes,
+            all_source_files=all_source_files,
+            all_source_lines=all_source_lines,
+        )
 
         from .stages import CompileStageContext, get_final_stages, run_stages
 
