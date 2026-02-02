@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import functools
 import inspect
 from collections.abc import Callable, Generator
 from typing import Any, NoReturn, TypeVar
 
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 from ttmlir.dialects import arith, func, ttcore, ttkernel
 from ttmlir.ir import (
     Block,
@@ -56,48 +58,118 @@ from .tensor_registry import get_tensor_global_index
 from .type_builder import build_tensor_type as _build_tensor_type
 
 _T = TypeVar("_T")
+_P = TypeVar("_P", bound=NodeProxy)
 
 
-class TTLGenericCompiler(TTCompilerBase):
+def with_proxy(proxy_cls: type[_P]):
+    """Decorator to wrap the first argument (node) into a proxy and handle common boilerplate."""
+
+    def decorator(method: Callable[[Any, _P], Any]):
+        @functools.wraps(method)
+        def wrapper(self: TTLGenericCompiler, node: ast.AST, *args, **kwargs):
+            # 1. Semantic dispatch
+            result = self.dispatcher.dispatch(node)
+            if result is not None:
+                return result
+
+            # 2. Wrap in proxy
+            proxy = proxy_cls(node)
+
+            # 3. Set location context and handle profiling/errors
+            with self._loc_for_node(node):
+                try:
+                    return self.profiler.wrap_visit(node, lambda: method(self, proxy, *args, **kwargs))
+                except (ValueError, TypeError, NotImplementedError) as e:
+                    if isinstance(e, TTLangCompileError):
+                        raise
+                    proxy.error(str(e), self.config.source_file, self.config.line_offset)
+
+        return wrapper
+
+    return decorator
+
+
+class TTLGenericCompiler(TTCompilerBase, BaseModel):
     """Compiler that generates TTL dialect ops from Python AST."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     _syntax: dict[str, Callable] = {}
 
-    def __init__(
-        self,
-        name,
-        kernel_type=None,
-        captures=None,
-        *args,
-        config: TTLCompilerConfig | None = None,
-        **kwargs,
-    ):
-        super().__init__(name, kernel_type, *args, **kwargs)
-        self.loc = Location.name(self.name)
-        self.captures = captures if captures is not None else {}
-        self.streams: set[str] = set()
-        self.supported_nodes.append(ast.AsyncFunctionDef)
-        self.supported_nodes.append(ast.With)
+    # Pydantic Fields
+    name: str
+    kernel_type: str | None = None
+    config: TTLCompilerConfig
+    captures: dict[str, Any] = Field(default_factory=dict)
+    args: tuple[Any, ...] = Field(default_factory=tuple)
+    kwargs: dict[str, Any] = Field(default_factory=dict)
+    streams: set[str] = Field(default_factory=set)
 
-        if config is None:
-            config = TTLCompilerConfig.model_validate(kwargs)
-        self.context = CompilerContext(
-            grid=config.grid,
-            memory_space=config.memory_space,
-            tiled=config.tiled,
-        )
-        self.config = config
-        self._cb_info: list[dict[str, object]] = []
+    # Internal state (initialized in validator)
+    context: CompilerContext = Field(init=False)
+    profiler: ProfilingAspect = Field(init=False)
+    ir: IRBuilder = Field(init=False)
+    dispatcher: SemanticDispatcher = Field(init=False)
+    auto_profile_enabled: bool = Field(init=False)
+    line_mapper: Any = Field(init=False, default=None)
+    loc: Location = Field(init=False)
+
+    # Private Attributes
+    _current_line_signpost: Signpost | None = PrivateAttr(default=None)
+    _cb_info: list[dict[str, object]] = PrivateAttr(default_factory=list)
+    _fn_map: dict[str, Callable] = PrivateAttr(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _init_compiler(self) -> Self:
+        """Initialize both base classes and internal components."""
+        # 1. Initialize TTCompilerBase (non-Pydantic)
+        TTCompilerBase.__init__(self, self.name, self.kernel_type, *self.args, **self.kwargs)
+
+        # 2. Setup TTL-specific internals
+        self.loc = Location.name(self.name)
+        self.supported_nodes.extend([ast.AsyncFunctionDef, ast.With])
         self.auto_profile_enabled = is_auto_profile_enabled()
-        self.line_mapper = get_line_mapper() if self.auto_profile_enabled else None
+
+        self.context = CompilerContext(
+            grid=self.config.grid,
+            memory_space=self.config.memory_space,
+            tiled=self.config.tiled,
+        )
+
         self.line_mapper = get_line_mapper() if self.auto_profile_enabled else None
         if self.line_mapper:
             self.line_mapper.line_offset = self.config.line_offset
-        self._current_line_signpost: Signpost | None = None
+
         self.profiler = ProfilingAspect(self)
         self.ir = IRBuilder(self)
         self.dispatcher = SemanticDispatcher(self)
         self._fn_map = dict(TTLGenericCompiler._syntax)
+
+        return self
+
+    def __init__(
+        self,
+        name: str,
+        kernel_type: str | None = None,
+        captures: dict[str, Any] | None = None,
+        *args: Any,
+        config: TTLCompilerConfig | None = None,
+        **kwargs: Any,
+    ):
+        # Prepare config if not provided
+        if config is None:
+            config = TTLCompilerConfig.model_validate(kwargs)
+
+        # Initialize via BaseModel, which triggers _init_compiler validator
+        BaseModel.__init__(
+            self,
+            name=name,
+            kernel_type=kernel_type,
+            config=config,
+            captures=captures or {},
+            args=args,
+            kwargs=kwargs,
+        )
 
     @property
     def source_info(self) -> ThreadSourceInfo:
@@ -108,16 +180,16 @@ class TTLGenericCompiler(TTCompilerBase):
             line_offset=self.config.line_offset,
         )
 
-    def visit_Assign(self, node):
+    @with_proxy(AssignProxy)
+    def visit_Assign(self, proxy: AssignProxy):
         """Handle tuple unpacking for TTL functions like core(dims=2)."""
-        proxy = AssignProxy(node)
         target = proxy.first_target
         if not isinstance(target, ast.Tuple):
-            return super().visit_Assign(node)
+            return super().visit_Assign(proxy.node)
 
         value = self.visit(proxy.value)
         if not isinstance(value, tuple):
-            return super().visit_Assign(node)
+            return super().visit_Assign(proxy.node)
 
         targets = target.elts
         if len(value) != len(targets):
@@ -215,41 +287,15 @@ class TTLGenericCompiler(TTCompilerBase):
         with self.profiler.instrument_op(node, op_name, implicit):
             return op_fn()
 
-    def visit_Call(self, node):
+    @with_proxy(CallProxy)
+    def visit_Call(self, proxy: CallProxy):
         """Override to set location context, catch errors, and inject auto-profiling."""
-        # Try semantic dispatch first
-        result = self.dispatcher.dispatch(node)
-        if result is not None:
-            return result
+        return super().visit_Call(proxy.node)
 
-        proxy = CallProxy(node)
-        with self._loc_for_node(node):
-            try:
-                return self.profiler.wrap_visit(
-                    node, lambda: super(TTLGenericCompiler, self).visit_Call(node)
-                )
-            except (ValueError, TypeError, NotImplementedError) as e:
-                if isinstance(e, TTLangCompileError):
-                    raise
-                proxy.error(str(e), self.config.source_file, self.config.line_offset)
-
-    def visit_BinOp(self, node):
+    @with_proxy(BinOpProxy)
+    def visit_BinOp(self, proxy: BinOpProxy):
         """Override to inject auto-profiling and provide better error messages."""
-        # Try semantic dispatch first (e.g. for tensor ops)
-        result = self.dispatcher.dispatch(node)
-        if result is not None:
-            return result
-
-        proxy = BinOpProxy(node)
-        with self._loc_for_node(node):
-            try:
-                return self.profiler.wrap_visit(
-                    node, lambda: super(TTLGenericCompiler, self).visit_BinOp(node)
-                )
-            except (ValueError, TypeError, NotImplementedError) as e:
-                if isinstance(e, TTLangCompileError):
-                    raise
-                proxy.error(str(e), self.config.source_file, self.config.line_offset)
+        return super().visit_BinOp(proxy.node)
 
     def visit_Name(self, node):
         """Override to check function globals for simple constants."""
@@ -272,49 +318,29 @@ class TTLGenericCompiler(TTCompilerBase):
         """Visit all children of a node and return results."""
         return [self.visit(child) for child in ast.iter_child_nodes(node)]
 
-    def _resolve_ttl_function(
-        self,
-        proxy: AttributeProxy,
-        func_args: list[object],
-        kwargs: dict[str, object],
-    ) -> object | None:
-        """Resolve and call a ttl.XXX or ttl.math.XXX function."""
-        if proxy.is_ttl_module:
-            namespace = "ttl"
-        elif proxy.is_ttl_math:
-            namespace = "ttl.math"
-        else:
-            return None
-
-        fn = self._fn_map.get(proxy.attr)
-        if fn is None:
-            proxy.error(f"Unknown function: {namespace}.{proxy.attr}", self.config.source_file, self.config.line_offset)
-        return fn(*func_args, **kwargs)
-
+    @with_proxy(AttributeProxy)
     def visit_Attribute(
         self,
-        node: ast.Attribute,
+        proxy: AttributeProxy,
         func_args: list[object] | None = None,
         kwargs: dict[str, object] | None = None,
     ) -> object | None:
         """Override to set location context and catch errors for method calls."""
-        proxy = AttributeProxy(node)
         func_args = [] if func_args is None else func_args
         kwargs = {} if kwargs is None else kwargs
-        with self._loc_for_node(node):
-            try:
-                # Handle ttl.XXX and ttl.math.XXX attribute access
-                if proxy.is_ttl_module or proxy.is_ttl_math:
-                    return self._resolve_ttl_function(proxy, func_args, kwargs)
-                return super().visit_Attribute(node, func_args, kwargs)
-            except (ValueError, TypeError, NotImplementedError) as e:
-                if isinstance(e, TTLangCompileError):
-                    raise
-                proxy.error(str(e), self.config.source_file, self.config.line_offset)
 
-    def visit_Subscript(self, node):
+        # Handle ttl.XXX and ttl.math.XXX attribute access
+        if proxy.is_ttl_module or proxy.is_ttl_math:
+            namespace = "ttl" if proxy.is_ttl_module else "ttl.math"
+            if fn := self._fn_map.get(proxy.attr):
+                return fn(*func_args, **kwargs)
+            proxy.error(f"Unknown function: {namespace}.{proxy.attr}", self.config.source_file, self.config.line_offset)
+
+        return super().visit_Attribute(proxy.node, func_args, kwargs)
+
+    @with_proxy(SubscriptProxy)
+    def visit_Subscript(self, proxy: SubscriptProxy):
         """Handle tensor[row, col] or tensor[r0:r1, c0:c1] indexing."""
-        proxy = SubscriptProxy(node)
         value_proxy = NodeProxy(proxy.value)
         if not value_proxy.is_name:
             proxy.error("TTL only supports subscripting simple variables", self.config.source_file, self.config.line_offset)
