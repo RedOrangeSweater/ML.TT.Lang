@@ -690,12 +690,12 @@ def build_dma_producer_to_cb_map(
 
 
 # Global line mapper instance
-_global_line_mapper = SourceLineMapper()
+line_mapper = SourceLineMapper()
 
 
 def get_line_mapper() -> SourceLineMapper:
     """Get the global line mapper instance."""
-    return _global_line_mapper
+    return line_mapper
 
 
 def run_profiling_after_execute(

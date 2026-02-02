@@ -20,9 +20,9 @@ import torch
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, computed_field
 from ttmlir.dialects import ttcore
 
+from .boundary.ttnn_types import TtnnTensorLike
 from .constants import MemorySpace
 from .runtime_tensor import is_ttnn_tensor
-from .boundary.ttnn_types import TtnnTensorLike
 
 _INTERLEAVED = "INTERLEAVED"
 
@@ -104,7 +104,7 @@ class TTNNMemoryConfigProxy(BaseModel):
     def memory_space(self) -> MemorySpace:
         if not is_ttnn_tensor(self.tensor):
             return self.default
-        
+
         # Use TtnnTensorLike protocol for type safety
         tensor: TtnnTensorLike = self.tensor  # type: ignore[assignment]
         mem_config = tensor.memory_config()
@@ -121,7 +121,7 @@ class TTNNMemoryConfigProxy(BaseModel):
     def is_interleaved(self) -> bool:
         if not is_ttnn_tensor(self.tensor):
             return False
-        
+
         # Use TtnnTensorLike protocol for type safety
         tensor: TtnnTensorLike = self.tensor  # type: ignore[assignment]
         mem_config = tensor.memory_config()

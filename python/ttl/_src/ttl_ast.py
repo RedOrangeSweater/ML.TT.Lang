@@ -103,16 +103,16 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
     captures: dict[str, Any] = Field(default_factory=dict)
     args: tuple[Any, ...] = Field(default_factory=tuple)
     init_kwargs: dict[str, Any] = Field(default_factory=dict, alias="kwargs")
-    streams: set[str] = Field(default_factory=set)
 
-    # Internal state (initialized in validator)
+    # State & Components
+    streams: set[str] = Field(default_factory=set)
+    auto_profile_enabled: bool = Field(default_factory=is_auto_profile_enabled)
+    line_mapper: Any = Field(default=None)
+    loc: Location = Field(init=False)
     context: CompilerContext = Field(init=False)
     profiler: ProfilingAspect = Field(init=False)
     ir: IRBuilder = Field(init=False)
     dispatcher: SemanticDispatcher = Field(init=False)
-    auto_profile_enabled: bool = Field(init=False)
-    line_mapper: Any = Field(init=False, default=None)
-    loc: Location = Field(init=False)
 
     # Private Attributes
     _current_line_signpost: Signpost | None = PrivateAttr(default=None)
@@ -128,7 +128,6 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
         # 2. Setup TTL-specific internals
         self.loc = Location.name(self.name)
         self.supported_nodes.extend([ast.AsyncFunctionDef, ast.With])
-        self.auto_profile_enabled = is_auto_profile_enabled()
 
         self.context = CompilerContext(
             grid=self.config.grid,
@@ -136,9 +135,10 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
             tiled=self.config.tiled,
         )
 
-        self.line_mapper = get_line_mapper() if self.auto_profile_enabled else None
-        if self.line_mapper:
-            self.line_mapper.line_offset = self.config.line_offset
+        if self.auto_profile_enabled:
+            self.line_mapper = get_line_mapper()
+            if self.line_mapper:
+                self.line_mapper.line_offset = self.config.line_offset
 
         self.profiler = ProfilingAspect(self)
         self.ir = IRBuilder(self)
@@ -168,7 +168,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
             config=config,
             captures=captures or {},
             args=args,
-            kwargs=kwargs,
+            init_kwargs=kwargs,
         )
 
     @property
@@ -181,6 +181,33 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
         )
 
     @with_proxy(AssignProxy)
+    @contextlib.contextmanager
+    def scope(self) -> Generator[None, None, None]:
+        """Context manager to manage symbol table scoping."""
+        self.symbol_tables.append({})
+        try:
+            yield
+        finally:
+            self.symbol_tables.pop()
+
+    @property
+    def current_scope(self) -> dict[str, Any]:
+        """Return the current (innermost) symbol table."""
+        if not self.symbol_tables:
+            raise RuntimeError("No active scope in symbol table")
+        return self.symbol_tables[-1]
+
+    def define(self, name: str, value: Any) -> None:
+        """Define a variable in the current scope."""
+        self.current_scope[name] = value
+
+    def lookup(self, name: str) -> Any | None:
+        """Look up a variable in all active scopes, starting from the innermost."""
+        for sym_table in reversed(self.symbol_tables):
+            if name in sym_table:
+                return sym_table[name]
+        return None
+
     def visit_Assign(self, proxy: AssignProxy):
         """Handle tuple unpacking for TTL functions like core(dims=2)."""
         target = proxy.first_target
@@ -197,11 +224,10 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
                 f"Cannot unpack {len(value)} values into {len(targets)} variables"
             )
 
-        sym_table = self.symbol_tables[-1]
         for elt, val in zip(targets, value, strict=False):
             if not isinstance(elt, ast.Name):
                 raise ValueError("Tuple unpacking requires simple variable names")
-            sym_table[elt.id] = val
+            self.define(elt.id, val)
 
     def _loc_for_node(self, node: ast.AST) -> Location:
         """Return file location for node if debug_locations enabled, else name location."""
@@ -486,11 +512,12 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
         thread_attr = ttkernel.ir.ThreadTypeAttr.get(self.ctx, thread_type)
         self.func_entry.attributes["ttl.kernel_thread"] = thread_attr
 
+        # Push global scope
         self.symbol_tables.append({})
         func_bb: Block = self.func_entry.add_entry_block()
 
         # Add ttl module to symbol table
-        self.symbol_tables[-1]["ttl"] = ttl
+        self.define("ttl", ttl)
 
         # Ensure TTL dialect is registered for type parsing
         ttl.ensure_dialects_registered(self.ctx)
@@ -508,7 +535,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
         with InsertionPoint(func_bb):
             # Map TensorAccessor function arguments to symbol table
             for i, name in enumerate(self._tensor_accessor_names):
-                self.symbol_tables[-1][name] = func_bb.arguments[i]
+                self.define(name, func_bb.arguments[i])
                 self.streams.add(name)
 
             # Prepopulate other captures (non-tensor)
@@ -527,12 +554,12 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
                     pass
                 assert isinstance(name, str)
                 if isinstance(val, int):
-                    self.symbol_tables[-1][name] = arith.ConstantOp(
+                    self.define(name, arith.ConstantOp(
                         IndexType.get(self.ctx), val
-                    )
+                    ))
                 elif isinstance(val, CircularBuffer):
                     cb_val = self._emit_cb_from_capture(val)
-                    self.symbol_tables[-1][name] = cb_val
+                    self.define(name, cb_val)
                 else:
                     self._raise_error(
                         node, f"Invalid capture type for var {name}: {type(val)}"
@@ -589,7 +616,7 @@ class TTLGenericCompiler(TTCompilerBase, BaseModel):
                 )
                 releases.append(release_info)
                 if proxy.optional_name is not None:
-                    self.symbol_tables[-1][proxy.optional_name] = acquire_result
+                    self.define(proxy.optional_name, acquire_result)
 
             for stmt in node.body:
                 self.visit(stmt)

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Self
+from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -149,12 +149,6 @@ class TTNNKernelCompileRequest(BaseModel):
     profiling: TTNNProfilingInput | None = Field(
         default=None, description="Source lines for profiling"
     )
-
-    @model_validator(mode="after")
-    def validate_ttnn_interop(self) -> Self:
-        """TTNN interop: all tensors same type (TTNN), L1/DRAM, interleaved, tilized; exactly 3 kernels."""
-        # Logic moved to TTNNCompileInput.validate_input
-        return self
 
 
 __all__ = [
