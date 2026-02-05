@@ -1,5 +1,6 @@
 // RUN: ttlang-opt --convert-ttl-to-ttkernel="use-trid-barriers=1" --canonicalize -cse --split-input-file %s | FileCheck %s --check-prefix=TTKERNEL
 // RUN: ttlang-opt --convert-ttl-to-ttkernel="use-trid-barriers=1" --canonicalize --split-input-file %s | FileCheck %s --check-prefix=TTKERNEL_WRAP
+// RUN: ttlang-opt --convert-ttl-to-ttkernel --canonicalize -cse --split-input-file %s | FileCheck %s --check-prefix=TTKERNEL_GLOBAL
 // Summary: Regression tests for TRID-aware ttl.copy/ttl.wait lowering.
 
 #dram = #ttnn.buffer_type<dram>
@@ -23,6 +24,12 @@ module {
     func.return
   }
 }
+
+// TTKERNEL_GLOBAL-LABEL: func.func @trid_single_copy_wait_read
+// TTKERNEL_GLOBAL: ttkernel.noc_async_read_tile(
+// TTKERNEL_GLOBAL: ttkernel.noc_async_read_barrier() : () -> ()
+// TTKERNEL_GLOBAL-NOT: ttkernel.noc_async_read_set_trid(
+// TTKERNEL_GLOBAL-NOT: ttkernel.noc_async_read_barrier_with_trid(
 
 // -----
 
@@ -126,6 +133,12 @@ module {
   }
 }
 
+// TTKERNEL_GLOBAL-LABEL: func.func @trid_wrap_reuse_read
+// TTKERNEL_GLOBAL: ttkernel.noc_async_read_tile(
+// TTKERNEL_GLOBAL: ttkernel.noc_async_read_barrier() : () -> ()
+// TTKERNEL_GLOBAL-NOT: ttkernel.noc_async_read_set_trid(
+// TTKERNEL_GLOBAL-NOT: ttkernel.noc_async_read_barrier_with_trid(
+
 // -----
 
 #dram = #ttnn.buffer_type<dram>
@@ -195,6 +208,12 @@ module {
     func.return
   }
 }
+
+// TTKERNEL_GLOBAL-LABEL: func.func @trid_wrap_reuse_write
+// TTKERNEL_GLOBAL: ttkernel.noc_async_write_tile(
+// TTKERNEL_GLOBAL: ttkernel.noc_async_write_barrier() : () -> ()
+// TTKERNEL_GLOBAL-NOT: ttkernel.noc_async_write_set_trid(
+// TTKERNEL_GLOBAL-NOT: ttkernel.noc_async_write_barrier_with_trid(
 
 // -----
 
