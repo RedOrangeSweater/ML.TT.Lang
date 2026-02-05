@@ -17,11 +17,6 @@ def _ensure_run_request(ctx: RunContext) -> RunContext:
         if isinstance(ctx.raw_req, RunRequest):
             req = ctx.raw_req
         else:
-            if ctx.grid is None:
-                raise ValueError(
-                    "grid= is required when passing program as first arg; "
-                    "e.g. run(add_kernel, lhs, rhs, out, grid=(2, 2))"
-                )
             program = ctx.raw_req
             if not callable(program):
                 raise TypeError(

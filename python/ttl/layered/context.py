@@ -25,6 +25,7 @@ if TYPE_CHECKING:
         ProgramOptions,
         RunRequest,
     )
+    from ..scheduler import AbstractEngineConfig
 
 
 class RunContext(BaseModel):
@@ -41,7 +42,7 @@ class RunContext(BaseModel):
 
     # Optional inputs
     engine_config_path: str | Path | None = None
-    engine_config: object | None = None
+    engine_config: AbstractEngineConfig | None = None
     grid: tuple[int, ...] | list[int] | Callable[..., object] | None = None
     options: ProgramOptions | None = None
 

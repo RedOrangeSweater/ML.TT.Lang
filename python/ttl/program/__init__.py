@@ -27,13 +27,9 @@ from ..descriptor_options import (
 from ..dtype_utils import is_ttnn_tensor
 from ..scheduler import AbstractEngineConfig
 
-
-def _as_int_grid(
-    grid: tuple[object, ...] | list[object] | tuple[int, ...] | list[int],
-) -> tuple[int, ...] | list[int]:
-    """Normalize a tuple/list-like grid to int values."""
-    int_values = [int(x) for x in grid]  # type: ignore[call-overload]
-    return tuple(int_values) if isinstance(grid, tuple) else int_values
+PROGRAM_ATTR = "_ttl_program"
+PROGRAM_DECORATOR_PARAMS_ATTR = "_ttl_program_params"
+PROGRAM_HASH_ATTR = "_ttl_program_hash"
 
 
 def _as_grid_2d(grid: object) -> tuple[int, int]:
@@ -61,15 +57,15 @@ def _resolve_grid(
     grid: (tuple[int, ...] | list[int] | Callable[..., object]) | str | None,
     args: tuple[object, ...],
     kwargs: dict[str, object],
-) -> tuple[int, ...] | list[int]:
-    """Resolve grid (callable/'auto'), returning concrete tuple/list."""
+) -> tuple[int, int]:
+    """Resolve grid (callable/'auto'), returning a concrete 2D tuple."""
     if callable(grid):
         resolved = grid(*args, **kwargs)
         if not isinstance(resolved, (tuple, list)):
             raise TypeError(
                 f"grid callable must return tuple/list, got {type(resolved).__name__}"
             )
-        return _as_int_grid(resolved)
+        return _as_grid_2d(resolved)
     if grid == "auto":
         for arg in args:
             if is_ttnn_tensor(arg) and hasattr(arg, "device"):
@@ -86,7 +82,7 @@ def _resolve_grid(
         raise TypeError(
             f"grid must be tuple/list/callable/'auto', got {type(grid).__name__}"
         )
-    return _as_int_grid(grid)
+    return _as_grid_2d(grid)
 
 
 def _none_to_list(v: object) -> list[object]:
@@ -153,7 +149,7 @@ class ProgramDecoratorParams(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    grid: (tuple[int, ...] | list[int] | Callable[..., object]) | None = Field(
+    grid: (tuple[int, ...] | list[int] | Callable[..., object] | str) | None = Field(
         default=None,
         description="Grid dimensions or callable (required for TTNN run)",
     )
@@ -173,6 +169,13 @@ class ProgramDecoratorParams(BaseModel):
         """Contract: grid parameter is required."""
         if self.grid is None:
             raise ValueError("grid parameter is required")
+        return self
+
+    @model_validator(mode="after")
+    def grid_string_value(self) -> Self:
+        """Contract: string grid values must be 'auto'."""
+        if isinstance(self.grid, str) and self.grid != "auto":
+            raise ValueError("grid string must be 'auto'")
         return self
 
     @model_validator(mode="after")
@@ -260,6 +263,11 @@ class CompileKernelRequest(BaseModel):
         default=None, description="Optional abstract engine config for scheduler"
     )
 
+    @property
+    def kwargs(self) -> dict[str, object]:
+        """Alias for init_kwargs for call sites expecting .kwargs."""
+        return self.init_kwargs
+
 
 class ProgramSpec(BaseModel):
     """Spec for ideal UX: program + grid + options. Used by run(spec, *args)."""
@@ -269,7 +277,7 @@ class ProgramSpec(BaseModel):
     program: Callable[..., object] = Field(
         ..., description="Kernel function (typically @ttl.program-decorated)"
     )
-    grid: tuple[int, ...] | list[int] | Callable[..., object] = Field(
+    grid: tuple[int, ...] | list[int] | Callable[..., object] | str = Field(
         ...,
         description="Grid dimensions or callable to resolve from args",
     )
@@ -289,6 +297,13 @@ class ProgramSpec(BaseModel):
         """Contract: indexing_maps must be set when iterator_types is set."""
         if self.iterator_types and not self.indexing_maps:
             raise ValueError("indexing_maps must be set when iterator_types is set")
+        return self
+
+    @model_validator(mode="after")
+    def grid_string_value(self) -> Self:
+        """Contract: string grid values must be 'auto'."""
+        if isinstance(self.grid, str) and self.grid != "auto":
+            raise ValueError("grid string must be 'auto'")
         return self
 
 class RunRequest(BaseModel):
@@ -314,23 +329,55 @@ class RunRequest(BaseModel):
             raise ValueError(f"num_outs must be 1, got {self.spec.options.num_outs}")
         return self
 
+    @property
+    def kwargs(self) -> dict[str, object]:
+        """Alias for init_kwargs for call sites expecting .kwargs."""
+        return self.init_kwargs
+
     @classmethod
     def from_program(
         cls,
         program: Callable[..., object],
         *args: object,
-        grid: (tuple[int, ...] | list[int] | Callable[..., object]) | None = None,
+        grid: (tuple[int, ...] | list[int] | Callable[..., object] | str) | None = None,
         options: ProgramOptions | None = None,
         **kwargs: object,
     ) -> Self:
-        """Build RunRequest from a @ttl.program-decorated callable. grid is required."""
+        """Build RunRequest from a @ttl.program-decorated callable.
+
+        If grid is omitted, decorator params are used when available.
+        """
+        params = getattr(program, PROGRAM_DECORATOR_PARAMS_ATTR, None)
+        if params is not None and not isinstance(params, ProgramDecoratorParams):
+            params = None
         if grid is None:
-            raise ValueError(
-                "grid= is required when using from_program; "
-                "e.g. RunRequest.from_program(add_kernel, lhs, rhs, out, grid=(2, 2))"
-            )
-        opts = options if options is not None else ProgramOptions()
-        spec = ProgramSpec(program=program, grid=grid, options=opts)
+            if isinstance(params, ProgramDecoratorParams):
+                grid = params.grid
+            else:
+                raise ValueError(
+                    "grid= is required when passing program without decorator params; "
+                    "e.g. RunRequest.from_program(add_kernel, lhs, rhs, out, grid=(2, 2))"
+                )
+        opts = options if options is not None else (
+            params.options if isinstance(params, ProgramDecoratorParams) else ProgramOptions()
+        )
+        indexing_maps = (
+            list(params.indexing_maps)
+            if isinstance(params, ProgramDecoratorParams)
+            else []
+        )
+        iterator_types = (
+            list(params.iterator_types)
+            if isinstance(params, ProgramDecoratorParams)
+            else []
+        )
+        spec = ProgramSpec(
+            program=program,
+            grid=grid,
+            options=opts,
+            indexing_maps=indexing_maps,
+            iterator_types=iterator_types,
+        )
         return cls(spec=spec, args=args, kwargs=kwargs)
 
 

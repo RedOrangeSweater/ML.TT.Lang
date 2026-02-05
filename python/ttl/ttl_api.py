@@ -15,6 +15,7 @@ from __future__ import annotations
 import functools
 import random
 from collections.abc import Callable, Sequence
+from typing import cast
 
 from ._src.auto_profile import is_auto_profile_enabled, run_profiling_after_execute
 from .boundary.ttnn_types import TtnnTensorLike
@@ -39,6 +40,9 @@ from .layered.run_decorators import (
 )
 from .operators import CopyTransferHandler, TensorBlock, copy
 from .program import (
+    PROGRAM_ATTR,
+    PROGRAM_DECORATOR_PARAMS_ATTR,
+    PROGRAM_HASH_ATTR,
     CompileKernelRequest,
     KernelCompileRequest,
     Program,
@@ -47,6 +51,7 @@ from .program import (
     _resolve_grid,
 )
 from .program.cache_key import make_cache_key
+from .scheduler import AbstractEngineConfig
 from .settings import settings_ttlang
 
 _LAST_COMPILED_KERNEL_ATTR = "_last_compiled_kernel"
@@ -68,7 +73,9 @@ def _should_execute() -> bool:
     return not settings_ttlang.compile_only
 
 
-def compute(verbose: bool = False) -> Callable[[Callable[..., object]], Callable[..., object]]:
+def compute(
+    verbose: bool = False,
+) -> Callable[[Callable[..., object]], Callable[..., object]]:
     """
     Decorator for compute thread functions.
 
@@ -87,7 +94,9 @@ def compute(verbose: bool = False) -> Callable[[Callable[..., object]], Callable
     return _decorator
 
 
-def datamovement(verbose: bool = False) -> Callable[[Callable[..., object]], Callable[..., object]]:
+def datamovement(
+    verbose: bool = False,
+) -> Callable[[Callable[..., object]], Callable[..., object]]:
     """
     Decorator for data movement thread functions.
 
@@ -116,45 +125,66 @@ def datamovement(verbose: bool = False) -> Callable[[Callable[..., object]], Cal
 # Program layer types live in ttl.program; see kernel_runner for Runtime layer.
 # -----------------------------------------------------------------------------
 
-# Marker set on @ttl.program-decorated wrappers so run() can accept
-# (program, *args, grid=...).
-_TTL_PROGRAM_ATTR = "_ttl_program"
+def _get_program_hash_seed(program: Callable[..., object]) -> int:
+    seed = getattr(program, PROGRAM_HASH_ATTR, None)
+    if isinstance(seed, int):
+        return seed
+    return id(program)
+
+
+def _build_compile_request(
+    *,
+    program: Callable[..., object],
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
+    kernel_req: KernelCompileRequest,
+    engine_config: AbstractEngineConfig | None,
+) -> CompileKernelRequest:
+    return CompileKernelRequest(
+        program=program,
+        args=args,
+        kwargs=kwargs,
+        compile_request=kernel_req,
+        thread_registry=get_thread_registry(),
+        engine_config=engine_config,
+    )
 
 
 @require_attr("req", error="build_compile_request requires ctx.req to be set")
 def build_compile_request(ctx: RunContext) -> CompileKernelRequest:
     """Build CompileKernelRequest from ctx.req and ctx.engine_config."""
-    assert ctx.req is not None
-
+    req = ctx.req
+    assert req is not None
     cache_key = make_cache_key(
-        ctx.req.args,
-        fp32_dest_acc_en=ctx.req.spec.options.fp32_dest_acc_en,
-        dst_full_sync_en=ctx.req.spec.options.dst_full_sync_en,
+        req.args,
+        fp32_dest_acc_en=req.spec.options.fp32_dest_acc_en,
+        dst_full_sync_en=req.spec.options.dst_full_sync_en,
     )
-    program_hash = hash((id(ctx.req.spec.program), cache_key))
-    grid = _resolve_grid(ctx.req.spec.grid, ctx.req.args, ctx.req.kwargs)
+    program_hash = hash((_get_program_hash_seed(req.spec.program), cache_key))
+    grid = _resolve_grid(req.spec.grid, req.args, req.kwargs)
     kernel_req = KernelCompileRequest(
         grid=grid,
         program_hash=program_hash,
-        indexing_maps=ctx.req.spec.indexing_maps,
-        iterator_types=ctx.req.spec.iterator_types,
-        options=ctx.req.spec.options,
+        indexing_maps=req.spec.indexing_maps,
+        iterator_types=req.spec.iterator_types,
+        options=req.spec.options,
     )
-    return CompileKernelRequest(
-        program=ctx.req.spec.program,
-        args=ctx.req.args,
-        kwargs=dict(ctx.req.kwargs),
-        compile_request=kernel_req,
-        thread_registry=get_thread_registry(),
-        engine_config=ctx.engine_config,
+    engine_config = cast(AbstractEngineConfig | None, ctx.engine_config)
+    return _build_compile_request(
+        program=req.spec.program,
+        args=req.args,
+        kwargs=dict(req.kwargs),
+        kernel_req=kernel_req,
+        engine_config=engine_config,
     )
 
 
 @require_attr("compile_req", error="compile_kernel requires ctx.compile_req to be set")
 def compile_kernel(ctx: RunContext) -> CompiledTTNNKernel | None:
     """Business logic: compile ctx.compile_req and return compiled kernel."""
-    assert ctx.compile_req is not None
-    return _compile_kernel_impl(ctx.compile_req)
+    compile_req = ctx.compile_req
+    assert compile_req is not None
+    return _compile_kernel_impl(compile_req)
 
 
 def _compute_program_cache_key(ctx: ProgramInvocationContext) -> tuple[object, ...]:
@@ -183,12 +213,11 @@ def compile_cached(ctx: ProgramInvocationContext) -> CompiledTTNNKernel | None:
         iterator_types=ctx.params.iterator_types,
         options=ctx.params.options,
     )
-    compile_req = CompileKernelRequest(
+    compile_req = _build_compile_request(
         program=ctx.program,
         args=ctx.args,
         kwargs=ctx.kwargs,
-        compile_request=kernel_req,
-        thread_registry=get_thread_registry(),
+        kernel_req=kernel_req,
         engine_config=None,
     )
     return _compile_kernel_impl(compile_req)
@@ -233,7 +262,7 @@ def _pykernel_gen_params_adapter(
 @ctx_request_build_run_context
 @ctx_request_ensure_run_request
 @ctx_config_resolve_engine_config
-@ctx_program_require_ttl_program_attr(_TTL_PROGRAM_ATTR)
+@ctx_program_require_ttl_program_attr(PROGRAM_ATTR)
 @ensure_ctx_field("compile_req", build_compile_request)
 @ensure_ctx_field("compiled", compile_kernel)
 @require_attr("req", error="run() invariant: ctx.req must be set")
@@ -294,7 +323,9 @@ def pykernel_gen(params: ProgramDecoratorParams) -> Callable:
                 )
             return result if isinstance(result, TtnnTensorLike) else None  # type: ignore[arg-type]
 
-        setattr(_wrapper, _TTL_PROGRAM_ATTR, True)
+        setattr(_wrapper, PROGRAM_ATTR, True)
+        setattr(_wrapper, PROGRAM_DECORATOR_PARAMS_ATTR, params)
+        setattr(_wrapper, PROGRAM_HASH_ATTR, kernel_id)
         return _wrapper
 
     return _decorator

@@ -130,6 +130,24 @@ def test_run_with_program_no_grid_raises():
         RunRequest.from_program(_fake_program, None)
 
 
+def test_run_request_from_program_uses_decorator_params():
+    """RunRequest.from_program uses decorator params when grid is omitted."""
+
+    def _fake_program(_x):
+        pass
+
+    _fake_program._ttl_program = True
+    _fake_program._ttl_program_params = ProgramDecoratorParams(
+        grid=(2, 2),
+        options=ProgramOptions(),
+        indexing_maps=[],
+        iterator_types=[],
+    )
+    req = RunRequest.from_program(_fake_program, None)
+    assert isinstance(req, RunRequest)
+    assert req.spec.grid == (2, 2)
+
+
 def test_run_with_spec_accepts():
     """run(RunRequest(spec=ProgramSpec(...), args=...)) builds and runs (no device)."""
 
