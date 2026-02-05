@@ -13,7 +13,8 @@ def TTLConvertTTLToTTKernel
     Two lowering modes are supported:
     - Default: global barriers (noc_async_{read,write}_barrier).
     - Optional: TRID-aware barriers (noc_async_*_set_trid +
-      noc_async_*_barrier_with_trid).
+      noc_async_*_barrier_with_trid). When the 4-bit TRID space wraps, a
+      barrier is emitted for the reused TRID before the new set_trid.
 
     TODO(ttl): Profile both modes on representative benchmarks and consider
     changing the default.

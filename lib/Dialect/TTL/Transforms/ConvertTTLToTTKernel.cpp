@@ -33,6 +33,8 @@
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Casting.h"
+#include <array>
+#include <optional>
 
 namespace mlir::tt::ttl {
 #define GEN_PASS_DEF_TTLCONVERTTTLTOTTKERNEL
@@ -573,14 +575,34 @@ static Value linearizeTileIndex(OpBuilder &builder, Location loc, Value row,
 }
 
 /// Allocates TRIDs for DMA barriers. TRIDs wrap at 16 (4-bit). If more than
-/// 16 TRIDs are outstanding, reuse can occur before the earlier copy completes;
-/// consider overflow detection or a more robust allocation scheme (TODO).
+/// 16 TRIDs are outstanding, reuse can occur before the earlier copy completes.
 class TridAllocator {
 public:
-  uint32_t allocateTrid() { return nextTrid++ & 0xF; }
+  enum class Direction { Read, Write };
+
+  struct Allocation {
+    uint32_t trid;
+    // When the TRID is being reused, holds the direction of the previous DMA so
+    // a pre-barrier can be emitted.
+    std::optional<Direction> barrierDirection;
+  };
+
+  Allocation allocateTrid(Direction direction) {
+    uint32_t trid = nextTrid & kTridMask;
+    std::optional<Direction> prevDir;
+    if (nextTrid >= kNumTrids) {
+      prevDir = tridDirections[trid];
+    }
+    tridDirections[trid] = direction;
+    ++nextTrid;
+    return {trid, prevDir};
+  }
 
 private:
+  static constexpr uint32_t kNumTrids = 16;
+  static constexpr uint32_t kTridMask = kNumTrids - 1;
   uint32_t nextTrid = 0;
+  std::array<Direction, kNumTrids> tridDirections{};
 };
 
 /// Lower tensor_slice->CB copy: read tiles from tensor into CB.
@@ -846,8 +868,25 @@ struct CopyLowering : OpConversionPattern<CopyOp> {
 
     Value tridVal;
     if (useTridBarriers) {
-      uint32_t trid = tridAllocator->allocateTrid();
-      tridVal = rewriter.create<arith::ConstantIntOp>(op.getLoc(), trid, 32);
+      bool isRead = srcIsSlice && dstIsCB;
+      auto direction = isRead ? TridAllocator::Direction::Read
+                              : TridAllocator::Direction::Write;
+      auto allocation = tridAllocator->allocateTrid(direction);
+      tridVal =
+          rewriter.create<arith::ConstantIntOp>(op.getLoc(), allocation.trid,
+                                                /*bitWidth=*/32);
+
+      if (allocation.barrierDirection) {
+        // Ensure any previous DMA with this TRID has completed before reuse.
+        Value nocVal = makeZeroI8(op.getLoc(), rewriter);
+        if (*allocation.barrierDirection == TridAllocator::Direction::Read) {
+          rewriter.create<ttk::NocAsyncReadBarrierWithTridOp>(
+              op.getLoc(), tridVal, nocVal);
+        } else {
+          rewriter.create<ttk::NocAsyncWriteBarrierWithTridOp>(
+              op.getLoc(), tridVal, nocVal);
+        }
+      }
     } else {
       // In global-barrier mode, the transfer handle value is not used by waits.
       // Keep the converted i32 type for SSA consistency.
