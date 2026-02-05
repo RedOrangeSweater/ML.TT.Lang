@@ -266,3 +266,141 @@ module {
     func.return
   }
 }
+
+// -----
+
+#dram = #ttnn.buffer_type<dram>
+#layout = #ttnn.ttnn_layout<(d0, d1) -> (d0, d1), <1x1>, memref<1x1x!ttcore.tile<32x32, f32>, #dram>, <interleaved>>
+
+// TTKERNEL_WRAP-LABEL: func.func @trid_multi_wrap_read
+// TTKERNEL_WRAP-DAG: %[[TRID0:.*]] = arith.constant 0 : i32
+// TTKERNEL_WRAP-DAG: %[[NOC:.*]] = arith.constant 0 : i8
+// TRID 0 is reused at copies 16/32/48. Each reuse must be guarded by a TRID
+// barrier *before* the subsequent set_trid(0).
+// TTKERNEL_WRAP: ttkernel.noc_async_read_set_trid(%[[TRID0]], %[[NOC]]) : (i32, i8) -> ()
+// TTKERNEL_WRAP: ttkernel.noc_async_read_barrier_with_trid(%[[TRID0]], %[[NOC]]) : (i32, i8) -> ()
+// TTKERNEL_WRAP: ttkernel.noc_async_read_set_trid(%[[TRID0]], %[[NOC]]) : (i32, i8) -> ()
+// TTKERNEL_WRAP: ttkernel.noc_async_read_barrier_with_trid(%[[TRID0]], %[[NOC]]) : (i32, i8) -> ()
+// TTKERNEL_WRAP: ttkernel.noc_async_read_set_trid(%[[TRID0]], %[[NOC]]) : (i32, i8) -> ()
+// TTKERNEL_WRAP: ttkernel.noc_async_read_barrier_with_trid(%[[TRID0]], %[[NOC]]) : (i32, i8) -> ()
+// TTKERNEL_WRAP: ttkernel.noc_async_read_set_trid(%[[TRID0]], %[[NOC]]) : (i32, i8) -> ()
+module {
+  func.func @trid_multi_wrap_read(%arg0: tensor<1x1x!ttcore.tile<32x32, f32>, #layout>) attributes {ttl.base_cta_index = 6 : i32, ttl.crta_indices = [0], ttl.kernel_thread = #ttkernel.thread<noc>} {
+    %c0 = arith.constant 0 : index
+    %cb = ttl.bind_cb {cb_index = 0, buffer_factor = 2} : !ttl.cb<[1, 1], f32, 2>
+    %slice = ttl.tensor_slice %arg0[%c0, %c0] : tensor<1x1x!ttcore.tile<32x32, f32>, #layout> -> tensor<1x1x!ttcore.tile<32x32, f32>, #layout>
+
+    // Issue enough copies to wrap TRIDs multiple times. Some intermediate waits
+    // (excluding TRID 0) ensure the test includes guaranteed completion points.
+    %xf0 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf1 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf2 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf3 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf4 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf5 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf6 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf7 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf8 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf9 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf10 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf11 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf12 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf13 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf14 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf15 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+
+    // Guaranteed completion for a subset of pre-wrap TRIDs (avoid TRID 0).
+    ttl.wait %xf1 : !ttl.transfer_handle<read>
+    ttl.wait %xf2 : !ttl.transfer_handle<read>
+    ttl.wait %xf3 : !ttl.transfer_handle<read>
+    ttl.wait %xf4 : !ttl.transfer_handle<read>
+    ttl.wait %xf5 : !ttl.transfer_handle<read>
+    ttl.wait %xf6 : !ttl.transfer_handle<read>
+    ttl.wait %xf7 : !ttl.transfer_handle<read>
+
+    %xf16 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf17 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf18 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf19 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf20 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf21 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf22 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf23 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf24 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf25 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf26 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf27 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf28 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf29 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf30 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf31 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+
+    // Guaranteed completion for a subset before the second wrap (avoid TRID 0).
+    ttl.wait %xf17 : !ttl.transfer_handle<read>
+    ttl.wait %xf18 : !ttl.transfer_handle<read>
+    ttl.wait %xf19 : !ttl.transfer_handle<read>
+    ttl.wait %xf20 : !ttl.transfer_handle<read>
+    ttl.wait %xf21 : !ttl.transfer_handle<read>
+    ttl.wait %xf22 : !ttl.transfer_handle<read>
+    ttl.wait %xf23 : !ttl.transfer_handle<read>
+
+    %xf32 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf33 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf34 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf35 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf36 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf37 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf38 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf39 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf40 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf41 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf42 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf43 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf44 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf45 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf46 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+    %xf47 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+
+    // Guaranteed completion for a subset before the third wrap (avoid TRID 0).
+    ttl.wait %xf33 : !ttl.transfer_handle<read>
+    ttl.wait %xf34 : !ttl.transfer_handle<read>
+    ttl.wait %xf35 : !ttl.transfer_handle<read>
+    ttl.wait %xf36 : !ttl.transfer_handle<read>
+    ttl.wait %xf37 : !ttl.transfer_handle<read>
+    ttl.wait %xf38 : !ttl.transfer_handle<read>
+    ttl.wait %xf39 : !ttl.transfer_handle<read>
+
+    %xf48 = ttl.copy %slice, %cb : (tensor<1x1x!ttcore.tile<32x32, f32>, #layout>, !ttl.cb<[1, 1], f32, 2>) -> !ttl.transfer_handle<read>
+
+    // Final waits (including TRID 0) ensure every copy is synchronized.
+    ttl.wait %xf0 : !ttl.transfer_handle<read>
+    ttl.wait %xf8 : !ttl.transfer_handle<read>
+    ttl.wait %xf9 : !ttl.transfer_handle<read>
+    ttl.wait %xf10 : !ttl.transfer_handle<read>
+    ttl.wait %xf11 : !ttl.transfer_handle<read>
+    ttl.wait %xf12 : !ttl.transfer_handle<read>
+    ttl.wait %xf13 : !ttl.transfer_handle<read>
+    ttl.wait %xf14 : !ttl.transfer_handle<read>
+    ttl.wait %xf15 : !ttl.transfer_handle<read>
+    ttl.wait %xf16 : !ttl.transfer_handle<read>
+    ttl.wait %xf24 : !ttl.transfer_handle<read>
+    ttl.wait %xf25 : !ttl.transfer_handle<read>
+    ttl.wait %xf26 : !ttl.transfer_handle<read>
+    ttl.wait %xf27 : !ttl.transfer_handle<read>
+    ttl.wait %xf28 : !ttl.transfer_handle<read>
+    ttl.wait %xf29 : !ttl.transfer_handle<read>
+    ttl.wait %xf30 : !ttl.transfer_handle<read>
+    ttl.wait %xf31 : !ttl.transfer_handle<read>
+    ttl.wait %xf32 : !ttl.transfer_handle<read>
+    ttl.wait %xf40 : !ttl.transfer_handle<read>
+    ttl.wait %xf41 : !ttl.transfer_handle<read>
+    ttl.wait %xf42 : !ttl.transfer_handle<read>
+    ttl.wait %xf43 : !ttl.transfer_handle<read>
+    ttl.wait %xf44 : !ttl.transfer_handle<read>
+    ttl.wait %xf45 : !ttl.transfer_handle<read>
+    ttl.wait %xf46 : !ttl.transfer_handle<read>
+    ttl.wait %xf47 : !ttl.transfer_handle<read>
+    ttl.wait %xf48 : !ttl.transfer_handle<read>
+    func.return
+  }
+}
