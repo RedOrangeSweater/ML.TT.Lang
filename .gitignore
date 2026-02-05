@@ -65,3 +65,7 @@ test/temp
 # Paths with .ignore suffix (e.g. docs/to_github.ignore/)
 **/*.ignore
 **/*.ignore/**
+
+# Local dev artifacts (not for repo)
+/apps/
+/build_pr267/
