@@ -36,7 +36,7 @@
 // CHECK:           ttkernel.cb_reserve_back(%[[CB2_TTK]],
 // CHECK:           ttkernel.tile_regs_commit
 // CHECK:           ttkernel.tile_regs_wait
-// CHECK:           ttkernel.pack_tile({{.*}}, %[[CB2_TTK]], {{.*}}, true)
+// CHECK:           ttkernel.pack_tile({{.*}}, %[[CB2_TTK]], {{.*}}, false)
 // CHECK:           ttkernel.cb_push_back(%[[CB2_TTK]],
 // CHECK:           ttkernel.tile_regs_release
 // CHECK:         }
