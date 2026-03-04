@@ -57,16 +57,16 @@ def TTLAssignDST
     : Pass<"ttl-assign-dst", "::mlir::func::FuncOp"> {
   let summary = "DST allocation with copy insertion, interval analysis, and linear scan";
   let description = [{
-    DST register allocator using linear scan allocation with unary operation
+    DST register allocator using linear scan allocation with in-place operation
     merging. Implements the algorithm from DST_Allocation.md:
 
     Phase 1: Copy insertion for multi-consumer values
-    - When a value has multiple consumers and any is unary (overwrites in-place),
+    - When a value has multiple consumers and any is in-place (overwrites input),
       inserts ttl.copy_dst operations for all but the last consumer
 
-    Phase 2: Build live intervals with unary merging
+    Phase 2: Build live intervals with in-place merging
     - Builds interval [start, end] for each tile value
-    - Merges intervals for unary ops (input and output share same DST)
+    - Merges intervals for in-place ops (input and output share same DST)
 
     Phase 3: Linear scan allocation for inputs/intermediates
     - Allocates DST[0..k-1] for input block arguments and intermediate values
@@ -88,7 +88,10 @@ def TTLAssignDST
            "For single-buffering mode (dst_full_sync_en=true), use: "
            "f32=8, f16/bf16=16. For double-buffering (default): f32=4, f16/bf16=8.">,
     Option<"separateOutputRegion", "separate-output-region", "bool", "false",
-           "Allocate outputs in separate DST region (needed for reductions and some loop optimizations).">
+           "Allocate outputs in separate DST region (needed for reductions and some loop optimizations).">,
+    Option<"enableFPUBinaryOps", "enable-fpu-binary-ops", "bool", "true",
+           "Use FPU for binary add/sub/mul when both operands come from CBs. "
+           "When disabled, binary ops use the SFPU path instead.">
   ];
 
   let dependentDialects = [
@@ -115,6 +118,54 @@ def TTLSetComputeKernelConfig
 
   let dependentDialects = [
     "::mlir::tt::ttl::TTLDialect"
+  ];
+}
+
+def TTLSubblockComputeForDST
+    : Pass<"ttl-subblock-compute-for-dst", "::mlir::func::FuncOp"> {
+  let summary = "Partition ttl.compute into DST-sized subblocks";
+  let description = [{
+    Partitions the iteration space of `ttl.compute` operations into subblocks
+    that fit in the DST register file. Uses the `ttl.unroll_factor` attribute
+    (set by `ttl-assign-dst`) to determine the subblock size.
+
+    `ComputeOp` implements `TilingInterface`, and this pass tiles it along its
+    iteration dimensions to produce smaller inner `ttl.compute` ops wrapped in
+    `scf.for` loops -- analogous to tiling `linalg` structured ops.
+
+    For each `ttl.compute` with `ttl.unroll_factor > 1`, generates an outer
+    `scf.for` loop with `tensor.extract_slice` ops to create sub-tensors for
+    each subblock. The inner `ttl.compute` operates on the smaller sub-tensors
+    and carries `ttl.full_linearization_strides` for index adjustment.
+
+    Example (4x4 tensor, DST capacity 8, subblock 2x4):
+    ```mlir
+    // Before (16 tiles, unroll_factor=8):
+    %r = ttl.compute ins(%a) outs(%init)
+        {ttl.unroll_factor = 8 : i64} {
+      ^bb0(%a_tile, %out_tile):
+        %exp = ttl.tile_exp %a_tile
+        ttl.yield %exp
+    } -> tensor<4x4x!ttcore.tile<32x32, f32>>
+
+    // After (outer loop over dim 0 in steps of 2):
+    scf.for %iv = %c0 to %c4 step %c2 {
+      %s_in  = tensor.extract_slice %a[%iv, 0] [2, 4] [1, 1]
+      %s_out = tensor.extract_slice %init[%iv, 0] [2, 4] [1, 1]
+      ttl.compute ins(%s_in) outs(%s_out)
+          {ttl.full_linearization_strides = dense<[4, 1]>} {
+        ^bb0(%a_tile, %out_tile):
+          %exp = ttl.tile_exp %a_tile
+          ttl.yield %exp
+      } -> tensor<2x4x!ttcore.tile<32x32, f32>>
+    }
+    ```
+  }];
+
+  let dependentDialects = [
+    "::mlir::arith::ArithDialect",
+    "::mlir::scf::SCFDialect",
+    "::mlir::tensor::TensorDialect"
   ];
 }
 
@@ -152,7 +203,7 @@ def TTLLowerToLoops
     %result = ttl.compute ins(%a, %b) outs(%init) {
       ^bb0(%a_tile, %b_tile, %out_tile):
         %sum = ttl.tile_add %a_tile, %b_tile
-        ttl.yield %sum
+        ttl.yield
     } -> tensor<2x2x!ttcore.tile<32x32, f32>>
 
     // After:
