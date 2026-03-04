@@ -31,8 +31,8 @@
 #include "ttmlir/Dialect/TTNN/IR/TTNNOps.h"      // IWYU pragma: keep
 #include "ttmlir/Dialect/TTNN/IR/TTNNOpsAttrs.h" // IWYU pragma: keep
 #include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
 
 #include <cassert>
@@ -424,10 +424,11 @@ static LogicalResult emitNocBarrier(ConversionPatternRewriter &rewriter,
   Value nocVal = makeZeroI8(loc, rewriter);
   if (useTridBarriers && tridVal) {
     if (kind == TransferKind::read) {
-      rewriter.create<ttk::NocAsyncReadBarrierWithTridOp>(loc, *tridVal, nocVal);
+      rewriter.create<ttk::NocAsyncReadBarrierWithTridOp>(loc, *tridVal,
+                                                          nocVal);
     } else if (kind == TransferKind::write) {
       rewriter.create<ttk::NocAsyncWriteBarrierWithTridOp>(loc, *tridVal,
-                                                          nocVal);
+                                                           nocVal);
     } else {
       return failure();
     }
@@ -619,8 +620,10 @@ public:
 
 private:
   uint32_t nextTrid_ = 0;
-  llvm::SmallVector<bool, kNumTrids> outstanding_ = llvm::SmallVector<bool, kNumTrids>(kNumTrids, false);
-  llvm::SmallVector<TransferKind, kNumTrids> direction_ = llvm::SmallVector<TransferKind, kNumTrids>(kNumTrids, TransferKind::read);
+  llvm::SmallVector<bool, kNumTrids> outstanding_ =
+      llvm::SmallVector<bool, kNumTrids>(kNumTrids, false);
+  llvm::SmallVector<TransferKind, kNumTrids> direction_ =
+      llvm::SmallVector<TransferKind, kNumTrids>(kNumTrids, TransferKind::read);
 };
 
 /// Direction of a tensor<->CB tile copy for NOC operations.
