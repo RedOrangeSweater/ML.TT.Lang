@@ -144,6 +144,8 @@ CONFIGS = [
     TestConfig(num_tiles=1, block_h=1, block_w=1, use_trid_barriers=True),
     # Multi-tile configs with loop generation.
     TestConfig(num_tiles=4, block_h=2, block_w=2),  # 2x2 grid (4 tiles)
+    # Multi-tile with TRID barriers.
+    TestConfig(num_tiles=4, block_h=2, block_w=2, use_trid_barriers=True),
     # TODO(#123): Enable 8x8 config once tile index lowering is fixed.
     # Currently fails with high ULP errors - tensor_slice indices don't correctly
     # map to tile offsets in the C++ lowering for grids larger than 2x2.

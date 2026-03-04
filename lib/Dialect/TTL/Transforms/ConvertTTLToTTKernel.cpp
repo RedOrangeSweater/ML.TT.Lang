@@ -31,8 +31,11 @@
 #include "ttmlir/Dialect/TTNN/IR/TTNNOps.h"      // IWYU pragma: keep
 #include "ttmlir/Dialect/TTNN/IR/TTNNOpsAttrs.h" // IWYU pragma: keep
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Casting.h"
+
+#include <cassert>
 
 namespace mlir::tt::ttl {
 #define GEN_PASS_DEF_TTLCONVERTTTLTOTTKERNEL
@@ -411,6 +414,35 @@ static Value makeZeroI8(Location loc, ConversionPatternRewriter &rewriter) {
   return rewriter.create<arith::ConstantIntOp>(loc, 0, 8);
 }
 
+/// Emits NOC barrier: TRID-scoped (barrier_with_trid) when useTridBarriers and
+/// tridVal present, otherwise global barrier. Returns failure() for unsupported
+/// TransferKind.
+static LogicalResult emitNocBarrier(ConversionPatternRewriter &rewriter,
+                                    Location loc, TransferKind kind,
+                                    std::optional<Value> tridVal,
+                                    bool useTridBarriers) {
+  Value nocVal = makeZeroI8(loc, rewriter);
+  if (useTridBarriers && tridVal) {
+    if (kind == TransferKind::read) {
+      rewriter.create<ttk::NocAsyncReadBarrierWithTridOp>(loc, *tridVal, nocVal);
+    } else if (kind == TransferKind::write) {
+      rewriter.create<ttk::NocAsyncWriteBarrierWithTridOp>(loc, *tridVal,
+                                                          nocVal);
+    } else {
+      return failure();
+    }
+  } else {
+    if (kind == TransferKind::read) {
+      rewriter.create<ttk::NocAsyncReadBarrierOp>(loc);
+    } else if (kind == TransferKind::write) {
+      rewriter.create<ttk::NocAsyncWriteBarrierOp>(loc);
+    } else {
+      return failure();
+    }
+  }
+  return success();
+}
+
 static std::optional<TransferKind> getTransferKindFromHandleType(Type t) {
   auto transferHandle = llvm::dyn_cast<TransferHandleType>(t);
   if (!transferHandle) {
@@ -574,23 +606,21 @@ public:
   };
 
   AllocResult allocateTrid(TransferKind direction) {
-    uint32_t trid = nextTrid % kNumTrids;
+    uint32_t trid = nextTrid_ % kNumTrids;
     AllocResult result{trid, std::nullopt};
-    if (outstanding[trid]) {
+    if (outstanding_[trid]) {
       result.evictDirection = direction_[trid];
     }
-    outstanding[trid] = true;
+    outstanding_[trid] = true;
     direction_[trid] = direction;
-    ++nextTrid;
+    ++nextTrid_;
     return result;
   }
 
-  void releaseTrid(uint32_t trid) { outstanding[trid % kNumTrids] = false; }
-
 private:
-  uint32_t nextTrid = 0;
-  bool outstanding[kNumTrids] = {};
-  TransferKind direction_[kNumTrids] = {};
+  uint32_t nextTrid_ = 0;
+  llvm::SmallVector<bool, kNumTrids> outstanding_ = llvm::SmallVector<bool, kNumTrids>(kNumTrids, false);
+  llvm::SmallVector<TransferKind, kNumTrids> direction_ = llvm::SmallVector<TransferKind, kNumTrids>(kNumTrids, TransferKind::read);
 };
 
 /// Direction of a tensor<->CB tile copy for NOC operations.
@@ -762,9 +792,7 @@ struct CopyLowering : OpConversionPattern<CopyOp> {
       });
     }
 
-    if (!tridAllocator) {
-      return rewriter.notifyMatchFailure(op, "missing TRID allocator");
-    }
+    assert(tridAllocator && "CopyLowering requires TRID allocator");
 
     TransferKind direction =
         (srcIsSlice && dstIsCB) ? TransferKind::read : TransferKind::write;
@@ -777,20 +805,16 @@ struct CopyLowering : OpConversionPattern<CopyOp> {
       if (allocResult.evictDirection) {
         Value evictTrid = rewriter.create<arith::ConstantIntOp>(
             op.getLoc(), allocResult.trid, 32);
-        Value nocVal = makeZeroI8(op.getLoc(), rewriter);
-        if (*allocResult.evictDirection == TransferKind::read) {
-          rewriter.create<ttk::NocAsyncReadBarrierWithTridOp>(
-              op.getLoc(), evictTrid, nocVal);
-        } else {
-          rewriter.create<ttk::NocAsyncWriteBarrierWithTridOp>(
-              op.getLoc(), evictTrid, nocVal);
+        if (failed(emitNocBarrier(rewriter, op.getLoc(),
+                                  *allocResult.evictDirection, evictTrid,
+                                  /*useTridBarriers=*/true))) {
+          return rewriter.notifyMatchFailure(op, "unsupported evict direction");
         }
       }
       tridVal = rewriter.create<arith::ConstantIntOp>(op.getLoc(),
                                                       allocResult.trid, 32);
     } else {
-      // In global-barrier mode, allocate but direction does not matter.
-      tridAllocator->allocateTrid(direction);
+      // Global-barrier mode: no TRID tracking; handle is always constant 0.
       tridVal = rewriter.create<arith::ConstantIntOp>(op.getLoc(), 0, 32);
     }
 
@@ -840,37 +864,14 @@ struct WaitLowering : OpConversionPattern<WaitOp> {
       return rewriter.notifyMatchFailure(
           op, "requires direction-typed !ttl.transfer_handle<read|write>");
     }
-    if (useTridBarriers) {
-      Value tridVal = adaptor.getXf(); // i32 (after type conversion)
-      if (!tridVal.getType().isInteger(32)) {
-        return rewriter.notifyMatchFailure(
-            op,
-            "transfer handle must be type-converted to i32 before ttl.wait");
-      }
-      // Currently fixed to NOC 0. TODO(ttl): Generalize NOC selection (issue
-      // #77).
-      Value nocVal = makeZeroI8(op.getLoc(), rewriter);
-      if (*kind == TransferKind::read) {
-        rewriter.create<ttk::NocAsyncReadBarrierWithTridOp>(op.getLoc(),
-                                                            tridVal, nocVal);
-      } else if (*kind == TransferKind::write) {
-        rewriter.create<ttk::NocAsyncWriteBarrierWithTridOp>(op.getLoc(),
-                                                             tridVal, nocVal);
-      } else {
-        return rewriter.notifyMatchFailure(op, [&](Diagnostic &diag) {
-          diag << "unsupported TransferKind for ttl.wait lowering";
-        });
-      }
-    } else {
-      if (*kind == TransferKind::read) {
-        rewriter.create<ttk::NocAsyncReadBarrierOp>(op.getLoc());
-      } else if (*kind == TransferKind::write) {
-        rewriter.create<ttk::NocAsyncWriteBarrierOp>(op.getLoc());
-      } else {
-        return rewriter.notifyMatchFailure(op, [&](Diagnostic &diag) {
-          diag << "unsupported TransferKind for ttl.wait lowering";
-        });
-      }
+    Value tridVal = adaptor.getXf(); // i32 (type converter guarantees this)
+    assert(tridVal.getType().isInteger(32) &&
+           "transfer handle must be type-converted to i32 before ttl.wait");
+    if (failed(emitNocBarrier(rewriter, op.getLoc(), *kind, tridVal,
+                              useTridBarriers))) {
+      return rewriter.notifyMatchFailure(op, [&](Diagnostic &diag) {
+        diag << "unsupported TransferKind for ttl.wait lowering";
+      });
     }
     rewriter.eraseOp(op);
     return success();
