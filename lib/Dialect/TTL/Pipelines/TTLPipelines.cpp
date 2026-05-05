@@ -56,6 +56,7 @@ void createTTLToTTKernelPipeline(OpPassManager &pm,
   pm.addPass(createTTLAnnotateCBAssociations());
   {
     TTLConvertTTLToTTKernelOptions ttkOpts;
+    ttkOpts.useTridBarriers = options.useTridBarriers;
     ttkOpts.reduceFullFp32 = options.reduceFullFp32;
     pm.addPass(createTTLConvertTTLToTTKernel(ttkOpts));
   }
