@@ -111,6 +111,7 @@ jobs:
                   path: ./build/docs/sphinx/_build/html
 
     test-hardware:
+        if: ${{ github.repository_owner != 'RedOrangeSweater' }}
         uses: ./.github/workflows/call-test-hardware.yml
         secrets: inherit
         with:
