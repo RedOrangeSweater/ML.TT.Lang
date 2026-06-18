@@ -52,7 +52,12 @@ jobs:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           BASE_REPO: ${{ github.repository }}
         run: |
-          TAG=$(.github/containers/get-version-tag.sh)
+          if [[ "${{ github.repository_owner }}" == "RedOrangeSweater" ]]; then
+            # Fork debug: fork clones lack upstream release tags; pin published IRD image.
+            TAG="v1.1.3"
+          else
+            TAG=$(.github/containers/get-version-tag.sh)
+          fi
           echo "docker_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Resolved docker tag: $TAG"
       - name: Log in to GHCR
