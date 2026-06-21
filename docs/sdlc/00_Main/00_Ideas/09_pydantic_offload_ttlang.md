@@ -40,3 +40,25 @@ pydantic-settings. Это снижает объем ручной проверк�
 - Ввести `TTLangSettings` и использовать его в `ttl_api.py` и `diagnostics.py`.
 - Вынести опции `pykernel_gen` в Pydantic-модель и нормализовать значения.
 - Добавить `pydantic-settings` в зависимости и обновить типизацию в правках.
+
+## Было / стало
+
+| Было | Стало |
+| --- | --- |
+| `validate_*` и `os.environ` разбросаны по `ttl_api.py`, `diagnostics.py` | `TTLangSettings` + Pydantic request models |
+| Ad-hoc проверки loop params в AST visitor | Pydantic models в `visit_For` (`f6515298`) |
+| Fused YAML в tt-llk без typed contract | `fuser_yaml_models.py` — parse-only validation (`7f60248e`) |
+| Scheduler config без schema | `AbstractEngineConfig` (Pydantic) + JSON loader (`3735e9fa`) |
+
+## Evidence (commits)
+
+| Commit | Date | Что доказывает |
+| --- | --- | --- |
+| `3735e9fa` | 2026-01-31 | `AbstractEngineConfig` + toy stub |
+| `7a44d766` | 2026-01-31 | Pydantic-first compile/run requests |
+| `f5cc9592` | 2026-02-02 | Type safety refactor |
+| `f6515298` | 2026-02-02 | Loop params Pydantic |
+| `7f60248e` | 2026-02-01 | tt-llk fused YAML models |
+| `1292685d` | 2026-02-05 | Recovery branch tip |
+
+Локальный demo (без устройства): `pytest test/python/test_pydantic_validation.py -q` — см. hub `docs/publishing/DEMO_pydantic_ru.md`.

@@ -75,3 +75,34 @@ def get_action_rcw(env: SchedulerPlacementEnv) -> int:
 def get_action_random(env: SchedulerPlacementEnv) -> int:
     """Random policy: sample from action space."""
     return int(env.action_space.sample())
+
+
+from graph_placement import optimal_core_for_next_node, a_star_core_for_next_node
+
+
+@register("dijkstra")
+def get_action_dijkstra(env: SchedulerPlacementEnv) -> int:
+    """
+    Graph-search placement: pick core minimizing total edge Manhattan cost.
+
+    Uses brute-force completion for remaining nodes on small Toy instances.
+    """
+    return optimal_core_for_next_node(
+        env._placement,
+        env._node_ids,
+        env._next_idx,
+        env._graph,
+        env._topology,
+    )
+
+
+@register("a_star")
+def get_action_a_star(env: SchedulerPlacementEnv) -> int:
+    """A* placement policy (Toy small instances; same completion as dijkstra here)."""
+    return a_star_core_for_next_node(
+        env._placement,
+        env._node_ids,
+        env._next_idx,
+        env._graph,
+        env._topology,
+    )
